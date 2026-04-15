@@ -135,9 +135,11 @@ The baseline environment variable is:
 export CHROME_DEVTOOLS_AXI_BROWSER_URL=http://127.0.0.1:9222
 ```
 
-## Important Truth: `axisb-init` Is Not A Built-In Command
+## Important Truth: `axis-init` Is Not A Built-In Command
 
 Commands like:
+- `axis-init`
+- `axis-human`
 - `axisb-init`
 - `axisb-human`
 - `axi-start`
@@ -157,7 +159,7 @@ That means:
 ```bash
 "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" \
   --remote-debugging-port=9222 \
-  --user-data-dir="$HOME/.chrome-axi-data" \
+  --user-data-dir="$HOME/.axis-browser-data" \
   --no-first-run \
   --no-default-browser-check
 ```
@@ -169,13 +171,13 @@ That creates an isolated browser data directory and exposes Chrome DevTools on `
 If you want a convenience helper in your shell profile:
 
 ```bash
-axi_init() {
+axis-init() {
   pkill -f "chrome-devtools-mcp" >/dev/null 2>&1 || true
-  mkdir -p "$HOME/.chrome-axi-data"
+  mkdir -p "$HOME/.axis-browser-data"
 
   "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" \
     --remote-debugging-port=9222 \
-    --user-data-dir="$HOME/.chrome-axi-data" \
+    --user-data-dir="$HOME/.axis-browser-data" \
     --no-first-run \
     --no-default-browser-check >/dev/null 2>&1 &
 
@@ -186,7 +188,7 @@ axi_init() {
 Then:
 
 ```bash
-axi_init
+axis-init
 axis-browser stop
 axis-browser pages
 ```
@@ -222,10 +224,10 @@ The shared browser profile keeps the session cookies.
 ### Example Human-Login Helper
 
 ```bash
-axisb_human() {
-  mkdir -p "$HOME/.chrome-axi-data"
+axis-human() {
+  mkdir -p "$HOME/.axis-browser-data"
   "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" \
-    --user-data-dir="$HOME/.chrome-axi-data" \
+    --user-data-dir="$HOME/.axis-browser-data" \
     --no-first-run
 }
 ```

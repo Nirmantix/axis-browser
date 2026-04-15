@@ -48,9 +48,11 @@ This matters most in workflows that reuse a live Chrome on `http://127.0.0.1:922
 
 This fork adds bridge target fingerprinting:
 
-- the bridge writes its launch/session config into `~/.chrome-devtools-axi/bridge.pid`
+- the bridge writes its launch/session config into `~/.axis-browser/bridge.pid`
+- the bridge uses a dedicated `chrome-devtools-mcp` cache under `~/.axis-browser/npm-cache`
 - the client compares the saved config with the current environment
 - if the target changed, the bridge is restarted instead of being silently reused
+- stale local bridge wrappers on `9224` can now be shut down and recovered more reliably
 
 That fingerprint currently includes:
 - `CHROME_DEVTOOLS_AXI_BROWSER_URL`
@@ -148,7 +150,7 @@ When this fork is installed from this repository, it exposes all of these comman
 ```
 
 - **Persistent bridge** — a detached process keeps the MCP session alive across commands, so Chrome doesn't restart every invocation
-- **Auto-lifecycle** — the bridge starts on first command and writes a PID file to `~/.chrome-devtools-axi/bridge.pid`
+- **Auto-lifecycle** — the bridge starts on first command and writes a PID file to `~/.axis-browser/bridge.pid`
 - **Snapshot parsing** — accessibility tree snapshots are extracted and analyzed for interactive elements (`uid=` refs)
 - **TOON encoding** — structured metadata uses [TOON format](https://www.npmjs.com/package/@toon-format/toon) for compact, token-efficient output
 
@@ -271,11 +273,15 @@ The bridge server port defaults to `9224`. Override it with an environment varia
 export CHROME_DEVTOOLS_AXI_PORT=9225
 ```
 
-State is stored in `~/.chrome-devtools-axi/`:
+State is stored in `~/.axis-browser/`:
 
 | File         | Purpose                            |
 | ------------ | ---------------------------------- |
 | `bridge.pid` | PID and port of the running bridge |
+| `npm-cache/` | Dedicated cache used for `npx chrome-devtools-mcp@latest` |
+
+Axis Browser uses its own managed npm cache under `~/.axis-browser/npm-cache/` when spawning `chrome-devtools-mcp`.
+That prevents bridge startup from depending on a broken or machine-specific global npm cache configuration.
 
 ### Session Hooks
 

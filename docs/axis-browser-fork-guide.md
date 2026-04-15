@@ -12,7 +12,8 @@ Original upstream:
 
 This fork keeps the upstream package name for compatibility, but exposes `axis-browser`, `axib`, and `chrome-devtools-axi` as installed commands and adds one practical fix for shared Chrome/CDP workflows:
 
-- the bridge now stores its launch/session fingerprint in `~/.chrome-devtools-axi/bridge.pid`
+- the bridge now stores its launch/session fingerprint in `~/.axis-browser/bridge.pid`
+- the bridge now uses a dedicated managed npm cache under `~/.axis-browser/npm-cache/`
 - the client compares the saved fingerprint with the current environment
 - if the target session changed, the bridge is restarted instead of silently reusing a stale session
 
@@ -26,6 +27,12 @@ This was added because the original bridge reuse logic could keep talking to an 
 - `axib pages` disagreeing with raw Chrome CDP targets
 - unreliable attachment to already-open tabs
 - confusion when switching between isolated and shared Chrome sessions
+
+The fork also isolates `chrome-devtools-mcp` downloads from the machine's global npm cache.
+That prevents bridge startup failures caused by broken cache permissions or machine-specific npm config.
+
+The fork also recovers more cleanly from stale local bridge wrappers that still hold port `9224`.
+That matters when an older local bridge process survives without a usable PID file.
 
 ## Who Should Use This Fork
 
