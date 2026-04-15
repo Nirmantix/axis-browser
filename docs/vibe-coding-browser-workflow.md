@@ -99,7 +99,7 @@ The installed commands are:
 You can use the fork directly from source or point your active global binary at the local build.
 
 See:
-- [axis-browser-fork-guide.md](axis-browser-fork-guide.md)
+- [../README.md](../README.md)
 
 ### Agent Browser
 

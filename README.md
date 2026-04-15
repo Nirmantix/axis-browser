@@ -73,9 +73,6 @@ That fingerprint currently includes:
 - headed vs headless mode
 - forwarded Chrome args
 
-Detailed install and maintenance notes live here:
-- [docs/axis-browser-fork-guide.md](docs/axis-browser-fork-guide.md)
-
 ## Maintenance Model
 
 Axis Browser should stay intentionally small and upgrade-friendly.
@@ -85,8 +82,7 @@ Axis Browser should stay intentionally small and upgrade-friendly.
 - rebase or merge upstream updates regularly
 - remove repo-specific code when upstream adopts an equivalent fix
 
-For installation, usage, and long-term maintenance details, see:
-- [docs/axis-browser-fork-guide.md](docs/axis-browser-fork-guide.md)
+For workflow details, see:
 - [docs/vibe-coding-browser-workflow.md](docs/vibe-coding-browser-workflow.md)
 
 Recommended workflow guide:
@@ -125,9 +121,6 @@ The repo is branded as `Axis Browser`, but the executable and package identity s
 - primary command: `axis-browser`
 - compatibility commands: `axib`, `chrome-devtools-axi`
 
-If you want to use this repository rather than the upstream npm package, see:
-- [docs/axis-browser-fork-guide.md](docs/axis-browser-fork-guide.md)
-
 For quick evaluation of the upstream-compatible interface, you can still run:
 
 ```
@@ -142,6 +135,128 @@ When installed from this repository, it exposes all of these commands:
 - `axis-browser`
 - `axib`
 - `chrome-devtools-axi`
+
+### Recommended Daily Command
+
+The real installed command is:
+
+```bash
+axis-browser
+```
+
+If you want a shorter branded command in your shell, add:
+
+```bash
+alias axis='axis-browser'
+```
+
+Then you can use:
+
+```bash
+axis pages
+axis snapshot
+axis open https://example.com
+```
+
+### Install From This Repository
+
+Clone and build:
+
+```bash
+git clone https://github.com/Nirmantix/axis-browser.git
+cd axis-browser
+npm install
+npm run build
+```
+
+Run directly from the checkout:
+
+```bash
+node dist/bin/chrome-devtools-axi.js --help
+node dist/bin/chrome-devtools-axi.js pages
+```
+
+If you want the commands available globally from this checkout:
+
+```bash
+npm link
+```
+
+That exposes:
+
+```bash
+axis-browser --help
+axib pages
+chrome-devtools-axi pages
+```
+
+### Make This Repository Your Active Install
+
+If you already use a global install and want this repository to back the active
+binary, point your wrapper or symlink at the built CLI.
+
+Example on macOS/Linux:
+
+```bash
+ln -snf /absolute/path/to/axis-browser/dist/bin/chrome-devtools-axi.js ~/.bun/bin/chrome-devtools-axi
+```
+
+Then verify:
+
+```bash
+readlink ~/.bun/bin/chrome-devtools-axi
+axis-browser --version
+```
+
+Important:
+- switching the symlink changes which build backs the command
+- it does not automatically replace an already-running bridge process
+- after switching builds, restart the bridge once:
+
+```bash
+axis-browser stop
+export CHROME_DEVTOOLS_AXI_BROWSER_URL=http://127.0.0.1:9222
+axis-browser pages
+```
+
+### Shared-Session Usage
+
+For a shared Chrome session on `9222`:
+
+```bash
+export CHROME_DEVTOOLS_AXI_BROWSER_URL=http://127.0.0.1:9222
+axis-browser stop
+axis-browser pages
+axis-browser snapshot
+```
+
+If you prefer the shorter branded alias:
+
+```bash
+alias axis='axis-browser'
+export CHROME_DEVTOOLS_AXI_BROWSER_URL=http://127.0.0.1:9222
+axis stop
+axis pages
+axis snapshot
+```
+
+Why stop first:
+- the bridge is persistent
+- the bridge can outlive your shell session
+- a clean restart ensures the current environment is what the bridge is actually using
+
+If tab discovery feels wrong, cross-check raw CDP:
+
+```bash
+curl -s http://127.0.0.1:9222/json/list
+```
+
+If the browser session and the bridge disagree:
+
+```bash
+axis-browser stop
+axis-browser pages
+```
 
 ## How It Works
 
