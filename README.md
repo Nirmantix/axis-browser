@@ -3,7 +3,7 @@
 <p align="center">
   <a href="https://github.com/Nirmantix/axis-browser/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/Nirmantix/axis-browser/ci.yml?style=flat-square&label=CI" /></a>
   <a href="https://github.com/Nirmantix/axis-browser"><img alt="Project" src="https://img.shields.io/badge/project-axis--browser-black?style=flat-square" /></a>
-  <a href="#"><img alt="Platform" src="https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-blue?style=flat-square" /></a>
+  <a href="#platform-support"><img alt="Platform" src="https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows*-blue?style=flat-square" /></a>
   <a href="https://github.com/kunchenguid/chrome-devtools-axi"><img alt="Compatibility" src="https://img.shields.io/badge/compatibility-upstream--aligned-blue?style=flat-square" /></a>
 </p>
 
@@ -22,6 +22,19 @@ Compatibility notes:
 - tracks [`kunchenguid/chrome-devtools-axi`](https://github.com/kunchenguid/chrome-devtools-axi) closely so upgrades stay simple
 - installed commands: `axis-browser`, `axib`, and `chrome-devtools-axi`
 - npm package name remains upstream-compatible: `chrome-devtools-axi`
+
+## Platform Support
+
+- `macOS`: supported
+- `Linux`: supported for the core CLI and bridge workflow
+- `Windows`: partially supported today
+
+Current Windows gaps:
+- stale bridge recovery still relies on Unix-specific listener inspection (`lsof` / `ps`) when the shutdown endpoint is unavailable
+- the documented shared-session helper snippets are shell-first examples, not native PowerShell helpers
+- there is no Windows CI coverage in this repo yet
+
+So the repo is close to cross-platform, but not yet fully first-class on Windows.
 
 ## Why Axis Browser
 

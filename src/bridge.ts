@@ -371,6 +371,9 @@ export async function runBridge(port = DEFAULT_PORT): Promise<void> {
   // making it a process group leader — all children share our PGID.
   process.on("exit", () => {
     removePidFile();
+    if (process.platform === "win32") {
+      return;
+    }
     try {
       process.kill(-process.pid, "SIGTERM");
     } catch {
