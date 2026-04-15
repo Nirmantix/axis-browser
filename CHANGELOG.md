@@ -1,5 +1,37 @@
 # Changelog
 
+This changelog tracks public changes for Axis Browser.
+
+Versions `0.1.15` and below are inherited from the upstream `chrome-devtools-axi`
+release history. Axis Browser-specific work since the fork is tracked in the
+unreleased section below until the next tagged release.
+
+## Unreleased
+
+### Features
+
+* brand the public CLI and docs as Axis Browser while keeping upstream-compatible
+  package identity and commands (`axis-browser`, `axib`, and
+  `chrome-devtools-axi`)
+* restart the bridge when the shared Chrome target changes instead of silently
+  reusing a stale session
+
+### Bug Fixes
+
+* harden bridge startup with dedicated `~/.axis-browser` runtime state,
+  managed `chrome-devtools-mcp` cache, stale bridge recovery on port `9224`,
+  and installed-build preference for the compiled bridge entrypoint
+
+### Documentation
+
+* move public install and usage guidance into `README.md` and keep
+  `docs/vibe-coding-browser-workflow.md` as the public workflow guide
+* tone down fork-first branding, document the destructive nature of
+  `axis-init`-style helpers, and recommend a dedicated automation browser or
+  profile for shared-session workflows
+
+## Upstream History
+
 ## [0.1.15](https://github.com/kunchenguid/chrome-devtools-axi/compare/chrome-devtools-axi-v0.1.14...chrome-devtools-axi-v0.1.15) (2026-04-11)
 
 
