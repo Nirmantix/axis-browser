@@ -29,6 +29,13 @@ const DEFAULT_PORT = Number.parseInt(
 const STATE_DIR = join(homedir(), ".chrome-devtools-axi");
 const PID_FILE = join(STATE_DIR, "bridge.pid");
 
+export interface BridgeConfigSnapshot {
+  browserUrl: string | null;
+  userDataDir: string | null;
+  headed: boolean;
+  chromeArgs: string[];
+}
+
 export interface BridgeContentBlock {
   type: string;
   text?: string;
@@ -64,9 +71,24 @@ export async function isBridgeClientConnected(
   }
 }
 
+export function getBridgeConfigSnapshot(
+  env: NodeJS.ProcessEnv = process.env,
+): BridgeConfigSnapshot {
+  const rawChromeArgs = env.CHROME_DEVTOOLS_AXI_CHROME_ARGS?.trim() ?? "";
+  return {
+    browserUrl: env.CHROME_DEVTOOLS_AXI_BROWSER_URL ?? null,
+    userDataDir: env.CHROME_DEVTOOLS_AXI_USER_DATA_DIR ?? null,
+    headed: env.CHROME_DEVTOOLS_AXI_HEADED === "1",
+    chromeArgs: rawChromeArgs ? rawChromeArgs.split(/\s+/) : [],
+  };
+}
+
 function writePidFile(port: number): void {
   mkdirSync(STATE_DIR, { recursive: true });
-  writeFileSync(PID_FILE, JSON.stringify({ pid: process.pid, port }));
+  writeFileSync(
+    PID_FILE,
+    JSON.stringify({ pid: process.pid, port, config: getBridgeConfigSnapshot() }),
+  );
 }
 
 function removePidFile(): void {

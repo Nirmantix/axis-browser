@@ -1,5 +1,13 @@
 import { describe, expect, it, beforeEach, afterEach } from "vitest";
-import { buildTransportArgs, extractToolText, getErrorMessage, isBridgeClientConnected, parseBridgeCallPayload, resolveBridgeScript } from "../src/bridge.js";
+import {
+  buildTransportArgs,
+  extractToolText,
+  getBridgeConfigSnapshot,
+  getErrorMessage,
+  isBridgeClientConnected,
+  parseBridgeCallPayload,
+  resolveBridgeScript,
+} from "../src/bridge.js";
 
 describe("extractToolText", () => {
   it("joins text blocks and ignores non-text content", () => {
@@ -139,6 +147,35 @@ describe("buildTransportArgs", () => {
     const args = buildTransportArgs();
     expect(args).toContain("--browserUrl=http://127.0.0.1:9222");
     expect(args).not.toContain("--userDataDir=/path/to/.chrome-profile");
+  });
+});
+
+describe("getBridgeConfigSnapshot", () => {
+  it("normalizes the current bridge configuration from env", () => {
+    const config = getBridgeConfigSnapshot({
+      CHROME_DEVTOOLS_AXI_BROWSER_URL: "http://127.0.0.1:9222",
+      CHROME_DEVTOOLS_AXI_USER_DATA_DIR: "/tmp/profile",
+      CHROME_DEVTOOLS_AXI_HEADED: "1",
+      CHROME_DEVTOOLS_AXI_CHROME_ARGS: "  --flag-a\t--flag-b\n--flag-c  ",
+    });
+
+    expect(config).toEqual({
+      browserUrl: "http://127.0.0.1:9222",
+      userDataDir: "/tmp/profile",
+      headed: true,
+      chromeArgs: ["--flag-a", "--flag-b", "--flag-c"],
+    });
+  });
+
+  it("defaults optional bridge config to null / false / empty list", () => {
+    const config = getBridgeConfigSnapshot({});
+
+    expect(config).toEqual({
+      browserUrl: null,
+      userDataDir: null,
+      headed: false,
+      chromeArgs: [],
+    });
   });
 });
 

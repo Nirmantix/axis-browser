@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { AxiError } from "axi-sdk-js";
-import { CdpError, mapErrorMessage } from "../src/client.js";
+import { bridgeConfigsMatch, CdpError, mapErrorMessage } from "../src/client.js";
 
 describe("CdpError", () => {
   it("uses the shared axi-sdk-js error contract", () => {
@@ -31,5 +31,50 @@ describe("mapErrorMessage", () => {
 
     expect(error.code).toBe("BROWSER_ERROR");
     expect(error.message).toBe("Page crashed");
+  });
+});
+
+describe("bridgeConfigsMatch", () => {
+  it("matches identical bridge fingerprints", () => {
+    const current = {
+      browserUrl: "http://127.0.0.1:9222",
+      userDataDir: null,
+      headed: false,
+      chromeArgs: ["--flag-a"],
+    };
+
+    expect(bridgeConfigsMatch({ ...current }, current)).toBe(true);
+  });
+
+  it("rejects stale bridge configs when the browser target changes", () => {
+    const current = {
+      browserUrl: "http://127.0.0.1:9222",
+      userDataDir: null,
+      headed: false,
+      chromeArgs: [],
+    };
+
+    expect(
+      bridgeConfigsMatch(
+        {
+          browserUrl: null,
+          userDataDir: null,
+          headed: false,
+          chromeArgs: [],
+        },
+        current,
+      ),
+    ).toBe(false);
+  });
+
+  it("rejects pid files without saved bridge config", () => {
+    const current = {
+      browserUrl: null,
+      userDataDir: null,
+      headed: false,
+      chromeArgs: [],
+    };
+
+    expect(bridgeConfigsMatch(undefined, current)).toBe(false);
   });
 });

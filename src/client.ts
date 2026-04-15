@@ -8,7 +8,11 @@ import { join } from "node:path";
 import { homedir } from "node:os";
 import { request } from "node:http";
 import { AxiError } from "axi-sdk-js";
-import { resolveBridgeScript } from "./bridge.js";
+import {
+  getBridgeConfigSnapshot,
+  resolveBridgeScript,
+  type BridgeConfigSnapshot,
+} from "./bridge.js";
 
 const STATE_DIR = join(homedir(), ".chrome-devtools-axi");
 const PID_FILE = join(STATE_DIR, "bridge.pid");
@@ -36,6 +40,7 @@ export class CdpError extends AxiError {
 interface PidInfo {
   pid: number;
   port: number;
+  config?: BridgeConfigSnapshot;
 }
 
 function readPidFile(): PidInfo | null {
@@ -139,6 +144,21 @@ function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
 }
 
+export function bridgeConfigsMatch(
+  existing: BridgeConfigSnapshot | undefined,
+  current: BridgeConfigSnapshot,
+): boolean {
+  if (!existing) return false;
+
+  return (
+    existing.browserUrl === current.browserUrl &&
+    existing.userDataDir === current.userDataDir &&
+    existing.headed === current.headed &&
+    existing.chromeArgs.length === current.chromeArgs.length &&
+    existing.chromeArgs.every((value, index) => value === current.chromeArgs[index])
+  );
+}
+
 /**
  * Ensure the bridge is running, starting it if needed. Returns the port.
  */
@@ -147,11 +167,15 @@ export async function ensureBridge(): Promise<number> {
     process.env.CHROME_DEVTOOLS_AXI_PORT ?? String(DEFAULT_PORT),
     10,
   );
+  const currentConfig = getBridgeConfigSnapshot();
 
   // Check existing bridge via PID file
   const pidInfo = readPidFile();
   if (pidInfo && isProcessAlive(pidInfo.pid)) {
-    if (await checkBridgeHealth(pidInfo.port)) {
+    if (
+      bridgeConfigsMatch(pidInfo.config, currentConfig) &&
+      (await checkBridgeHealth(pidInfo.port))
+    ) {
       return pidInfo.port;
     }
     try {
