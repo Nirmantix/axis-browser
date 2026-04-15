@@ -2,9 +2,9 @@
 
 <p align="center">
   <a href="https://github.com/Nirmantix/axis-browser/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/Nirmantix/axis-browser/ci.yml?style=flat-square&label=CI" /></a>
-  <a href="https://github.com/Nirmantix/axis-browser"><img alt="Fork" src="https://img.shields.io/badge/fork-Nirmantix%2Faxis--browser-black?style=flat-square" /></a>
+  <a href="https://github.com/Nirmantix/axis-browser"><img alt="Project" src="https://img.shields.io/badge/project-axis--browser-black?style=flat-square" /></a>
   <a href="#"><img alt="Platform" src="https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-blue?style=flat-square" /></a>
-  <a href="https://github.com/kunchenguid/chrome-devtools-axi"><img alt="Upstream" src="https://img.shields.io/badge/upstream-kunchenguid%2Fchrome--devtools--axi-blue?style=flat-square" /></a>
+  <a href="https://github.com/kunchenguid/chrome-devtools-axi"><img alt="Compatibility" src="https://img.shields.io/badge/compatibility-upstream--aligned-blue?style=flat-square" /></a>
 </p>
 
 <h3 align="center">Fast, token-efficient browser automation for shared Chrome and CDP workflows</h3>
@@ -17,9 +17,9 @@ It is built for the workflows that are awkward with heavier browser MCP stacks:
 - repeatable debugging with console, network, and snapshots
 - low-friction handoff between `axis-browser`, `axib`, Playwright, and other tooling
 
-Fine print:
+Compatibility notes:
 - maintained by `Nirmantix`
-- implemented as a minimal fork of [`kunchenguid/chrome-devtools-axi`](https://github.com/kunchenguid/chrome-devtools-axi) to preserve compatibility and keep upstream upgrades simple
+- tracks [`kunchenguid/chrome-devtools-axi`](https://github.com/kunchenguid/chrome-devtools-axi) closely so upgrades stay simple
 - installed commands: `axis-browser`, `axib`, and `chrome-devtools-axi`
 - npm package name remains upstream-compatible: `chrome-devtools-axi`
 
@@ -33,9 +33,9 @@ Axis Browser is designed around three practical goals:
 
 That combination is especially useful when you want a single browser window to be shared across manual work, agent inspection, and Playwright verification.
 
-## Why This Fork Exists
+## Shared-Session Reliability
 
-We created this fork because the original bridge reuse logic could silently keep using a stale MCP session even after the operator changed the target browser session.
+Axis Browser hardens the shared-Chrome workflow where a stale MCP session can survive longer than the browser target you meant to use.
 
 In practice that caused:
 - `axib pages` disagreeing with raw Chrome CDP targets
@@ -44,9 +44,9 @@ In practice that caused:
 
 This matters most in workflows that reuse a live Chrome on `http://127.0.0.1:9222`.
 
-## Fork Delta
+## What Axis Browser Adds
 
-This fork adds bridge target fingerprinting:
+Axis Browser adds bridge target fingerprinting and safer local bridge recovery:
 
 - the bridge writes its launch/session config into `~/.axis-browser/bridge.pid`
 - the bridge uses a dedicated `chrome-devtools-mcp` cache under `~/.axis-browser/npm-cache`
@@ -60,17 +60,17 @@ That fingerprint currently includes:
 - headed vs headless mode
 - forwarded Chrome args
 
-Detailed fork install and maintenance notes live here:
+Detailed install and maintenance notes live here:
 - [docs/axis-browser-fork-guide.md](docs/axis-browser-fork-guide.md)
 
-## Fork Policy
+## Maintenance Model
 
-This fork should stay intentionally small.
+Axis Browser should stay intentionally small and upgrade-friendly.
 
 - prefer upstream behavior whenever upstream is sufficient
-- carry fork-only patches only when they solve a concrete shared-session reliability problem
+- carry repo-specific patches only when they solve a concrete shared-session reliability problem
 - rebase or merge upstream updates regularly
-- remove fork-only code when upstream adopts an equivalent fix
+- remove repo-specific code when upstream adopts an equivalent fix
 
 For installation, usage, and long-term maintenance details, see:
 - [docs/axis-browser-fork-guide.md](docs/axis-browser-fork-guide.md)
@@ -106,14 +106,14 @@ snapshot:
 
 ## Install
 
-This fork does **not** publish a separate npm package under a new name.
+Axis Browser does **not** currently publish a separate npm package under a new name.
 
-The repo is branded as `Axis Browser`, but the executable and package identity remain compatible with upstream:
+The repo is branded as `Axis Browser`, but the executable and package identity stay upstream-compatible:
 - package name: `chrome-devtools-axi`
 - primary command: `axis-browser`
 - compatibility commands: `axib`, `chrome-devtools-axi`
 
-If you want to use the fork itself rather than upstream npm, see:
+If you want to use this repository rather than the upstream npm package, see:
 - [docs/axis-browser-fork-guide.md](docs/axis-browser-fork-guide.md)
 
 For quick evaluation of the upstream-compatible interface, you can still run:
@@ -123,10 +123,10 @@ npx -y chrome-devtools-axi --help
 ```
 
 Important:
-- that command resolves the upstream npm package, not this fork checkout
-- use this repo via `npm link`, a local build, or your own package workflow if you want the fork-specific bridge fix
+- that command resolves the upstream npm package, not this repository checkout
+- use this repo via `npm link`, a local build, or your own package workflow if you want the Axis Browser bridge fix
 
-When this fork is installed from this repository, it exposes all of these commands:
+When installed from this repository, it exposes all of these commands:
 - `axis-browser`
 - `axib`
 - `chrome-devtools-axi`
@@ -145,11 +145,11 @@ When this fork is installed from this repository, it exposes all of these comman
            │ stdio
            ▼
 ┌───────────────────────┐
-│  chrome-devtools-mcp  │  Headless Chrome via DevTools Protocol
+│  chrome-devtools-mcp  │  DevTools MCP transport to Chrome
 └───────────────────────┘
 ```
 
-- **Persistent bridge** — a detached process keeps the MCP session alive across commands, so Chrome doesn't restart every invocation
+- **Persistent bridge** — a detached process keeps the MCP session alive across commands, so the DevTools transport doesn't restart every invocation
 - **Auto-lifecycle** — the bridge starts on first command and writes a PID file to `~/.axis-browser/bridge.pid`
 - **Snapshot parsing** — accessibility tree snapshots are extracted and analyzed for interactive elements (`uid=` refs)
 - **TOON encoding** — structured metadata uses [TOON format](https://www.npmjs.com/package/@toon-format/toon) for compact, token-efficient output
