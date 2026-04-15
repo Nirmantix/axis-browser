@@ -256,13 +256,13 @@ examples:
   EOF`,
 
   start: `usage: axis-browser start
-Start the bridge server (launches headless Chrome).
+Start the bridge server.
 
 examples:
   axis-browser start`,
 
   stop: `usage: axis-browser stop
-Stop the bridge server and close the browser.
+Stop the bridge server.
 
 examples:
   axis-browser stop`,

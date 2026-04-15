@@ -145,11 +145,11 @@ When this fork is installed from this repository, it exposes all of these comman
            │ stdio
            ▼
 ┌───────────────────────┐
-│  chrome-devtools-mcp  │  Headless Chrome via DevTools Protocol
+│  chrome-devtools-mcp  │  DevTools MCP transport to Chrome
 └───────────────────────┘
 ```
 
-- **Persistent bridge** — a detached process keeps the MCP session alive across commands, so Chrome doesn't restart every invocation
+- **Persistent bridge** — a detached process keeps the MCP session alive across commands, so the DevTools transport doesn't restart every invocation
 - **Auto-lifecycle** — the bridge starts on first command and writes a PID file to `~/.axis-browser/bridge.pid`
 - **Snapshot parsing** — accessibility tree snapshots are extracted and analyzed for interactive elements (`uid=` refs)
 - **TOON encoding** — structured metadata uses [TOON format](https://www.npmjs.com/package/@toon-format/toon) for compact, token-efficient output
