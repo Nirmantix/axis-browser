@@ -7,16 +7,31 @@
   <a href="https://github.com/kunchenguid/chrome-devtools-axi"><img alt="Upstream" src="https://img.shields.io/badge/upstream-kunchenguid%2Fchrome--devtools--axi-blue?style=flat-square" /></a>
 </p>
 
-<h3 align="center">Nirmantix fork of chrome-devtools-axi for more reliable shared Chrome/CDP attachment</h3>
+<h3 align="center">Fast, token-efficient browser automation for shared Chrome and CDP workflows</h3>
 
-`Axis Browser` is the `Nirmantix` fork of [`kunchenguid/chrome-devtools-axi`](https://github.com/kunchenguid/chrome-devtools-axi).
+`Axis Browser` is a fast CLI for browser automation, debugging, and shared-session Chrome workflows.
 
-It keeps the original CLI and package behavior, but carries a targeted fix for persistent bridge reuse when attaching to an already-running Chrome session via `CHROME_DEVTOOLS_AXI_BROWSER_URL`.
+It is built for the workflows that are awkward with heavier browser MCP stacks:
+- shared Chrome on `9222`
+- token-efficient page inspection
+- repeatable debugging with console, network, and snapshots
+- low-friction handoff between `axis-browser`, `axib`, Playwright, and other tooling
 
-Important:
-- the repository is branded as `Axis Browser`
-- the package and binary names remain upstream-compatible: `chrome-devtools-axi` and `axib`
-- this fork is intentionally small and is meant to stay close to upstream
+Fine print:
+- maintained by `Nirmantix`
+- implemented as a minimal fork of [`kunchenguid/chrome-devtools-axi`](https://github.com/kunchenguid/chrome-devtools-axi) to preserve compatibility and keep upstream upgrades simple
+- installed commands: `axis-browser`, `axib`, and `chrome-devtools-axi`
+- npm package name remains upstream-compatible: `chrome-devtools-axi`
+
+## Why Axis Browser
+
+Axis Browser is designed around three practical goals:
+
+- fast feedback while debugging live browser state
+- low token overhead for agent-driven workflows
+- stable attachment to already-running Chrome sessions
+
+That combination is especially useful when you want a single browser window to be shared across manual work, agent inspection, and Playwright verification.
 
 ## Why This Fork Exists
 
@@ -46,6 +61,19 @@ That fingerprint currently includes:
 Detailed fork install and maintenance notes live here:
 - [docs/axis-browser-fork-guide.md](docs/axis-browser-fork-guide.md)
 
+## Fork Policy
+
+This fork should stay intentionally small.
+
+- prefer upstream behavior whenever upstream is sufficient
+- carry fork-only patches only when they solve a concrete shared-session reliability problem
+- rebase or merge upstream updates regularly
+- remove fork-only code when upstream adopts an equivalent fix
+
+For installation, usage, and long-term maintenance details, see:
+- [docs/axis-browser-fork-guide.md](docs/axis-browser-fork-guide.md)
+- [docs/vibe-coding-browser-workflow.md](docs/vibe-coding-browser-workflow.md)
+
 - **Token-efficient** — TOON-encoded output cuts token usage ~40% vs raw JSON
 - **Combined operations** — one command navigates, captures, and suggests next steps
 - **Contextual suggestions** — every response includes actionable next-step hints
@@ -53,7 +81,7 @@ Detailed fork install and maintenance notes live here:
 ## Quick Start
 
 ```sh
-$ chrome-devtools-axi open https://example.com
+$ axis-browser open https://example.com
 page: {title: "Example Domain", url: "https://example.com", refs: 1}
 snapshot:
 RootWebArea "Example Domain"
@@ -61,9 +89,9 @@ RootWebArea "Example Domain"
   paragraph "This domain is for use in illustrative examples..."
   uid=1 link "More information..."
 help[1]:
-  Run `chrome-devtools-axi click @1` to click the "More information..." link
+  Run `axis-browser click @1` to click the "More information..." link
 
-$ chrome-devtools-axi click @1
+$ axis-browser click @1
 page: {title: "IANA — IANA-Managed Reserved Domains", refs: 12}
 snapshot:
 ...
@@ -75,23 +103,32 @@ This fork does **not** publish a separate npm package under a new name.
 
 The repo is branded as `Axis Browser`, but the executable and package identity remain compatible with upstream:
 - package name: `chrome-devtools-axi`
-- binary name: `chrome-devtools-axi`
-- common local alias: `axib`
+- primary command: `axis-browser`
+- compatibility commands: `axib`, `chrome-devtools-axi`
 
 If you want to use the fork itself rather than upstream npm, see:
 - [docs/axis-browser-fork-guide.md](docs/axis-browser-fork-guide.md)
 
-**Tell your agent:**
+For quick evaluation of the upstream-compatible interface, you can still run:
 
 ```
-Execute `npx -y chrome-devtools-axi` to get browser automation tools.
+npx -y chrome-devtools-axi --help
 ```
+
+Important:
+- that command resolves the upstream npm package, not this fork checkout
+- use this repo via `npm link`, a local build, or your own package workflow if you want the fork-specific bridge fix
+
+When this fork is installed from this repository, it exposes all of these commands:
+- `axis-browser`
+- `axib`
+- `chrome-devtools-axi`
 
 ## How It Works
 
 ```
 ┌───────────────────────┐
-│  chrome-devtools-axi  │  CLI — parse args, format output
+│    Axis Browser       │  CLI — parse args, format output
 └──────────┬────────────┘
            │ HTTP (localhost:9224)
            ▼
@@ -128,8 +165,8 @@ Execute `npx -y chrome-devtools-axi` to get browser automation tools.
 `eval` wraps plain input as `() => (<expr>)` before sending it to DevTools. For multi-statement logic, pass an arrow function, `function`, or IIFE yourself.
 
 ```sh
-chrome-devtools-axi eval "document.title"
-chrome-devtools-axi eval "(() => { const rows = [...document.querySelectorAll('tr')]; return rows.map((row) => row.textContent) })()"
+axis-browser eval "document.title"
+axis-browser eval "(() => { const rows = [...document.querySelectorAll('tr')]; return rows.map((row) => row.textContent) })()"
 ```
 
 ### Interaction

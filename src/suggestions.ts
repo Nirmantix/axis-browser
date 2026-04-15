@@ -9,7 +9,7 @@ export interface SuggestionContext {
 export function getSuggestions(ctx: SuggestionContext): string[] {
   // Commands without auto-snapshot — suggest viewing page state
   if (ctx.command === "wait" || ctx.command === "eval") {
-    return ["Run `chrome-devtools-axi snapshot` to see current page state"];
+    return ["Run `axis-browser snapshot` to see current page state"];
   }
 
   const refs = ctx.snapshot ? extractRefs(ctx.snapshot) : [];
@@ -25,10 +25,10 @@ export function getSuggestions(ctx: SuggestionContext): string[] {
     );
     if (submitBtn) {
       lines.push(
-        `Run \`chrome-devtools-axi click @${submitBtn.ref}\` to click "${submitBtn.label}"`,
+        `Run \`axis-browser click @${submitBtn.ref}\` to click "${submitBtn.label}"`,
       );
     } else {
-      lines.push("Run `chrome-devtools-axi press Enter` to submit the form");
+      lines.push("Run `axis-browser press Enter` to submit the form");
     }
   }
 
@@ -37,7 +37,7 @@ export function getSuggestions(ctx: SuggestionContext): string[] {
     const inp = inputs[0];
     const label = inp.label ? `the "${inp.label}" field` : "the input field";
     lines.push(
-      `Run \`chrome-devtools-axi fill @${inp.ref} "text"\` to fill ${label}`,
+      `Run \`axis-browser fill @${inp.ref} "text"\` to fill ${label}`,
     );
   }
 
@@ -52,7 +52,7 @@ export function getSuggestions(ctx: SuggestionContext): string[] {
     if (btn && !lines.some((l) => l.includes(`@${btn.ref}`))) {
       const label = btn.label ? `"${btn.label}" ` : "";
       lines.push(
-        `Run \`chrome-devtools-axi click @${btn.ref}\` to click the ${label}button`,
+        `Run \`axis-browser click @${btn.ref}\` to click the ${label}button`,
       );
     }
   }
@@ -61,18 +61,18 @@ export function getSuggestions(ctx: SuggestionContext): string[] {
   if (links.length > 0) {
     const link = links[0];
     lines.push(
-      `Run \`chrome-devtools-axi click @${link.ref}\` to click the "${link.label}" link`,
+      `Run \`axis-browser click @${link.ref}\` to click the "${link.label}" link`,
     );
   }
 
   // Suggest scrolling if page has many elements
   if (refs.length > 5) {
-    lines.push("Run `chrome-devtools-axi scroll down` to scroll down");
+    lines.push("Run `axis-browser scroll down` to scroll down");
   }
 
   // Teach eval syntax — use IIFE for multi-statement logic
   lines.push(
-    'Use `chrome-devtools-axi eval <expr>` for JS expressions. For multi-statement code, wrap in an IIFE: `eval "(() => { ...; return result })()"`',
+    'Use `axis-browser eval <expr>` for JS expressions. For multi-statement code, wrap in an IIFE: `eval "(() => { ...; return result })()"`',
   );
 
   return lines;

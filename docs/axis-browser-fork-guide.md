@@ -10,7 +10,7 @@ Original upstream:
 
 ## What This Fork Changes
 
-This fork keeps the original package and CLI behavior, but adds one practical fix for shared Chrome/CDP workflows:
+This fork keeps the upstream package name for compatibility, but exposes `axis-browser`, `axib`, and `chrome-devtools-axi` as installed commands and adds one practical fix for shared Chrome/CDP workflows:
 
 - the bridge now stores its launch/session fingerprint in `~/.chrome-devtools-axi/bridge.pid`
 - the client compares the saved fingerprint with the current environment
@@ -30,7 +30,7 @@ This was added because the original bridge reuse logic could keep talking to an 
 ## Who Should Use This Fork
 
 Use this fork if you:
-- rely on `axib` or `chrome-devtools-axi` against a persistent Chrome instance on `9222`
+- rely on `axis-browser`, `axib`, or `chrome-devtools-axi` against a persistent Chrome instance on `9222`
 - switch between isolated and shared browser sessions
 - need more reliable reuse of an already-open Chrome session across projects
 
@@ -49,16 +49,30 @@ npm install
 npm run build
 ```
 
-Run directly:
+Run directly without changing your global PATH:
 
 ```bash
 node dist/bin/chrome-devtools-axi.js --help
 node dist/bin/chrome-devtools-axi.js pages
 ```
 
-### Option 2: Make This Fork Your Active Global `axib`
+If you want the commands available globally from this checkout, link the package:
 
-If you already use `axib` from a global install and want this fork to be the active binary, point your existing wrapper or symlink at the built CLI.
+```bash
+npm link
+```
+
+Then the package exposes:
+
+```bash
+axis-browser --help
+axib pages
+chrome-devtools-axi pages
+```
+
+### Option 2: Make This Fork Your Active Global Axis Browser Install
+
+If you already use `axis-browser` or `axib` from a global install and want this fork to be the active binary, point your existing wrapper or symlink at the built CLI.
 
 Example on macOS/Linux:
 
@@ -66,7 +80,11 @@ Example on macOS/Linux:
 ln -snf /absolute/path/to/axis-browser/dist/bin/chrome-devtools-axi.js ~/.bun/bin/chrome-devtools-axi
 ```
 
-If your `axib` shim points to `~/.bun/bin/chrome-devtools-axi`, that is enough.
+If your `axib` shim points to `~/.bun/bin/chrome-devtools-axi`, that is enough for `axib`.
+
+If you also want `axis-browser` available as a first-class command, either:
+- reinstall/link this fork so your package manager creates all declared bin shims, or
+- create an additional wrapper that points at the same built CLI target
 
 Verify:
 
