@@ -75,7 +75,6 @@ Axis Browser should stay intentionally small and upgrade-friendly.
 For installation, usage, and long-term maintenance details, see:
 - [docs/axis-browser-fork-guide.md](docs/axis-browser-fork-guide.md)
 - [docs/vibe-coding-browser-workflow.md](docs/vibe-coding-browser-workflow.md)
-- [maintainance.md](maintainance.md)
 
 Recommended workflow guide:
 - [docs/vibe-coding-browser-workflow.md](docs/vibe-coding-browser-workflow.md) explains the practical "best results" setup for using Axis Browser with a shared Chrome session, `agent-browser` for visual checks, and Playwright CLI for low-token verification.

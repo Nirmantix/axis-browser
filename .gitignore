@@ -2,3 +2,7 @@ node_modules/
 dist/
 .desloppify/
 .DS_Store
+
+# Internal-only local maintenance and automation files
+maintainance.md
+.airlock/
