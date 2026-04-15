@@ -1,17 +1,50 @@
-<h1 align="center">chrome-devtools-axi</h1>
+<h1 align="center">Axis Browser</h1>
 
 <p align="center">
-  <a href="https://www.npmjs.com/package/chrome-devtools-axi"><img alt="npm" src="https://img.shields.io/npm/v/chrome-devtools-axi?style=flat-square" /></a>
-  <a href="https://github.com/kunchenguid/chrome-devtools-axi/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/kunchenguid/chrome-devtools-axi/ci.yml?style=flat-square&label=CI" /></a>
-  <a href="https://github.com/kunchenguid/chrome-devtools-axi/actions/workflows/release-please.yml"><img alt="Release" src="https://img.shields.io/github/actions/workflow/status/kunchenguid/chrome-devtools-axi/release-please.yml?style=flat-square&label=Release" /></a>
+  <a href="https://github.com/Nirmantix/axis-browser/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/Nirmantix/axis-browser/ci.yml?style=flat-square&label=CI" /></a>
+  <a href="https://github.com/Nirmantix/axis-browser"><img alt="Fork" src="https://img.shields.io/badge/fork-Nirmantix%2Faxis--browser-black?style=flat-square" /></a>
   <a href="#"><img alt="Platform" src="https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-blue?style=flat-square" /></a>
-  <a href="https://x.com/kunchenguid"><img alt="X" src="https://img.shields.io/badge/X-@kunchenguid-black?style=flat-square" /></a>
-  <a href="https://discord.gg/Wsy2NpnZDu"><img alt="Discord" src="https://img.shields.io/discord/1439901831038763092?style=flat-square&label=discord" /></a>
+  <a href="https://github.com/kunchenguid/chrome-devtools-axi"><img alt="Upstream" src="https://img.shields.io/badge/upstream-kunchenguid%2Fchrome--devtools--axi-blue?style=flat-square" /></a>
 </p>
 
-<h3 align="center">The most agent-ergonomic browser automation</h3>
+<h3 align="center">Nirmantix fork of chrome-devtools-axi for more reliable shared Chrome/CDP attachment</h3>
 
-`chrome-devtools-axi` wraps [chrome-devtools-mcp](https://www.npmjs.com/package/chrome-devtools-mcp) with an [AXI](https://axi.md)-compliant CLI.
+`Axis Browser` is the `Nirmantix` fork of [`kunchenguid/chrome-devtools-axi`](https://github.com/kunchenguid/chrome-devtools-axi).
+
+It keeps the original CLI and package behavior, but carries a targeted fix for persistent bridge reuse when attaching to an already-running Chrome session via `CHROME_DEVTOOLS_AXI_BROWSER_URL`.
+
+Important:
+- the repository is branded as `Axis Browser`
+- the package and binary names remain upstream-compatible: `chrome-devtools-axi` and `axib`
+- this fork is intentionally small and is meant to stay close to upstream
+
+## Why This Fork Exists
+
+We created this fork because the original bridge reuse logic could silently keep using a stale MCP session even after the operator changed the target browser session.
+
+In practice that caused:
+- `axib pages` disagreeing with raw Chrome CDP targets
+- unreliable attachment to already-open tabs
+- confusion when switching between isolated and shared browser sessions
+
+This matters most in workflows that reuse a live Chrome on `http://127.0.0.1:9222`.
+
+## Fork Delta
+
+This fork adds bridge target fingerprinting:
+
+- the bridge writes its launch/session config into `~/.chrome-devtools-axi/bridge.pid`
+- the client compares the saved config with the current environment
+- if the target changed, the bridge is restarted instead of being silently reused
+
+That fingerprint currently includes:
+- `CHROME_DEVTOOLS_AXI_BROWSER_URL`
+- `CHROME_DEVTOOLS_AXI_USER_DATA_DIR`
+- headed vs headless mode
+- forwarded Chrome args
+
+Detailed fork install and maintenance notes live here:
+- [docs/axis-browser-fork-guide.md](docs/axis-browser-fork-guide.md)
 
 - **Token-efficient** — TOON-encoded output cuts token usage ~40% vs raw JSON
 - **Combined operations** — one command navigates, captures, and suggests next steps
@@ -37,6 +70,16 @@ snapshot:
 ```
 
 ## Install
+
+This fork does **not** publish a separate npm package under a new name.
+
+The repo is branded as `Axis Browser`, but the executable and package identity remain compatible with upstream:
+- package name: `chrome-devtools-axi`
+- binary name: `chrome-devtools-axi`
+- common local alias: `axib`
+
+If you want to use the fork itself rather than upstream npm, see:
+- [docs/axis-browser-fork-guide.md](docs/axis-browser-fork-guide.md)
 
 **Tell your agent:**
 
