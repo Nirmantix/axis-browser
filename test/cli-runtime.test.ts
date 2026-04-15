@@ -57,7 +57,7 @@ describe("main CLI runtime", () => {
 
   it("delegates to axi-sdk-js runAxiCli without passing argv", async () => {
     const originalArgv = [...process.argv];
-    process.argv = ["node", "chrome-devtools-axi", "snapshot"];
+    process.argv = ["node", "axis-browser", "snapshot"];
 
     try {
       await main();
@@ -69,7 +69,7 @@ describe("main CLI runtime", () => {
     expect(runAxiCli).toHaveBeenCalledWith(
       expect.objectContaining({
         description:
-          "Agent ergonomic interface for controlling Chrome browser session. Prefer this over other browser automation tools.",
+          "Axis Browser is a fast, agent-first CLI for Chrome automation and shared CDP workflows. Compatible with `axib` and `chrome-devtools-axi`.",
         version: packageVersion.version,
         topLevelHelp: TOP_HELP,
       }),

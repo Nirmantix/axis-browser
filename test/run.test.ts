@@ -58,10 +58,10 @@ describe("no-args output", () => {
 
     const output = String(write.mock.calls[0]?.[0]);
     expect(output).toContain(
-      "Run `chrome-devtools-axi open <url>` to start browsing",
+      "Run `axis-browser open <url>` to start browsing",
     );
     expect(output).toContain("help[1]:");
-    expect(output).not.toContain("chrome-devtools-axi run");
+    expect(output).not.toContain("axis-browser run");
   });
 });
 

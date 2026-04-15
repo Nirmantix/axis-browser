@@ -1,5 +1,5 @@
 /**
- * HTTP client for the chrome-devtools-axi bridge + bridge lifecycle management.
+ * HTTP client for the Axis Browser bridge + bridge lifecycle management.
  */
 
 import { spawn } from "node:child_process";
@@ -14,6 +14,7 @@ import {
   type BridgeConfigSnapshot,
 } from "./bridge.js";
 
+// Keep the upstream state directory for painless upgrades and zero migration work.
 const STATE_DIR = join(homedir(), ".chrome-devtools-axi");
 const PID_FILE = join(STATE_DIR, "bridge.pid");
 const DEFAULT_PORT = 9224;
@@ -244,7 +245,7 @@ export async function callTool(
 export function mapErrorMessage(message: string): CdpError {
   if (message.includes("ECONNREFUSED") || message.includes("ECONNRESET")) {
     return new CdpError("Bridge is not running", "BRIDGE_NOT_READY", [
-      "Run `chrome-devtools-axi open <url>` — the bridge starts automatically",
+      "Run `axis-browser open <url>` — the bridge starts automatically",
     ]);
   }
   if (
@@ -252,12 +253,12 @@ export function mapErrorMessage(message: string): CdpError {
     (message.includes("not found") || message.includes("invalid"))
   ) {
     return new CdpError(message, "REF_NOT_FOUND", [
-      "Run `chrome-devtools-axi snapshot` to see available elements and their @uid refs",
+      "Run `axis-browser snapshot` to see available elements and their @uid refs",
     ]);
   }
   if (message.includes("timeout") || message.includes("timed out")) {
     return new CdpError(message, "TIMEOUT", [
-      "Run `chrome-devtools-axi snapshot` to see current page state",
+      "Run `axis-browser snapshot` to see current page state",
     ]);
   }
   // Try to parse JSON error
@@ -265,7 +266,7 @@ export function mapErrorMessage(message: string): CdpError {
     const parsed = JSON.parse(message);
     if (parsed.error) {
       return new CdpError(parsed.error, "BROWSER_ERROR", [
-        "Run `chrome-devtools-axi snapshot` to see current page state",
+        "Run `axis-browser snapshot` to see current page state",
       ]);
     }
   } catch {

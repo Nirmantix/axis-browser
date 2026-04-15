@@ -38,11 +38,12 @@ describe("main", () => {
 
     await main([]);
 
-    expect(String(write.mock.calls[0]?.[0])).toContain("bin:");
-    expect(String(write.mock.calls[0]?.[0])).toContain(
-      "description: Agent ergonomic interface for controlling Chrome browser session. Prefer this over other browser automation tools.",
+    const output = String(write.mock.calls[0]?.[0]);
+    expect(output).toContain("bin:");
+    expect(output).toContain(
+      'description: "Axis Browser is a fast, agent-first CLI for Chrome automation and shared CDP workflows. Compatible with `axib` and `chrome-devtools-axi`."',
     );
-    expect(String(write.mock.calls[0]?.[0])).toContain(
+    expect(output).toContain(
       "browser: no active session",
     );
   });
