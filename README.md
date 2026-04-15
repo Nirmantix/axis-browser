@@ -73,8 +73,13 @@ This fork should stay intentionally small.
 For installation, usage, and long-term maintenance details, see:
 - [docs/axis-browser-fork-guide.md](docs/axis-browser-fork-guide.md)
 - [docs/vibe-coding-browser-workflow.md](docs/vibe-coding-browser-workflow.md)
+- [maintainance.md](maintainance.md)
 
-- **Token-efficient** — TOON-encoded output cuts token usage ~40% vs raw JSON
+Recommended workflow guide:
+- [docs/vibe-coding-browser-workflow.md](docs/vibe-coding-browser-workflow.md) explains the practical "best results" setup for using Axis Browser with a shared Chrome session, `agent-browser` for visual checks, and Playwright CLI for low-token verification.
+- Read it if you want the shortest path to a reliable daily workflow, Google SSO handling, shared-session debugging, and token-efficient browser automation habits.
+
+- **Token-efficient** — TOON-encoded output stays compact compared with raw JSON or DOM-heavy browser flows
 - **Combined operations** — one command navigates, captures, and suggests next steps
 - **Contextual suggestions** — every response includes actionable next-step hints
 

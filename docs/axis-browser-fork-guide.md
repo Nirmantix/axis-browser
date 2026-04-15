@@ -189,10 +189,10 @@ import { chromium } from "playwright";
   const contexts = browser.contexts();
   const pages = contexts.flatMap((context) => context.pages());
 
-  let page = pages.find((p) => /ui-hermes\.clawhost\.ing/.test(p.url()));
+  let page = pages.find((p) => /example\.com|localhost:3000/.test(p.url()));
   if (!page) {
     for (const candidate of pages) {
-      if (/Open WebUI/i.test(await candidate.title())) {
+      if (/Dashboard|App|Admin/i.test(await candidate.title())) {
         page = candidate;
         break;
       }
@@ -264,48 +264,42 @@ Baseline sync flow:
 
 ```bash
 git checkout main
+git fetch origin
 git fetch upstream --tags
+git checkout -b codex/upstream-sync-YYYYMMDD
 git merge upstream/main
-git push origin main
 ```
 
-If you prefer rebasing:
-
-```bash
-git checkout main
-git fetch upstream --tags
-git rebase upstream/main
-git push --force-with-lease origin main
-```
-
-Use merge if you want a simpler history and less force-push risk.
-
-Use rebase only if you actively want a linear history and understand the tradeoff.
+Do not perform routine upstream maintenance directly on `main`.
+Merge upstream into a short-lived branch, validate the result, and open a PR back into `main`.
 
 ## Carrying The Patch Forward
 
 When upstream releases new changes:
 
-1. update local `main` from `upstream/main`
-2. create or refresh a branch for your fork-specific work
-3. run tests
-4. rebuild
-5. push to `origin`
+1. fetch `upstream/main`
+2. create or refresh a short-lived maintenance branch
+3. merge upstream into that branch
+4. reapply or adjust fork-specific behavior only if still needed
+5. run tests
+6. rebuild
+7. push the branch and open a PR into `main`
 
 Example:
 
 ```bash
 git checkout main
+git fetch origin
 git fetch upstream --tags
+git checkout -b codex/upstream-sync-v0.1.16
 git merge upstream/main
-git push origin main
-
-git checkout -b codex/bridge-config-fingerprint-v2
 # reapply or adjust fork-specific changes if needed
 npm test
 npm run build
-git push -u origin codex/bridge-config-fingerprint-v2
+git push -u origin codex/upstream-sync-v0.1.16
 ```
+
+If the PR is merged, delete the short-lived branch locally and on GitHub.
 
 ## When To Drop The Fork Patch
 
