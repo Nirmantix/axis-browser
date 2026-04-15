@@ -2,13 +2,33 @@
 
 Use this file as the single source of truth for maintaining `Nirmantix/axis-browser` as a minimal fork of `kunchenguid/chrome-devtools-axi`.
 
+Canonical local repository path for this playbook:
+
+- `/Users/nites/Sites/ClawHost/chrome-devtools-axi`
+
+If this repository is renamed locally, any prompt that references the path above must be updated too.
+
 If a user says any variation of:
 - "update the fork from upstream"
 - "sync latest upstream changes"
 - "maintain axis-browser"
 - "check if upstream released anything new"
+- "Do or execute what's mentioned in /Users/nites/Sites/ClawHost/chrome-devtools-axi/maintainance.md"
 
 an agent should follow this document exactly.
+
+## Execution Contract
+
+When an agent is told to execute this file, the agent should:
+
+1. treat the request as permission to perform the full maintenance workflow
+2. check upstream live state before assuming an update exists
+3. create a short-lived branch instead of changing `main` directly
+4. preserve fork invariants and remove stale fork-only code when upstream makes it unnecessary
+5. run validation before declaring the update safe
+6. stop and report clearly if a required credential, GitHub permission, or network dependency blocks progress
+
+This file is meant to eliminate process ambiguity. It cannot force every IDE in existence to comply automatically, but it is written so a competent agent can execute the maintenance workflow end-to-end with minimal guesswork.
 
 ## Branch Policy
 
@@ -31,6 +51,17 @@ This repository is intentionally:
 - publicly branded as `Axis Browser`
 - still a GitHub fork of `kunchenguid/chrome-devtools-axi`
 - still upstream-compatible at the package level
+
+Current GitHub repository guardrails:
+
+- `main` is protected
+- pull requests are enabled
+- issues are enabled
+- wiki is disabled
+- projects is disabled
+- discussions is disabled
+- delete branch on merge is enabled
+- `Kilo Code Review` is currently the required merge check on `main`
 
 Non-negotiable compatibility rules:
 
@@ -87,6 +118,14 @@ git fetch origin
 git fetch upstream --tags
 ```
 
+Also compare upstream release tags with the local fork state. At minimum, inspect:
+
+```bash
+git ls-remote --tags upstream
+git tag --sort=-version:refname | head -20
+git log --oneline --decorate -20 upstream/main
+```
+
 ### 2. Check whether upstream actually changed
 
 Use these commands:
@@ -98,6 +137,12 @@ git tag --sort=-version:refname | head
 ```
 
 If there are no meaningful upstream commits ahead of `origin/main`, stop and report that no maintenance update is needed.
+
+An agent should also explicitly look for:
+
+- new upstream tags since the last maintenance pass
+- release notes or changelog entries that mention CLI behavior, bridge/session behavior, env vars, or install flow
+- deleted or renamed files in `src/`, `test/`, or workflow config
 
 ### 3. Create a short-lived update branch
 
@@ -119,9 +164,13 @@ Review upstream changes in these areas first:
 - `src/cli.ts`
 - `src/client.ts`
 - `src/bridge.ts`
+- `src/main.ts`
 - `src/run.ts`
 - `src/hooks.ts`
+- `src/suggestions.ts`
 - `test/`
+- `README.md`
+- `docs/`
 - `.github/workflows/`
 - release notes / tags if available
 
@@ -137,6 +186,9 @@ High-risk breaking-change checks:
 - upstream added new required dependencies
 - upstream dropped or renamed commands
 - upstream changed tests in ways that invalidate fork behavior
+- upstream changed install instructions in a way that breaks the fork guide
+- upstream changed generated output or help text in a way that breaks branded docs or tests
+- upstream changed the CLI entrypoint or `bin` mapping in a way that affects `axis-browser`
 
 ### 5. Merge upstream into the branch
 
@@ -162,6 +214,8 @@ After merging, verify these are still true:
 - runtime state directory is still `~/.chrome-devtools-axi`
 - bridge fingerprint logic still works
 - docs do not falsely claim the fork is a separate npm package
+- `README.md`, `docs/axis-browser-fork-guide.md`, and `maintainance.md` still match the actual repo state
+- no path-specific examples accidentally point to unrelated private projects or hosts
 
 ### 7. Check whether upstream made the fork patch obsolete
 
@@ -202,6 +256,12 @@ If validation fails:
 - rerun validation
 - do not leave known failures behind
 
+If the maintenance pass changes binaries, install instructions, or shell guidance, also verify the documented commands still make sense for:
+
+- `axis-browser`
+- `axib`
+- `chrome-devtools-axi`
+
 ### 9. Prepare the update for review
 
 Before opening or updating a PR, confirm:
@@ -219,6 +279,13 @@ git push -u origin HEAD
 
 Open a PR against `main`.
 
+The PR summary should clearly state:
+
+- whether upstream introduced breaking changes
+- whether the bridge fingerprint patch was preserved, modified, or removed
+- whether branding/docs changed
+- whether any manual user action is required after merge
+
 ### 10. Clean up after merge
 
 After the PR is merged:
@@ -233,6 +300,7 @@ When maintaining this fork, an agent must:
 
 - read this file first
 - read `docs/axis-browser-fork-guide.md`
+- read `README.md`
 - inspect actual upstream diff instead of guessing
 - preserve only intentional fork behavior
 - avoid unrelated feature work
@@ -271,3 +339,7 @@ After doing a maintenance pass, the agent should report:
 ## One-Sentence Trigger
 
 If the user says: "Follow `maintainance.md` and update Axis Browser from upstream safely," the agent should start the full maintenance workflow above without needing more process instructions.
+
+Equivalent trigger:
+
+- "Do or execute what's mentioned in /Users/nites/Sites/ClawHost/chrome-devtools-axi/maintainance.md"
