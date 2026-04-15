@@ -36,7 +36,7 @@
     "access": "public"
   },
   "scripts": {
-    "build": "tsc && chmod +x dist/bin/chrome-devtools-axi.js",
+    "build": "tsc && node -e \"const fs=require('fs');try{fs.chmodSync('dist/bin/chrome-devtools-axi.js',0o755)}catch(e){if(!e||e.code!=='ENOENT')throw e}\"",
     "dev": "tsx bin/chrome-devtools-axi.ts",
     "test": "vitest run",
     "test:watch": "vitest",

@@ -135,6 +135,15 @@ The baseline environment variable is:
 export CHROME_DEVTOOLS_AXI_BROWSER_URL=http://127.0.0.1:9222
 ```
 
+If you want a shorter branded shell command, add:
+
+```bash
+alias axis='axis-browser'
+```
+
+The examples below prefer `axis` as the recommended daily shorthand. If you do not
+define that alias, use `axis-browser` instead.
+
 ## Important Truth: `axis-init` Is Not A Built-In Command
 
 Commands like:
@@ -152,6 +161,34 @@ That means:
 - you can create them if they help your workflow
 - you should document them as local shell helpers, not as product features
 
+## Important Warning: `axis-init` Kills Browser Instances
+
+Most `axis-init` helper functions are intentionally destructive.
+
+They usually:
+- kill running instances of the browser binary you chose for automation
+- relaunch that browser with remote debugging on `9222`
+- reuse the same persistent browser profile directory
+
+That is convenient, but it also means `axis-init` is the wrong tool if that browser is
+also your main day-to-day browser with unrelated tabs open.
+
+## Recommended Browser Strategy
+
+Use a dedicated Chromium-based browser for Axis Browser automation.
+
+Good pattern:
+- keep your normal daily browser separate
+- use a second Chromium browser or a dedicated automation profile for `axis-init`
+
+Examples:
+- if Chrome is your normal browser, use Ulaa, Edge, Brave, or Chromium for Axis Browser
+- if Ulaa is your normal browser, use Chrome for Axis Browser
+
+The goal is simple:
+- `axis-init` can safely kill and relaunch the automation browser
+- your real daily browsing session is not disrupted
+
 ## Example Shared Chrome Setup
 
 ### macOS Example: Start Chrome With Remote Debugging
@@ -166,12 +203,55 @@ That means:
 
 That creates an isolated browser data directory and exposes Chrome DevTools on `9222`.
 
+### Alternative: Use A Secondary Chromium Browser
+
+If Chrome is your daily browser, point your automation workflow at another Chromium
+browser instead.
+
+Example using Ulaa:
+
+```bash
+"/Applications/Ulaa.app/Contents/MacOS/Ulaa" \
+  --remote-debugging-port=9222 \
+  --user-data-dir="$HOME/.axis-browser-data" \
+  --no-first-run
+```
+
+The same idea applies in reverse:
+- if Ulaa is your daily browser, use Chrome for Axis Browser automation
+- if Brave is your daily browser, use Chrome or Chromium for automation
+
+### Alternative: Reuse An Existing Secondary Browser Profile
+
+If you already keep a separate Chromium "Work" profile, you can launch that profile
+with remote debugging instead of using a brand-new `--user-data-dir`.
+
+Example using a Ulaa profile:
+
+```bash
+"/Applications/Ulaa.app/Contents/MacOS/Ulaa" \
+  --remote-debugging-port=9222 \
+  --profile-directory="Default Work"
+```
+
+To find the correct internal profile name:
+- open the browser in that profile
+- visit `chrome://version` or the browser-specific equivalent such as `ulaa://version`
+- copy the last segment from the reported Profile Path
+
+This pattern is useful when:
+- you want persistent cookies from a dedicated automation profile
+- you do not want Axis Browser automation mixed into your main personal browser profile
+- you are already using a non-default Chromium browser just for automation work
+
 ### Optional Shell Helper
 
 If you want a convenience helper in your shell profile:
 
 ```bash
 axis-init() {
+  killall "Google Chrome" >/dev/null 2>&1 || true
+  pkill -9 -i "Google Chrome" >/dev/null 2>&1 || true
   pkill -f "chrome-devtools-mcp" >/dev/null 2>&1 || true
   mkdir -p "$HOME/.axis-browser-data"
 
@@ -185,15 +265,20 @@ axis-init() {
 }
 ```
 
+Warning:
+- this helper kills running instances of `Google Chrome` before relaunching
+- only use this pattern with a dedicated automation browser or profile
+- if you want the same pattern with Ulaa or another Chromium browser, swap the binary path and process name accordingly
+
 Then:
 
 ```bash
 axis-init
-axis-browser stop
-axis-browser pages
+axis stop
+axis pages
 ```
 
-Why `axis-browser stop`:
+Why `axis stop`:
 - the bridge is persistent
 - if it was started under a different target config, you want a clean restart
 
@@ -237,7 +322,7 @@ Again: this is a local helper, not a built-in `Axis Browser` command.
 ## Daily Workflow
 
 1. start your local dev server
-2. launch or reuse the shared Chrome session on `9222`
+2. launch or reuse the shared automation browser session on `9222`
 3. log in manually if needed
 4. use `Axis Browser` to inspect the current state
 5. use Playwright CLI to verify flows after code changes
@@ -249,23 +334,23 @@ Start with:
 
 ```bash
 export CHROME_DEVTOOLS_AXI_BROWSER_URL=http://127.0.0.1:9222
-axis-browser stop
-axis-browser pages
-axis-browser snapshot
+axis stop
+axis pages
+axis snapshot
 ```
 
 Useful commands:
 
 ```bash
-axis-browser open http://localhost:3000
-axis-browser snapshot
-axis-browser console
-axis-browser network
-axis-browser network-get 42
-axis-browser click @12
-axis-browser fill @18 hello@example.com
-axis-browser eval "document.title"
-axis-browser wait 2000
+axis open http://localhost:3000
+axis snapshot
+axis console
+axis network
+axis network-get 42
+axis click @12
+axis fill @18 hello@example.com
+axis eval "document.title"
+axis wait 2000
 ```
 
 ## Raw CDP Cross-Check
@@ -276,11 +361,11 @@ If tab discovery feels wrong, cross-check the browser directly:
 curl -s http://127.0.0.1:9222/json/list
 ```
 
-If raw CDP shows tabs that `axis-browser pages` does not:
+If raw CDP shows tabs that `axis pages` does not:
 
 ```bash
-axis-browser stop
-axis-browser pages
+axis stop
+axis pages
 ```
 
 That is the correct recovery path.
@@ -290,8 +375,8 @@ That is the correct recovery path.
 When a browser-based feature is broken:
 
 1. reproduce it with `Axis Browser`
-2. run `axis-browser console`
-3. run `axis-browser network`
+2. run `axis console`
+3. run `axis network`
 4. inspect the failing request or exception
 5. only then change code
 
@@ -372,10 +457,10 @@ A simple heuristic:
 
 Good shorthand for agents:
 
-- "axis-browser to http://localhost:3000"
-- "axis-browser snapshot"
-- "axis-browser console"
-- "axis-browser network"
+- "axis to http://localhost:3000"
+- "axis snapshot"
+- "axis console"
+- "axis network"
 - "write a Playwright CLI script and run it against the shared browser on 9222"
 - "use agent-browser for a visual check only"
 
@@ -390,16 +475,16 @@ Clear tool intent saves time and tokens.
 ### Bridge Feels Stale
 
 ```bash
-axis-browser stop
-axis-browser pages
+axis stop
+axis pages
 ```
 
 ### Tabs Do Not Match What You See
 
 ```bash
 curl -s http://127.0.0.1:9222/json/list
-axis-browser stop
-axis-browser pages
+axis stop
+axis pages
 ```
 
 ### Shared Login State Is Missing
@@ -412,7 +497,8 @@ axis-browser pages
 
 - close all tabs for that origin
 - retry in a fresh incognito window
-- retry with a fresh `axis-browser` bridge
+- retry with a fresh `axis` bridge
+- retry with a fresh `axis` bridge
 - use an isolated Playwright check to confirm the server accepts the credentials
 
 ## Final Recommendation

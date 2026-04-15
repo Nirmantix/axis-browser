@@ -24,7 +24,7 @@ The fingerprint currently includes:
 - forwarded Chrome args
 
 This was added because the original bridge reuse logic could keep talking to an old MCP session even after the operator changed `CHROME_DEVTOOLS_AXI_BROWSER_URL`. In practice that caused:
-- `axib pages` disagreeing with raw Chrome CDP targets
+- `axis pages` disagreeing with raw Chrome CDP targets
 - unreliable attachment to already-open tabs
 - confusion when switching between isolated and shared Chrome sessions
 
@@ -42,6 +42,27 @@ Use this fork if you:
 - need more reliable reuse of an already-open Chrome session across projects
 
 If you only use one-off isolated browser sessions and never attach to a shared Chrome instance, upstream may be enough.
+
+## Recommended Command Style
+
+The actual installed command is `axis-browser`.
+
+If you want a shorter branded shell command, add this local alias:
+
+```bash
+alias axis='axis-browser'
+```
+
+The examples below prefer `axis` as the recommended daily shorthand. If you do not
+define that alias, use `axis-browser` instead.
+
+Compatibility commands still work:
+- `axib`
+- `chrome-devtools-axi`
+
+If you use `axis-init`-style shell helpers, use them with a dedicated automation
+browser or profile. Those helpers commonly kill and relaunch the selected browser
+binary, so they are a bad fit for your main daily browser session.
 
 ## Install Options
 
@@ -73,7 +94,7 @@ Then the package exposes:
 
 ```bash
 axis-browser --help
-axib pages
+axis pages
 chrome-devtools-axi pages
 ```
 
@@ -97,7 +118,7 @@ Verify:
 
 ```bash
 readlink ~/.bun/bin/chrome-devtools-axi
-axib --version
+axis-browser --version
 ```
 
 Important:
@@ -106,14 +127,14 @@ Important:
 - after switching builds, stop the old bridge once and let it restart:
 
 ```bash
-axib stop
+axis stop
 ```
 
 Then start fresh:
 
 ```bash
 export CHROME_DEVTOOLS_AXI_BROWSER_URL=http://127.0.0.1:9222
-axib pages
+axis pages
 ```
 
 ### Option 3: Use It Per Project Without Replacing Your Global Install
@@ -127,14 +148,14 @@ node /absolute/path/to/axis-browser/dist/bin/chrome-devtools-axi.js pages
 Or add a shell alias:
 
 ```bash
-alias axisb-fork='node /absolute/path/to/axis-browser/dist/bin/chrome-devtools-axi.js'
+alias axis-fork='node /absolute/path/to/axis-browser/dist/bin/chrome-devtools-axi.js'
 ```
 
 Then:
 
 ```bash
 export CHROME_DEVTOOLS_AXI_BROWSER_URL=http://127.0.0.1:9222
-axisb-fork pages
+axis-fork pages
 ```
 
 ## Everyday Usage
@@ -143,33 +164,33 @@ For shared Chrome on port `9222`, use this baseline flow:
 
 ```bash
 export CHROME_DEVTOOLS_AXI_BROWSER_URL=http://127.0.0.1:9222
-axib stop
-axib pages
-axib snapshot
+axis stop
+axis pages
+axis snapshot
 ```
 
-Why `axib stop` first:
+Why `axis stop` first:
 - the bridge is persistent
 - the bridge can outlive your shell session
 - restarting once ensures the current env is what the bridge is actually using
 
-When tab attachment matters, do not trust `axib pages` blindly. Cross-check raw CDP:
+When tab attachment matters, do not trust `axis pages` blindly. Cross-check raw CDP:
 
 ```bash
 curl -s http://127.0.0.1:9222/json/list
 ```
 
-If raw CDP and `axib pages` disagree:
+If raw CDP and `axis pages` disagree:
 
 ```bash
-axib stop
-axib pages
+axis stop
+axis pages
 ```
 
 If attachment is still flaky, open a fresh controlled tab:
 
 ```bash
-axib open https://example.com
+axis open https://example.com
 ```
 
 ## Basic Auth Sites
@@ -181,7 +202,7 @@ For HTTP basic-auth sites:
 If the browser prompt loops even with known-good credentials:
 - close all tabs for that origin
 - retry in incognito
-- retry with a fresh `axib` bridge
+- retry with a fresh `axis` bridge
 - confirm the server path independently with Playwright or curl
 
 ## Playwright With Shared Chrome
