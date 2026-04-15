@@ -7,7 +7,7 @@
  *   GET  /tools                 → [{ name, description }]
  *   GET  /health                → { status: "ok" }
  *
- * Writes a PID file to ~/.chrome-devtools-axi/bridge.pid on startup.
+ * Writes a PID file to ~/.axis-browser/bridge.pid on startup.
  */
 
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
@@ -26,8 +26,9 @@ const DEFAULT_PORT = Number.parseInt(
   process.env.CHROME_DEVTOOLS_AXI_PORT ?? "9224",
   10,
 );
-const STATE_DIR = join(homedir(), ".chrome-devtools-axi");
-const PID_FILE = join(STATE_DIR, "bridge.pid");
+export const PRIMARY_STATE_DIR = join(homedir(), ".axis-browser");
+export const PRIMARY_PID_FILE = join(PRIMARY_STATE_DIR, "bridge.pid");
+export const MCP_CACHE_DIR = join(PRIMARY_STATE_DIR, "npm-cache");
 
 export interface BridgeConfigSnapshot {
   browserUrl: string | null;
@@ -84,16 +85,16 @@ export function getBridgeConfigSnapshot(
 }
 
 function writePidFile(port: number): void {
-  mkdirSync(STATE_DIR, { recursive: true });
+  mkdirSync(PRIMARY_STATE_DIR, { recursive: true });
   writeFileSync(
-    PID_FILE,
+    PRIMARY_PID_FILE,
     JSON.stringify({ pid: process.pid, port, config: getBridgeConfigSnapshot() }),
   );
 }
 
 function removePidFile(): void {
   try {
-    unlinkSync(PID_FILE);
+    unlinkSync(PRIMARY_PID_FILE);
   } catch {
     // Already gone — fine
   }
@@ -150,8 +151,30 @@ export function resolveBridgeScript(importMetaDir: string): string {
     importMetaDir,
     "../bin/chrome-devtools-axi-bridge.js",
   );
+  if (builtScript.includes(`${resolve(importMetaDir, "..")}/bin/`)) {
+    // When the installed CLI is executing from dist/, prefer the built bridge so
+    // startup does not depend on `tsx` resolution from the caller's cwd.
+    const distDir = `${resolve(importMetaDir, "..")}`;
+    if (distDir.endsWith("/dist")) {
+      return builtScript;
+    }
+  }
   const sourceScript = builtScript.replace(/\.js$/, ".ts");
   return existsSync(sourceScript) ? sourceScript : builtScript;
+}
+
+export function getTransportEnv(
+  env: NodeJS.ProcessEnv = process.env,
+): Record<string, string> {
+  const mergedEnv = {
+    ...env,
+    npm_config_cache: MCP_CACHE_DIR,
+  };
+  return Object.fromEntries(
+    Object.entries(mergedEnv).filter(
+      (entry): entry is [string, string] => typeof entry[1] === "string",
+    ),
+  );
 }
 
 async function readRequestBody(req: IncomingMessage): Promise<string> {
@@ -200,10 +223,13 @@ async function handleCallRequest(
   writeJson(res, 200, { result: extractToolText(getToolContent(result)) });
 }
 
+export type ShutdownHandler = () => Promise<void>;
+
 export async function handleBridgeRequest(
   client: BridgeClient,
   req: IncomingMessage,
   res: ServerResponse,
+  shutdown?: ShutdownHandler,
 ): Promise<void> {
   res.setHeader("Content-Type", "application/json");
 
@@ -226,6 +252,14 @@ export async function handleBridgeRequest(
       await handleCallRequest(client, req, res);
       return;
     }
+
+    if (req.method === "POST" && req.url === "/shutdown" && shutdown) {
+      writeJson(res, 200, { status: "shutting_down" });
+      setImmediate(() => {
+        void shutdown();
+      });
+      return;
+    }
   } catch (error) {
     writeJson(res, 500, { error: getErrorMessage(error) });
     return;
@@ -234,9 +268,12 @@ export async function handleBridgeRequest(
   writeJson(res, 404, { error: "not found" });
 }
 
-export function createBridgeServer(client: BridgeClient): Server {
+export function createBridgeServer(
+  client: BridgeClient,
+  shutdown?: ShutdownHandler,
+): Server {
   return createServer((req, res) => {
-    void handleBridgeRequest(client, req, res);
+    void handleBridgeRequest(client, req, res, shutdown);
   });
 }
 
@@ -281,7 +318,12 @@ export function buildTransportArgs(): string[] {
 }
 
 function createTransport(): StdioClientTransport {
-  return new StdioClientTransport({ command: "npx", args: buildTransportArgs() });
+  mkdirSync(MCP_CACHE_DIR, { recursive: true });
+  return new StdioClientTransport({
+    command: "npx",
+    args: buildTransportArgs(),
+    env: getTransportEnv(),
+  });
 }
 
 function createBridgeClient(): Client {
@@ -306,13 +348,6 @@ export async function runBridge(port = DEFAULT_PORT): Promise<void> {
   await client.connect(transport);
   logBridgeMessage("Connected to chrome-devtools-mcp");
 
-  const server = createBridgeServer(client);
-  server.listen(port, "127.0.0.1", () => {
-    writePidFile(port);
-    logBridgeMessage(`Listening on http://127.0.0.1:${port}`);
-    writeReadySignal();
-  });
-
   let shuttingDown = false;
   const shutdown = async () => {
     if (shuttingDown) return;
@@ -323,6 +358,13 @@ export async function runBridge(port = DEFAULT_PORT): Promise<void> {
     await transport.close();
     process.exit(0);
   };
+
+  const server = createBridgeServer(client, shutdown);
+  server.listen(port, "127.0.0.1", () => {
+    writePidFile(port);
+    logBridgeMessage(`Listening on http://127.0.0.1:${port}`);
+    writeReadySignal();
+  });
 
   // Kill our entire process group on exit so chrome-devtools-mcp children
   // don't survive as orphans. The bridge is spawned with detached:true,

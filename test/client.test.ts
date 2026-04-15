@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { AxiError } from "axi-sdk-js";
-import { bridgeConfigsMatch, CdpError, mapErrorMessage } from "../src/client.js";
+import {
+  bridgeConfigsMatch,
+  CdpError,
+  isLikelyAxisBridgeCommand,
+  mapErrorMessage,
+} from "../src/client.js";
 
 describe("CdpError", () => {
   it("uses the shared axi-sdk-js error contract", () => {
@@ -18,6 +23,11 @@ describe("mapErrorMessage", () => {
 
     expect(error.code).toBe("BRIDGE_NOT_READY");
     expect(error.message).toContain("Bridge is not running");
+  });
+
+  it("uses the longer branded startup timeout in bridge start failures", () => {
+    const error = mapErrorMessage("Bridge failed to start within 90s");
+    expect(error.message).toContain("90s");
   });
 
   it("maps element lookup failures", () => {
@@ -76,5 +86,26 @@ describe("bridgeConfigsMatch", () => {
     };
 
     expect(bridgeConfigsMatch(undefined, current)).toBe(false);
+  });
+});
+
+describe("isLikelyAxisBridgeCommand", () => {
+  it("matches built and source bridge wrapper commands", () => {
+    expect(
+      isLikelyAxisBridgeCommand(
+        "node /Users/test/axis-browser/dist/bin/chrome-devtools-axi-bridge.js",
+      ),
+    ).toBe(true);
+    expect(
+      isLikelyAxisBridgeCommand(
+        "npx tsx /Users/test/axis-browser/bin/chrome-devtools-axi-bridge.ts",
+      ),
+    ).toBe(true);
+  });
+
+  it("does not match unrelated listeners on the same port", () => {
+    expect(
+      isLikelyAxisBridgeCommand("python3 -m http.server 9224"),
+    ).toBe(false);
   });
 });

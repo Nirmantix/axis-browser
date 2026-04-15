@@ -3,21 +3,19 @@
  */
 
 import { spawn } from "node:child_process";
+import { execFileSync } from "node:child_process";
 import { readFileSync, existsSync } from "node:fs";
-import { join } from "node:path";
-import { homedir } from "node:os";
 import { request } from "node:http";
 import { AxiError } from "axi-sdk-js";
 import {
   getBridgeConfigSnapshot,
+  PRIMARY_PID_FILE,
   resolveBridgeScript,
   type BridgeConfigSnapshot,
 } from "./bridge.js";
 
-// Keep the upstream state directory for painless upgrades and zero migration work.
-const STATE_DIR = join(homedir(), ".chrome-devtools-axi");
-const PID_FILE = join(STATE_DIR, "bridge.pid");
 const DEFAULT_PORT = 9224;
+const BRIDGE_START_TIMEOUT_MS = 90_000;
 
 export type ErrorCode =
   | "BRIDGE_NOT_READY"
@@ -46,15 +44,15 @@ interface PidInfo {
 
 function readPidFile(): PidInfo | null {
   try {
-    if (!existsSync(PID_FILE)) return null;
-    const data = JSON.parse(readFileSync(PID_FILE, "utf-8"));
+    if (!existsSync(PRIMARY_PID_FILE)) return null;
+    const data = JSON.parse(readFileSync(PRIMARY_PID_FILE, "utf-8"));
     if (typeof data.pid === "number" && typeof data.port === "number") {
       return data as PidInfo;
     }
-    return null;
   } catch {
-    return null;
+    // Ignore malformed pid files.
   }
+  return null;
 }
 
 function isProcessAlive(pid: number): boolean {
@@ -70,14 +68,16 @@ function httpGet(
   port: number,
   path: string,
   timeoutMs = 2000,
-): Promise<string> {
+): Promise<{ statusCode: number; body: string }> {
   return new Promise((resolve, reject) => {
     const req = request(
       { hostname: "127.0.0.1", port, path, method: "GET", timeout: timeoutMs },
       (res) => {
         let data = "";
         res.on("data", (chunk) => (data += chunk));
-        res.on("end", () => resolve(data));
+        res.on("end", () =>
+          resolve({ statusCode: res.statusCode ?? 0, body: data }),
+        );
       },
     );
     req.on("error", reject);
@@ -134,8 +134,65 @@ function httpPost(
 async function checkBridgeHealth(port: number): Promise<boolean> {
   try {
     const resp = await httpGet(port, "/health");
-    const data = JSON.parse(resp);
-    return data.status === "ok";
+    const data = JSON.parse(resp.body);
+    return resp.statusCode === 200 && data.status === "ok";
+  } catch {
+    return false;
+  }
+}
+
+type BridgePortState = "healthy" | "bridge_unhealthy" | "occupied_unknown" | "free";
+
+async function inspectBridgePort(port: number): Promise<BridgePortState> {
+  try {
+    const resp = await httpGet(port, "/health");
+    try {
+      const data = JSON.parse(resp.body);
+      if (data.status === "ok") return "healthy";
+      if (typeof data.error === "string") return "bridge_unhealthy";
+      return "occupied_unknown";
+    } catch {
+      return "occupied_unknown";
+    }
+  } catch {
+    return "free";
+  }
+}
+
+async function requestBridgeShutdown(port: number): Promise<boolean> {
+  try {
+    await httpPost(port, "/shutdown", {}, 2000);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export function isLikelyAxisBridgeCommand(command: string): boolean {
+  return /chrome-devtools-axi-bridge|dist\/bin\/chrome-devtools-axi\.js|bin\/chrome-devtools-axi-bridge\.ts/.test(
+    command,
+  );
+}
+
+function killPidListeningOnPort(port: number): boolean {
+  if (process.platform === "win32") return false;
+  try {
+    const output = execFileSync(
+      "lsof",
+      ["-ti", `tcp:${port}`, "-sTCP:LISTEN"],
+      { encoding: "utf-8" },
+    ).trim();
+    if (!output) return false;
+    const pid = Number.parseInt(output.split("\n")[0] ?? "", 10);
+    if (!Number.isFinite(pid)) return false;
+    const command = execFileSync("ps", ["-p", String(pid), "-o", "command="], {
+      encoding: "utf-8",
+    }).trim();
+    if (!isLikelyAxisBridgeCommand(command)) {
+      return false;
+    }
+    process.kill(pid, "SIGTERM");
+    return true;
   } catch {
     return false;
   }
@@ -186,6 +243,54 @@ export async function ensureBridge(): Promise<number> {
     }
   }
 
+  const existingPortState = await inspectBridgePort(port);
+  if (existingPortState === "healthy") {
+    return port;
+  }
+  if (existingPortState === "bridge_unhealthy") {
+    const shutdownRequested = await requestBridgeShutdown(port);
+    if (!shutdownRequested) {
+      killPidListeningOnPort(port);
+    }
+    const shutdownDeadline = Date.now() + 5_000;
+    while (Date.now() < shutdownDeadline) {
+      if ((await inspectBridgePort(port)) === "free") break;
+      await sleep(200);
+    }
+  }
+  const finalPortState = await inspectBridgePort(port);
+  if (finalPortState === "bridge_unhealthy") {
+    const killed = killPidListeningOnPort(port);
+    if (killed) {
+      const shutdownDeadline = Date.now() + 2_000;
+      while (Date.now() < shutdownDeadline) {
+        if ((await inspectBridgePort(port)) === "free") break;
+        await sleep(200);
+      }
+    }
+  }
+  const postRecoveryPortState = await inspectBridgePort(port);
+  if (postRecoveryPortState === "bridge_unhealthy") {
+    throw new CdpError(
+      `Bridge port ${port} is still held by an unhealthy local bridge`,
+      "BRIDGE_NOT_READY",
+      [
+        `Run \`axis-browser stop\` and retry, or free port ${port} manually`,
+        `Set CHROME_DEVTOOLS_AXI_PORT to another port if ${port} must stay occupied`,
+      ],
+    );
+  }
+  if (postRecoveryPortState === "occupied_unknown") {
+    throw new CdpError(
+      `Bridge port ${port} is already in use by another process`,
+      "BRIDGE_NOT_READY",
+      [
+        `Free port ${port} or set CHROME_DEVTOOLS_AXI_PORT to another port`,
+        "If this is an orphaned local bridge, stop it and retry",
+      ],
+    );
+  }
+
   // Start a new bridge
 
   const bridgeScript = resolveBridgeScript(import.meta.dirname);
@@ -206,8 +311,8 @@ export async function ensureBridge(): Promise<number> {
   );
   child.unref();
 
-  // Poll for health (max 30s — Chrome launch can be slow)
-  const deadline = Date.now() + 30_000;
+  // Poll for health. A fresh npx install of chrome-devtools-mcp can be slow.
+  const deadline = Date.now() + BRIDGE_START_TIMEOUT_MS;
   while (Date.now() < deadline) {
     if (await checkBridgeHealth(port)) {
       return port;
@@ -215,7 +320,7 @@ export async function ensureBridge(): Promise<number> {
     await sleep(500);
   }
 
-  throw new CdpError("Bridge failed to start within 30s", "BRIDGE_NOT_READY", [
+  throw new CdpError(`Bridge failed to start within ${BRIDGE_START_TIMEOUT_MS / 1000}s`, "BRIDGE_NOT_READY", [
     "Check that chrome-devtools-mcp is installed: npx chrome-devtools-mcp@latest --help",
   ]);
 }
@@ -305,14 +410,20 @@ export async function getSessionSnapshotIfRunning(): Promise<string | null> {
 /**
  * Stop the bridge process.
  */
-export function stopBridge(): boolean {
+export async function stopBridge(): Promise<boolean> {
   const pidInfo = readPidFile();
-  if (!pidInfo) {
-    return false;
-  }
-  if (isProcessAlive(pidInfo.pid)) {
+  if (pidInfo && isProcessAlive(pidInfo.pid)) {
     process.kill(pidInfo.pid, "SIGTERM");
     return true;
+  }
+  const port = parseInt(
+    process.env.CHROME_DEVTOOLS_AXI_PORT ?? String(DEFAULT_PORT),
+    10,
+  );
+  const portState = await inspectBridgePort(port);
+  if (portState === "healthy" || portState === "bridge_unhealthy") {
+    const shutdownRequested = await requestBridgeShutdown(port);
+    return shutdownRequested || killPidListeningOnPort(port);
   }
   return false;
 }

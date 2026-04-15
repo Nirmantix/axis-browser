@@ -4,8 +4,12 @@ import {
   extractToolText,
   getBridgeConfigSnapshot,
   getErrorMessage,
+  getTransportEnv,
   isBridgeClientConnected,
+  MCP_CACHE_DIR,
   parseBridgeCallPayload,
+  PRIMARY_PID_FILE,
+  PRIMARY_STATE_DIR,
   resolveBridgeScript,
 } from "../src/bridge.js";
 
@@ -50,6 +54,26 @@ describe("getErrorMessage", () => {
 describe("resolveBridgeScript", () => {
   it("prefers the TypeScript bridge entrypoint in the repo checkout", () => {
     expect(resolveBridgeScript(import.meta.dirname)).toMatch(/bin\/chrome-devtools-axi-bridge\.ts$/);
+  });
+
+  it("prefers the built bridge entrypoint when running from dist", () => {
+    const simulatedDistDir = import.meta.dirname.replace(/\/test$/, "/dist/src");
+    expect(resolveBridgeScript(simulatedDistDir)).toMatch(/bin\/chrome-devtools-axi-bridge\.js$/);
+  });
+});
+
+describe("state paths", () => {
+  it("uses the branded axis-browser state directory", () => {
+    expect(PRIMARY_STATE_DIR).toMatch(/\.axis-browser$/);
+    expect(PRIMARY_PID_FILE).toMatch(/\.axis-browser\/bridge\.pid$/);
+    expect(MCP_CACHE_DIR).toMatch(/\.axis-browser\/npm-cache$/);
+  });
+});
+
+describe("getTransportEnv", () => {
+  it("forces a dedicated npm cache under the axis-browser state dir", () => {
+    const env = getTransportEnv({ npm_config_cache: "/tmp/old-cache" });
+    expect(env.npm_config_cache).toBe(MCP_CACHE_DIR);
   });
 });
 

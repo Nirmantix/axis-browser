@@ -67,7 +67,7 @@ Non-negotiable compatibility rules:
 
 - keep package name: `chrome-devtools-axi`
 - keep commands exposed: `axis-browser`, `axib`, `chrome-devtools-axi`
-- keep runtime state directory: `~/.chrome-devtools-axi`
+- keep runtime state directory: `~/.axis-browser`
 - keep `origin` pointed at `Nirmantix/axis-browser`
 - keep `upstream` pointed at `kunchenguid/chrome-devtools-axi`
 
@@ -77,6 +77,8 @@ At the time this file was written, the meaningful fork-only behavior is:
 
 - bridge config fingerprinting in `src/bridge.ts`
 - bridge fingerprint comparison and forced restart in `src/client.ts`
+- dedicated `chrome-devtools-mcp` cache under `~/.axis-browser/npm-cache`
+- bridge shutdown/recovery behavior for stale local wrappers on `9224`
 - public branding/docs for `Axis Browser`
 - additional bin aliases in `package.json`
 
@@ -211,7 +213,7 @@ After merging, verify these are still true:
 - package name is still `chrome-devtools-axi`
 - commands still include `axis-browser`, `axib`, and `chrome-devtools-axi`
 - branding still presents `Axis Browser` publicly
-- runtime state directory is still `~/.chrome-devtools-axi`
+- runtime state directory is still `~/.axis-browser`
 - bridge fingerprint logic still works
 - docs do not falsely claim the fork is a separate npm package
 - `README.md`, `docs/axis-browser-fork-guide.md`, and `maintainance.md` still match the actual repo state
@@ -311,7 +313,7 @@ An agent must **not**:
 - invent release notes
 - claim the fork is a separately published npm package unless that becomes true
 - rename the package away from `chrome-devtools-axi`
-- move runtime state from `~/.chrome-devtools-axi` without an explicit migration plan
+- move runtime state from `~/.axis-browser` without an explicit migration plan
 - keep extra long-lived branches around unnecessarily
 
 ## Recommended Branch Cleanup Right Now
