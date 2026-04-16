@@ -87,7 +87,7 @@ For workflow details, see:
 - [docs/vibe-coding-browser-workflow.md](docs/vibe-coding-browser-workflow.md)
 
 Recommended workflow guide:
-- [docs/vibe-coding-browser-workflow.md](docs/vibe-coding-browser-workflow.md) explains the practical "best results" setup for using Axis Browser with a shared Chrome session, `agent-browser` for visual checks, and Playwright CLI for low-token verification.
+- [docs/vibe-coding-browser-workflow.md](docs/vibe-coding-browser-workflow.md) explains the practical "best results" setup for using Axis Browser as the primary browser debugger, Playwright CLI for repeatable flow verification, and `agent-browser` only as an optional visual fallback.
 - Read it if you want the shortest path to a reliable daily workflow, Google SSO handling, shared-session debugging, and token-efficient browser automation habits.
 
 - **Token-efficient** — TOON-encoded output stays compact compared with raw JSON or DOM-heavy browser flows

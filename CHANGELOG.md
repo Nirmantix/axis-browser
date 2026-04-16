@@ -26,9 +26,13 @@ unreleased section below until the next tagged release.
 
 * move public install and usage guidance into `README.md` and keep
   `docs/vibe-coding-browser-workflow.md` as the public workflow guide
+* document GitHub-first installation for the fork and how to replace an older
+  upstream global install cleanly
 * tone down fork-first branding, document the destructive nature of
   `axis-init`-style helpers, and recommend a dedicated automation browser or
   profile for shared-session workflows
+* clarify that the default browser-tool stack is Axis Browser plus Playwright,
+  with `agent-browser` only as an optional visual fallback
 
 ## Upstream History
 
