@@ -1,9 +1,8 @@
-# Axis Browser, Agent Browser, and Playwright for Vibe Coding
+# Axis Browser and Playwright for Vibe Coding
 
 This guide explains how to use:
 
 - `Axis Browser` (`axis-browser`, with `axib` and `chrome-devtools-axi` compatibility commands)
-- `agent-browser`
 - Playwright CLI
 
 together in a practical, token-efficient workflow for day-to-day product development.
@@ -19,8 +18,8 @@ This document is intentionally public-safe:
 Use the right tool for the right job:
 
 - `Axis Browser` for most logic and state debugging
-- `agent-browser` for visual verification and screenshots
 - Playwright CLI for executable end-to-end checks
+- `agent-browser` only when a task is primarily visual and Axis Browser plus Playwright are not the easiest fit
 
 That split saves tokens and reduces agent confusion.
 
@@ -43,17 +42,7 @@ Why:
 
 Use it first for most debugging sessions.
 
-### 2. Agent Browser: Secondary Visual Tool
-
-Use `agent-browser` for:
-- visual QA
-- screenshot-based inspection
-- layout checks
-- style and aesthetic verification
-
-Do not use it as the default logic debugger if `Axis Browser` is available.
-
-### 3. Playwright CLI: Execution Tool
+### 2. Playwright CLI: Execution Tool
 
 Use Playwright CLI when you want:
 - a repeatable script
@@ -63,6 +52,15 @@ Use Playwright CLI when you want:
 - a second opinion separate from `Axis Browser`
 
 Do not default to a Playwright MCP if a normal CLI script is enough.
+
+### 3. Agent Browser: Optional Visual Fallback
+
+Use `agent-browser` only when:
+- the task is mainly visual
+- a quick screenshot is easier than driving the shared browser
+- you want a one-off layout or typography sanity check
+
+Do not use it as the default logic debugger or first-choice interaction tool if `Axis Browser` is available.
 
 ## Why This Split Saves Tokens
 
@@ -133,9 +131,9 @@ alias axis='axis-browser'
 For local-checkout install details, see:
 - [../README.md](../README.md)
 
-### Agent Browser
+### Agent Browser (Optional)
 
-Install globally if you want it available across projects:
+Install globally only if you want the visual fallback available across projects:
 
 ```bash
 bun add -g agent-browser
@@ -358,7 +356,7 @@ Again: this is a local helper, not a built-in `Axis Browser` command.
 3. log in manually if needed
 4. use `Axis Browser` to inspect the current state
 5. use Playwright CLI to verify flows after code changes
-6. use `agent-browser` only for visual or aesthetic checks
+6. use `agent-browser` only if a quick visual-only check is easier than using Axis Browser and Playwright
 
 ## Axis Browser Workflow
 
@@ -467,7 +465,7 @@ Use an isolated Playwright run when:
 
 Do not confuse that with the shared user session.
 
-## Agent Browser Workflow
+## Agent Browser Workflow (Optional Fallback)
 
 Use `agent-browser` when the question is mainly visual:
 - is the page layout broken
@@ -482,8 +480,8 @@ Do not use it as the default choice for data or state debugging.
 A simple heuristic:
 
 - if the problem is logic, state, or network: use `Axis Browser`
-- if the problem is layout, aesthetics, or screenshots: use `agent-browser`
 - if the problem is regression-proof execution: use Playwright CLI
+- if the problem is purely visual and the other two are overkill: use `agent-browser`
 
 ## Safe Prompting Conventions
 
@@ -494,7 +492,7 @@ Good shorthand for agents:
 - "axis console"
 - "axis network"
 - "write a Playwright CLI script and run it against the shared browser on 9222"
-- "use agent-browser for a visual check only"
+- "use agent-browser only if a visual check is easier than Axis Browser and Playwright"
 
 Avoid vague prompts like:
 - "debug the UI somehow"
@@ -530,7 +528,6 @@ axis pages
 - close all tabs for that origin
 - retry in a fresh incognito window
 - retry with a fresh `axis` bridge
-- retry with a fresh `axis` bridge
 - use an isolated Playwright check to confirm the server accepts the credentials
 
 ## Final Recommendation
@@ -539,7 +536,7 @@ If you want one default habit:
 
 - use `Axis Browser` as the daily driver
 - use Playwright CLI as the execution layer
-- keep `agent-browser` as a visual specialist
+- keep `agent-browser` as an optional visual specialist, not a required part of the workflow
 
 That combination is usually the most efficient balance of:
 - speed
