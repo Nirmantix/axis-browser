@@ -22,6 +22,7 @@ Compatibility notes:
 - tracks [`kunchenguid/chrome-devtools-axi`](https://github.com/kunchenguid/chrome-devtools-axi) closely so upgrades stay simple
 - installed commands: `axis-browser`, `axib`, and `chrome-devtools-axi`
 - npm package name remains upstream-compatible: `chrome-devtools-axi`
+- users can install this fork directly from GitHub and use `axis-browser` without any old local checkout workflow
 
 ## Platform Support
 
@@ -114,27 +115,75 @@ snapshot:
 
 ## Install
 
-Axis Browser does **not** currently publish a separate npm package under a new name.
+The recommended way to install Axis Browser is directly from this GitHub repository.
 
-The repo is branded as `Axis Browser`, but the executable and package identity stay upstream-compatible:
-- package name: `chrome-devtools-axi`
-- primary command: `axis-browser`
-- compatibility commands: `axib`, `chrome-devtools-axi`
+### Install Axis Browser From GitHub
 
-For quick evaluation of the upstream-compatible interface, you can still run:
+With Bun:
 
-```
-npx -y chrome-devtools-axi --help
+```bash
+bun add -g github:Nirmantix/axis-browser
 ```
 
-Important:
-- that command resolves the upstream npm package, not this repository checkout
-- use this repo via `npm link`, a local build, or your own package workflow if you want the Axis Browser bridge fix
+With npm:
 
-When installed from this repository, it exposes all of these commands:
+```bash
+npm install -g github:Nirmantix/axis-browser
+```
+
+That install exposes these commands:
 - `axis-browser`
 - `axib`
 - `chrome-devtools-axi`
+
+Recommended daily command:
+
+```bash
+axis-browser
+```
+
+Optional shorter shell alias:
+
+```bash
+alias axis='axis-browser'
+```
+
+Then:
+
+```bash
+axis --help
+axis pages
+axis snapshot
+```
+
+Important:
+- `bun add -g chrome-devtools-axi` installs the upstream npm package, not this fork
+- `npx -y chrome-devtools-axi` also resolves the upstream npm package
+- the package name remains upstream-compatible for release compatibility, but users should install this fork from GitHub if they want Axis Browser behavior
+
+### Replace An Existing Upstream Global Install
+
+If you previously installed the upstream package globally, replace it with the fork:
+
+```bash
+bun remove -g chrome-devtools-axi
+bun add -g github:Nirmantix/axis-browser
+```
+
+Or, if you used npm globally:
+
+```bash
+npm uninstall -g chrome-devtools-axi
+npm install -g github:Nirmantix/axis-browser
+```
+
+Then verify the active commands:
+
+```bash
+axis-browser --version
+axib --version
+chrome-devtools-axi --version
+```
 
 ### Recommended Daily Command
 
@@ -158,7 +207,7 @@ axis snapshot
 axis open https://example.com
 ```
 
-### Install From This Repository
+### Install From A Local Checkout
 
 Clone and build:
 
@@ -188,35 +237,6 @@ That exposes:
 axis-browser --help
 axib pages
 chrome-devtools-axi pages
-```
-
-### Make This Repository Your Active Install
-
-If you already use a global install and want this repository to back the active
-binary, point your wrapper or symlink at the built CLI.
-
-Example on macOS/Linux:
-
-```bash
-ln -snf /absolute/path/to/axis-browser/dist/bin/chrome-devtools-axi.js ~/.bun/bin/chrome-devtools-axi
-```
-
-Then verify:
-
-```bash
-readlink ~/.bun/bin/chrome-devtools-axi
-axis-browser --version
-```
-
-Important:
-- switching the symlink changes which build backs the command
-- it does not automatically replace an already-running bridge process
-- after switching builds, restart the bridge once:
-
-```bash
-axis-browser stop
-export CHROME_DEVTOOLS_AXI_BROWSER_URL=http://127.0.0.1:9222
-axis-browser pages
 ```
 
 ### Shared-Session Usage

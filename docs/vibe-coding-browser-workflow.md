@@ -88,17 +88,49 @@ That keeps the browser-reading phase cheap and the execution phase scriptable.
 
 ### Axis Browser
 
-The upstream-compatible package name remains:
-- package: `chrome-devtools-axi`
+Install the fork directly from GitHub:
 
-The installed commands are:
+```bash
+bun add -g github:Nirmantix/axis-browser
+```
+
+or:
+
+```bash
+npm install -g github:Nirmantix/axis-browser
+```
+
+That install exposes these commands:
 - primary command: `axis-browser`
 - shorthand compatibility command: `axib`
 - upstream compatibility command: `chrome-devtools-axi`
 
-You can use the fork directly from source or point your active global binary at the local build.
+Important:
+- `bun add -g chrome-devtools-axi` installs the upstream npm package, not this fork
+- `npx -y chrome-devtools-axi` also resolves the upstream npm package
+- the package name remains `chrome-devtools-axi` for compatibility, but the recommended install path for Axis Browser is the GitHub repo
 
-See:
+If you are replacing an older upstream global install:
+
+```bash
+bun remove -g chrome-devtools-axi
+bun add -g github:Nirmantix/axis-browser
+```
+
+or:
+
+```bash
+npm uninstall -g chrome-devtools-axi
+npm install -g github:Nirmantix/axis-browser
+```
+
+Optional shorter daily alias:
+
+```bash
+alias axis='axis-browser'
+```
+
+For local-checkout install details, see:
 - [../README.md](../README.md)
 
 ### Agent Browser
