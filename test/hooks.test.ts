@@ -145,11 +145,11 @@ describe("computeHookUpdate", () => {
     };
     const [updated, changed] = computeHookUpdate(
       settings,
-      "/Users/kunchen/.airlock/worktrees/bf2b16b1f6b6/pool-3/bin/chrome-devtools-axi.ts",
+      "/Users/test/worktrees/axis-browser/pool-3/bin/chrome-devtools-axi.ts",
     );
     expect(changed).toBe(true);
     expect(JSON.stringify(updated)).toContain(
-      "/Users/kunchen/.airlock/worktrees/bf2b16b1f6b6/pool-3/bin/chrome-devtools-axi.ts",
+      "/Users/test/worktrees/axis-browser/pool-3/bin/chrome-devtools-axi.ts",
     );
   });
 });
@@ -158,7 +158,7 @@ describe("shouldInstallHooksForExecPath", () => {
   it("rejects non-production TypeScript entrypoints", () => {
     expect(
       shouldInstallHooksForExecPath(
-        "/Users/kunchen/.airlock/worktrees/bf2b16b1f6b6/pool-3/bin/chrome-devtools-axi.ts",
+        "/Users/test/worktrees/axis-browser/pool-3/bin/chrome-devtools-axi.ts",
       ),
     ).toBe(false);
   });
@@ -166,7 +166,7 @@ describe("shouldInstallHooksForExecPath", () => {
   it("accepts packaged dist entrypoints", () => {
     expect(
       shouldInstallHooksForExecPath(
-        "/Users/kunchen/github/kunchenguid/chrome-devtools-axi/dist/bin/chrome-devtools-axi.js",
+        "/Users/test/github/Nirmantix/axis-browser/dist/bin/chrome-devtools-axi.js",
       ),
     ).toBe(true);
   });

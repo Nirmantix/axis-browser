@@ -9,20 +9,40 @@
 
 <h3 align="center">Fast, token-efficient browser automation for shared Chrome and CDP workflows</h3>
 
-`Axis Browser` is a fast CLI for browser automation, debugging, and shared-session Chrome workflows.
+`Axis Browser` is a lightweight CLI for browser automation, debugging, and shared-session Chrome workflows.
 
-It is built for the workflows that are awkward with heavier browser MCP stacks:
+It is optimized for:
 - shared Chrome on `9222`
-- token-efficient page inspection
+- low-token page inspection
 - repeatable debugging with console, network, and snapshots
-- low-friction handoff between `axis-browser`, `axib`, Playwright, and other tooling
+- practical handoff between `axis-browser`, Playwright CLI, and other tooling
 
-Compatibility notes:
-- maintained by `Nirmantix`
-- tracks [`kunchenguid/chrome-devtools-axi`](https://github.com/kunchenguid/chrome-devtools-axi) closely so upgrades stay simple
-- installed commands: `axis-browser`, `axib`, and `chrome-devtools-axi`
-- npm package name remains upstream-compatible: `chrome-devtools-axi`
-- users can install this fork directly from GitHub and use `axis-browser` without any old local checkout workflow
+## Documentation Map
+
+This repo intentionally keeps only two public docs with distinct roles:
+
+- `README.md` — source of truth for install, commands, environment variables, runtime behavior, and development
+- `docs/vibe-coding-browser-workflow.md` — source of truth for the shared-`9222` workflow, tool selection, Playwright usage, and troubleshooting habits
+
+If you see old notes that mention different paths, aliases, or helper scripts, prefer this README and the workflow guide.
+
+## Command Names
+
+Built-in commands exposed by this project:
+- `axis-browser` — primary documented command
+- `axib` — built-in shorthand compatibility command
+- `chrome-devtools-axi` — upstream-compatible command name
+
+Not built in:
+- `axis`
+- `axi`
+- `axisb`
+- `axis-init`
+- `axis-human`
+- `axisb-init`
+- `axisb-human`
+
+Those are only user-defined aliases or shell helpers if you create them yourself.
 
 ## Platform Support
 
@@ -35,91 +55,25 @@ Current Windows gaps:
 - the documented shared-session helper snippets are shell-first examples, not native PowerShell helpers
 - there is no Windows CI coverage in this repo yet
 
-So the repo is close to cross-platform, but not yet fully first-class on Windows.
-
-## Why Axis Browser
+## Why Axis Browser Exists
 
 Axis Browser is designed around three practical goals:
-
 - fast feedback while debugging live browser state
 - low token overhead for agent-driven workflows
 - stable attachment to already-running Chrome sessions
 
-That combination is especially useful when you want a single browser window to be shared across manual work, agent inspection, and Playwright verification.
-
-## Shared-Session Reliability
-
-Axis Browser hardens the shared-Chrome workflow where a stale MCP session can survive longer than the browser target you meant to use.
-
-In practice that caused:
-- `axib pages` disagreeing with raw Chrome CDP targets
-- unreliable attachment to already-open tabs
-- confusion when switching between isolated and shared browser sessions
-
-This matters most in workflows that reuse a live Chrome on `http://127.0.0.1:9222`.
-
-## What Axis Browser Adds
-
-Axis Browser adds bridge target fingerprinting and safer local bridge recovery:
-
-- the bridge writes its launch/session config into `~/.axis-browser/bridge.pid`
-- the bridge uses a dedicated `chrome-devtools-mcp` cache under `~/.axis-browser/npm-cache`
-- the client compares the saved config with the current environment
-- if the target changed, the bridge is restarted instead of being silently reused
-- stale local bridge wrappers on `9224` can now be shut down and recovered more reliably
-
-That fingerprint currently includes:
-- `CHROME_DEVTOOLS_AXI_AUTO_CONNECT`
-- `CHROME_DEVTOOLS_AXI_BROWSER_URL`
-- `CHROME_DEVTOOLS_AXI_WS_HEADERS` for `ws://` and `wss://` endpoints
-- `CHROME_DEVTOOLS_AXI_USER_DATA_DIR` when launching a managed browser
-- effective headed vs headless mode
-- forwarded Chrome args
-
-## Maintenance Model
-
-Axis Browser should stay intentionally small and upgrade-friendly.
-
-- prefer upstream behavior whenever upstream is sufficient
-- carry repo-specific patches only when they solve a concrete shared-session reliability problem
-- rebase or merge upstream updates regularly
-- remove repo-specific code when upstream adopts an equivalent fix
-
-For workflow details, see:
-- [docs/vibe-coding-browser-workflow.md](docs/vibe-coding-browser-workflow.md)
-
-Recommended workflow guide:
-- [docs/vibe-coding-browser-workflow.md](docs/vibe-coding-browser-workflow.md) explains the practical "best results" setup for using Axis Browser as the primary browser debugger, Playwright CLI for repeatable flow verification, and `agent-browser` only as an optional visual fallback.
-- Read it if you want the shortest path to a reliable daily workflow, Google SSO handling, shared-session debugging, and token-efficient browser automation habits.
-
-- **Token-efficient** — TOON-encoded output stays compact compared with raw JSON or DOM-heavy browser flows
-- **Combined operations** — one command navigates, captures, and suggests next steps
-- **Contextual suggestions** — every response includes actionable next-step hints
-
-## Quick Start
-
-```sh
-$ axis-browser open https://example.com
-page: {title: "Example Domain", url: "https://example.com", refs: 1}
-snapshot:
-RootWebArea "Example Domain"
-  heading "Example Domain"
-  paragraph "This domain is for use in illustrative examples..."
-  uid=1 link "More information..."
-help[1]:
-  Run `axis-browser click @1` to click the "More information..." link
-
-$ axis-browser click @1
-page: {title: "IANA — IANA-Managed Reserved Domains", refs: 12}
-snapshot:
-...
-```
+The fork-specific behavior is intentionally small:
+- bridge target fingerprinting
+- forced bridge restart when the effective target changes
+- safer local bridge recovery on `9224`
+- dedicated `chrome-devtools-mcp` cache under `~/.axis-browser/npm-cache`
+- Axis Browser branding and compatibility aliases
 
 ## Install
 
-The recommended way to install Axis Browser is directly from this GitHub repository.
+The recommended install path for this fork is GitHub, not the upstream npm package.
 
-### Install Axis Browser From GitHub
+### Install From GitHub
 
 With Bun:
 
@@ -133,53 +87,12 @@ With npm:
 npm install -g github:Nirmantix/axis-browser
 ```
 
-That install exposes these commands:
+That install exposes:
 - `axis-browser`
 - `axib`
 - `chrome-devtools-axi`
 
-Recommended daily command:
-
-```bash
-axis-browser
-```
-
-Optional shorter shell alias:
-
-```bash
-alias axis='axis-browser'
-```
-
-Then:
-
-```bash
-axis --help
-axis pages
-axis snapshot
-```
-
-Important:
-- `bun add -g chrome-devtools-axi` installs the upstream npm package, not this fork
-- `npx -y chrome-devtools-axi` also resolves the upstream npm package
-- the package name remains upstream-compatible for release compatibility, but users should install this fork from GitHub if they want Axis Browser behavior
-
-### Replace An Existing Upstream Global Install
-
-If you previously installed the upstream package globally, replace it with the fork:
-
-```bash
-bun remove -g chrome-devtools-axi
-bun add -g github:Nirmantix/axis-browser
-```
-
-Or, if you used npm globally:
-
-```bash
-npm uninstall -g chrome-devtools-axi
-npm install -g github:Nirmantix/axis-browser
-```
-
-Then verify the active commands:
+Verify:
 
 ```bash
 axis-browser --version
@@ -187,31 +100,28 @@ axib --version
 chrome-devtools-axi --version
 ```
 
-### Recommended Daily Command
+Important:
+- `bun add -g chrome-devtools-axi` installs the upstream npm package, not this fork
+- `npx -y chrome-devtools-axi` also resolves the upstream npm package
+- the package name remains `chrome-devtools-axi` for compatibility, but this fork should be installed from GitHub
 
-The real installed command is:
+### Replace An Existing Upstream Global Install
+
+With Bun:
 
 ```bash
-axis-browser
+bun remove -g chrome-devtools-axi
+bun add -g github:Nirmantix/axis-browser
 ```
 
-If you want a shorter branded command in your shell, add:
+With npm:
 
 ```bash
-alias axis='axis-browser'
-```
-
-Then you can use:
-
-```bash
-axis pages
-axis snapshot
-axis open https://example.com
+npm uninstall -g chrome-devtools-axi
+npm install -g github:Nirmantix/axis-browser
 ```
 
 ### Install From A Local Checkout
-
-Clone and build:
 
 ```bash
 git clone https://github.com/Nirmantix/axis-browser.git
@@ -220,30 +130,42 @@ npm install
 npm run build
 ```
 
-Run directly from the checkout:
+Run from the checkout:
 
 ```bash
 node dist/bin/chrome-devtools-axi.js --help
 node dist/bin/chrome-devtools-axi.js pages
 ```
 
-If you want the commands available globally from this checkout:
+Expose the commands globally from the checkout:
 
 ```bash
 npm link
 ```
 
-That exposes:
+## Quick Start
 
 ```bash
-axis-browser --help
-axib pages
-chrome-devtools-axi pages
+axis-browser open https://example.com
+axis-browser click @1
 ```
 
-### Shared-Session Usage
+Example output:
 
-For a shared Chrome session on `9222`:
+```text
+page: {title: "Example Domain", url: "https://example.com", refs: 1}
+snapshot:
+RootWebArea "Example Domain"
+  heading "Example Domain"
+  paragraph "This domain is for use in illustrative examples..."
+  uid=1 link "More information..."
+help[1]:
+  Run `axis-browser click @1` to click the "More information..." link
+```
+
+## Shared Chrome Quick Start
+
+For the shared-`9222` workflow:
 
 ```bash
 export CHROME_DEVTOOLS_AXI_BROWSER_URL=http://127.0.0.1:9222
@@ -252,37 +174,25 @@ axis-browser pages
 axis-browser snapshot
 ```
 
-If you prefer the shorter branded alias:
-
-```bash
-alias axis='axis-browser'
-export CHROME_DEVTOOLS_AXI_BROWSER_URL=http://127.0.0.1:9222
-axis stop
-axis pages
-axis snapshot
-```
-
 Why stop first:
 - the bridge is persistent
 - the bridge can outlive your shell session
-- a clean restart ensures the current environment is what the bridge is actually using
+- a clean restart guarantees the current environment is what the bridge actually uses
 
-If tab discovery feels wrong, cross-check raw CDP:
+If the bridge view and raw Chrome CDP disagree:
 
 ```bash
 curl -s http://127.0.0.1:9222/json/list
-```
-
-If the browser session and the bridge disagree:
-
-```bash
 axis-browser stop
 axis-browser pages
 ```
 
+For the full shared-browser operating model, read:
+- [docs/vibe-coding-browser-workflow.md](docs/vibe-coding-browser-workflow.md)
+
 ## How It Works
 
-```
+```text
 ┌───────────────────────┐
 │    Axis Browser       │  CLI — parse args, format output
 └──────────┬────────────┘
@@ -298,10 +208,10 @@ axis-browser pages
 └───────────────────────┘
 ```
 
-- **Persistent bridge** — a detached process keeps the MCP session alive across commands, so the DevTools transport doesn't restart every invocation
-- **Auto-lifecycle** — the bridge starts on first command and writes a PID file to `~/.axis-browser/bridge.pid`
-- **Snapshot parsing** — accessibility tree snapshots are extracted and analyzed for interactive elements (`uid=` refs)
-- **TOON encoding** — structured metadata uses [TOON format](https://www.npmjs.com/package/@toon-format/toon) for compact, token-efficient output
+- **Persistent bridge** — keeps one MCP session alive across CLI calls
+- **Auto-lifecycle** — starts on demand and writes state to `~/.axis-browser/bridge.pid`
+- **Snapshot parsing** — extracts accessibility-tree refs (`uid=`) for lightweight interaction
+- **TOON encoding** — keeps structured output compact compared with heavier browser payloads
 
 ## CLI Reference
 
@@ -319,11 +229,6 @@ axis-browser pages
 | `run`             | Execute a multi-step script from stdin       |
 
 `eval` wraps plain input as `() => (<expr>)` before sending it to DevTools. For multi-statement logic, pass an arrow function, `function`, or IIFE yourself.
-
-```sh
-axis-browser eval "document.title"
-axis-browser eval "(() => { const rows = [...document.querySelectorAll('tr')]; return rows.map((row) => row.textContent) })()"
-```
 
 ### Interaction
 
@@ -381,9 +286,7 @@ axis-browser eval "(() => { const rows = [...document.querySelectorAll('tr')]; r
 | `start` | Start the bridge server |
 | `stop`  | Stop the bridge server  |
 
-Running with no command shows the CLI home view. It prepends `bin` and
-`description` metadata, then includes the current snapshot when a browser
-session is active or the no-session status/help block when one is not.
+Running with no command shows the CLI home view. If an active session exists, the home view includes page metadata; otherwise it shows the no-session help block.
 
 ### Flags
 
@@ -396,7 +299,7 @@ session is active or the no-session status/help block when one is not.
 | `--uid @<uid>`              | Target a specific element (screenshot)      |
 | `--full-page`               | Capture entire scrollable page (screenshot) |
 | `--format <fmt>`            | Image format: png, jpeg, webp (screenshot)  |
-| `--viewport <spec>`         | Viewport like "390x844x3,mobile" (emulate)  |
+| `--viewport <spec>`         | Viewport like `390x844x3,mobile` (emulate)  |
 | `--color-scheme <value>`    | dark, light, or auto (emulate)              |
 | `--network <condition>`     | Network throttle: Slow 3G, etc. (emulate)   |
 | `--cpu <rate>`              | CPU throttling rate 1-20 (emulate)          |
@@ -416,61 +319,85 @@ session is active or the no-session status/help block when one is not.
 
 ## Configuration
 
-The bridge server port defaults to `9224`. Override it with an environment variable:
+### Connection Mode Precedence
 
-```sh
-export CHROME_DEVTOOLS_AXI_PORT=9225
-```
+Axis Browser uses these connection modes in order:
+1. `CHROME_DEVTOOLS_AXI_AUTO_CONNECT=1`
+2. `CHROME_DEVTOOLS_AXI_BROWSER_URL=...`
+3. managed browser launch using `CHROME_DEVTOOLS_AXI_USER_DATA_DIR` or an isolated temp profile
 
-Connect to an existing Chrome instance instead of launching one:
+That effective target is fingerprinted. If the target changes, the bridge is restarted instead of being silently reused.
 
-```sh
+### Environment Variables
+
+| Variable | Purpose |
+| --- | --- |
+| `CHROME_DEVTOOLS_AXI_AUTO_CONNECT` | Set to `1` to attach to the user's running Chrome through Chrome 144+ auto-connect |
+| `CHROME_DEVTOOLS_AXI_BROWSER_URL` | Connect to an existing Chrome instance instead of launching one |
+| `CHROME_DEVTOOLS_AXI_WS_HEADERS` | JSON headers for authenticated `ws://` / `wss://` browser endpoints |
+| `CHROME_DEVTOOLS_AXI_USER_DATA_DIR` | Use a persistent Chrome profile instead of `--isolated` |
+| `CHROME_DEVTOOLS_AXI_HEADED` | Set to `1` to run the managed browser in headed mode |
+| `CHROME_DEVTOOLS_AXI_CHROME_ARGS` | Whitespace-separated Chrome flags forwarded to the browser |
+| `CHROME_DEVTOOLS_AXI_PORT` | Override the bridge port (default: `9224`) |
+| `CHROME_DEVTOOLS_AXI_DISABLE_HOOKS` | Set to `1` to skip packaged session-hook installation |
+
+Examples:
+
+```bash
 export CHROME_DEVTOOLS_AXI_BROWSER_URL=http://127.0.0.1:9222
+export CHROME_DEVTOOLS_AXI_PORT=9225
+export CHROME_DEVTOOLS_AXI_HEADED=1
+export CHROME_DEVTOOLS_AXI_CHROME_ARGS="--enable-gpu --ignore-gpu-blocklist"
 ```
 
-`CHROME_DEVTOOLS_AXI_BROWSER_URL` accepts both `http://` or `https://` URLs and `ws://` or `wss://` endpoints:
+`CHROME_DEVTOOLS_AXI_BROWSER_URL` accepts both HTTP(S) and WebSocket endpoints:
+- `http(s)://` uses `--browserUrl` and discovers the WebSocket URL via `/json/version`
+- `ws(s)://` uses `--wsEndpoint` directly
 
-- `http(s)://` uses `--browserUrl` and fetches `/json/version` to discover the WebSocket URL.
-- `ws(s)://` uses `--wsEndpoint` directly.
+Authenticated WebSocket example:
 
-For authenticated `ws://` or `wss://` endpoints, pass JSON headers with `CHROME_DEVTOOLS_AXI_WS_HEADERS`:
-
-```sh
+```bash
 export CHROME_DEVTOOLS_AXI_BROWSER_URL=wss://cluster.example/launch
 export CHROME_DEVTOOLS_AXI_WS_HEADERS='{"Authorization":"Bearer token"}'
 ```
 
-Chrome 144+ auto-connect is also supported for the user's running Chrome:
+Chrome 144+ auto-connect example:
 
-```sh
+```bash
 export CHROME_DEVTOOLS_AXI_AUTO_CONNECT=1
 ```
 
 When auto-connect is enabled, it takes precedence over `CHROME_DEVTOOLS_AXI_BROWSER_URL` and `CHROME_DEVTOOLS_AXI_USER_DATA_DIR`.
 
+### Runtime State
+
 State is stored in `~/.axis-browser/`:
 
-| File         | Purpose                            |
-| ------------ | ---------------------------------- |
-| `bridge.pid` | PID and port of the running bridge |
+| File | Purpose |
+| --- | --- |
+| `bridge.pid` | PID, port, and effective target fingerprint for the running bridge |
 | `npm-cache/` | Dedicated cache used for `npx chrome-devtools-mcp@latest` |
 
-Axis Browser uses its own managed npm cache under `~/.axis-browser/npm-cache/` when spawning `chrome-devtools-mcp`.
-That prevents bridge startup from depending on a broken or machine-specific global npm cache configuration.
+The dedicated npm cache makes bridge startup less sensitive to a broken or machine-specific global npm cache configuration.
 
 ### Session Hooks
 
-On supported agents, the packaged CLI also installs a `SessionStart` hook in `~/.claude/settings.json` and `~/.codex/hooks.json`, and enables `codex_hooks` in `~/.codex/config.toml`.
+On supported agents, the packaged CLI also installs a `SessionStart` hook in:
+- `~/.claude/settings.json`
+- `~/.codex/hooks.json`
 
-Set `CHROME_DEVTOOLS_AXI_DISABLE_HOOKS=1` to skip that auto-install behavior.
+It also enables `codex_hooks` in:
+- `~/.codex/config.toml`
+
+Set `CHROME_DEVTOOLS_AXI_DISABLE_HOOKS=1` to skip that behavior.
 
 Development entrypoints such as `npm run dev` and `bin/chrome-devtools-axi.ts` do not modify those hook files.
 
 ## Development
 
-```sh
-npm run build      # Compile TypeScript to dist/
-npm run dev        # Run CLI directly with tsx
-npm test           # Run tests with vitest
-npm run test:watch # Run tests in watch mode
+```bash
+npm run build
+npm run dev
+npm test
+npm run test:watch
 ```

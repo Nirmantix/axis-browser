@@ -1,227 +1,188 @@
-# Axis Browser and Playwright for Vibe Coding
+# Shared Chrome Workflow and Tool Selection
 
-This guide explains how to use:
+This guide explains the recommended operating model for Axis Browser in day-to-day product work.
 
-- `Axis Browser` (`axis-browser`, with `axib` and `chrome-devtools-axi` compatibility commands)
-- Playwright CLI
+## Scope
 
-together in a practical, token-efficient workflow for day-to-day product development.
+This file is the workflow guide, not the product reference.
 
-This document is intentionally public-safe:
-- no personal account details
-- no private filesystem paths
-- no private browser profile names
-- no machine-specific secrets
+Source of truth split:
+- `README.md` — install, commands, environment variables, runtime behavior, development
+- `docs/vibe-coding-browser-workflow.md` — tool selection, shared-`9222` workflow, Playwright handoff, and troubleshooting habits
+
+If an old note, prompt, or helper snippet disagrees with this guide or the README, prefer those two repo docs.
 
 ## The Core Idea
 
 Use the right tool for the right job:
+- `Axis Browser` for state, logic, console, network, and lightweight interaction
+- Playwright CLI for scripted verification and repeatable end-to-end checks
+- `agent-browser` only for mainly visual checks
 
-- `Axis Browser` for most logic and state debugging
-- Playwright CLI for executable end-to-end checks
-- `agent-browser` only when a task is primarily visual and Axis Browser plus Playwright are not the easiest fit
+That split is faster, cheaper on tokens, and less ambiguous than using one heavy browser tool for everything.
 
-That split saves tokens and reduces agent confusion.
+## Tool Roles
 
-## Recommended Tool Roles
+### 1. Axis Browser — Primary Diagnostic Tool
 
-### 1. Axis Browser: Primary Logic and State Tool
-
-Use `Axis Browser` for:
+Use Axis Browser first for:
 - page structure inspection
 - form interaction
 - console inspection
 - network inspection
 - reproducing broken UI states
-- verifying app state changes after actions
+- verifying app state after an action
 
 Why:
-- it uses the accessibility tree instead of dumping raw DOM
-- it is much lighter on tokens than many browser MCPs
-- it is usually the fastest way to understand what the page is doing
+- it uses the accessibility tree instead of dumping the full DOM
+- it is much lighter on tokens than many browser MCP stacks
+- it is usually the fastest way to learn what the page is actually doing
 
-Use it first for most debugging sessions.
-
-### 2. Playwright CLI: Execution Tool
+### 2. Playwright CLI — Execution Tool
 
 Use Playwright CLI when you want:
-- a repeatable script
-- end-to-end verification
-- navigation assertions
-- flow regression checks
-- a second opinion separate from `Axis Browser`
+- a reusable script
+- a repeatable end-to-end flow
+- a regression check
+- an independent second opinion
 
 Do not default to a Playwright MCP if a normal CLI script is enough.
 
-### 3. Agent Browser: Optional Visual Fallback
+### 3. agent-browser — Optional Visual Fallback
 
 Use `agent-browser` only when:
-- the task is mainly visual
-- a quick screenshot is easier than driving the shared browser
-- you want a one-off layout or typography sanity check
+- the question is mainly visual
+- a screenshot is easier than driving the shared browser
+- you want a quick layout, spacing, or typography sanity check
 
-Do not use it as the default logic debugger or first-choice interaction tool if `Axis Browser` is available.
+Do not use it as the default logic debugger.
 
-## Why This Split Saves Tokens
+## Shared Chrome Baseline
 
-The expensive pattern is using a browser MCP for every step:
-- navigate
-- inspect DOM
-- click
-- inspect DOM again
-- scroll
-- inspect DOM again
-
-That creates repeated roundtrips and large payloads.
-
-A cheaper pattern is:
-
-1. use `Axis Browser` to understand the current state
-2. fix the code
-3. use Playwright CLI to verify the fixed flow
-
-That keeps the browser-reading phase cheap and the execution phase scriptable.
-
-## Installation
-
-### Axis Browser
-
-Install the fork directly from GitHub:
-
-```bash
-bun add -g github:Nirmantix/axis-browser
-```
-
-or:
-
-```bash
-npm install -g github:Nirmantix/axis-browser
-```
-
-That install exposes these commands:
-- primary command: `axis-browser`
-- shorthand compatibility command: `axib`
-- upstream compatibility command: `chrome-devtools-axi`
-
-Important:
-- `bun add -g chrome-devtools-axi` installs the upstream npm package, not this fork
-- `npx -y chrome-devtools-axi` also resolves the upstream npm package
-- the package name remains `chrome-devtools-axi` for compatibility, but the recommended install path for Axis Browser is the GitHub repo
-
-If you are replacing an older upstream global install:
-
-```bash
-bun remove -g chrome-devtools-axi
-bun add -g github:Nirmantix/axis-browser
-```
-
-or:
-
-```bash
-npm uninstall -g chrome-devtools-axi
-npm install -g github:Nirmantix/axis-browser
-```
-
-Optional shorter daily alias:
-
-```bash
-alias axis='axis-browser'
-```
-
-For local-checkout install details, see:
-- [../README.md](../README.md)
-
-### Agent Browser (Optional)
-
-Install globally only if you want the visual fallback available across projects:
-
-```bash
-bun add -g agent-browser
-```
-
-### Playwright CLI
-
-Install globally if you want reusable CLI access:
-
-```bash
-bun add -g playwright
-playwright install
-```
-
-If you prefer project-local installs, add Playwright to each repo instead.
-
-## Shared Browser Workflow
-
-The most useful pattern is a shared Chrome instance on port `9222`.
+The most useful setup is a shared Chrome instance on port `9222`.
 
 That gives you:
 - one browser window you can log into manually
 - persistent cookies
-- a shared session that `Axis Browser` and Playwright can both reuse
+- a shared session that Axis Browser and Playwright can both reuse
 
-The baseline environment variable is:
+Baseline environment:
 
 ```bash
 export CHROME_DEVTOOLS_AXI_BROWSER_URL=http://127.0.0.1:9222
 ```
 
-If you want a shorter branded shell command, add:
+Built-in commands you can use:
+- `axis-browser`
+- `axib`
+- `chrome-devtools-axi`
+
+This guide uses `axis-browser` in examples because it is the primary documented command.
+
+## Shared-Session Operating Rules
+
+### 1. Reset the bridge when switching targets
+
+The bridge is persistent.
+
+If you are switching from:
+- an isolated Axis Browser session
+- one shared Chrome target
+- one browser URL or websocket endpoint
+- manual `AUTO_CONNECT` vs `BROWSER_URL`
+
+to a different effective target, reset first:
 
 ```bash
-alias axis='axis-browser'
+axis-browser stop
 ```
 
-The examples below prefer `axis` as the recommended daily shorthand. If you do not
-define that alias, use `axis-browser` instead.
+Then run the next command you actually want, for example:
 
-## Important Truth: `axis-init` Is Not A Built-In Command
+```bash
+axis-browser pages
+axis-browser snapshot
+```
 
-Commands like:
-- `axis-init`
-- `axis-human`
-- `axisb-init`
-- `axisb-human`
-- `axi-start`
+`start` is rarely needed; normal commands auto-start the bridge.
 
-are not built into `Axis Browser`.
+### 2. Treat raw CDP as the tab source of truth
 
-They are user-defined shell aliases or helper functions.
+If tab attachment matters, cross-check raw Chrome CDP:
 
-That means:
-- you can create them if they help your workflow
-- you should document them as local shell helpers, not as product features
+```bash
+curl -s http://127.0.0.1:9222/json/list
+```
 
-## Important Warning: `axis-init` Kills Browser Instances
+If raw CDP and Axis Browser disagree:
 
-Most `axis-init` helper functions are intentionally destructive.
+```bash
+axis-browser stop
+axis-browser pages
+```
 
-They usually:
-- kill running instances of the browser binary you chose for automation
-- relaunch that browser with remote debugging on `9222`
-- reuse the same persistent browser profile directory
+### 3. Prefer a fresh controlled tab over guessing
 
-That is convenient, but it also means `axis-init` is the wrong tool if that browser is
-also your main day-to-day browser with unrelated tabs open.
+If attachment to an already-open tab feels flaky, stop guessing.
 
-## Recommended Browser Strategy
+Reset the bridge and open a fresh controlled tab:
 
-Use a dedicated Chromium-based browser for Axis Browser automation.
+```bash
+axis-browser stop
+axis-browser open http://localhost:3000
+```
+
+That is often more reliable than trying to reason about a stale attachment.
+
+## Daily Shared-Browser Flow
+
+```bash
+export CHROME_DEVTOOLS_AXI_BROWSER_URL=http://127.0.0.1:9222
+axis-browser stop
+axis-browser pages
+axis-browser snapshot
+```
+
+Useful follow-ups:
+
+```bash
+axis-browser open http://localhost:3000
+axis-browser console
+axis-browser network
+axis-browser click @12
+axis-browser fill @18 hello@example.com
+axis-browser eval "document.title"
+```
+
+## Stop-Guessing Debug Protocol
+
+When a browser-based feature breaks, do not rewrite code on assumptions.
+
+Use this sequence:
+1. reproduce the issue with Axis Browser
+2. run `axis-browser console`
+3. run `axis-browser network`
+4. inspect the failing request or exception
+5. only then change code
+
+This is especially important for:
+- Next.js server actions
+- client-side state bugs
+- network failures
+- auth flows
+- silent button failures
+
+## Browser Setup Strategy
+
+Use a dedicated Chromium-based browser or dedicated automation profile for this workflow.
 
 Good pattern:
-- keep your normal daily browser separate
-- use a second Chromium browser or a dedicated automation profile for `axis-init`
+- keep your normal day-to-day browser separate
+- use a second Chromium browser or a dedicated automation profile for shared automation work
 
-Examples:
-- if Chrome is your normal browser, use Ulaa, Edge, Brave, or Chromium for Axis Browser
-- if Ulaa is your normal browser, use Chrome for Axis Browser
+That way destructive helper scripts do not destroy your normal browsing session.
 
-The goal is simple:
-- `axis-init` can safely kill and relaunch the automation browser
-- your real daily browsing session is not disrupted
-
-## Example Shared Chrome Setup
-
-### macOS Example: Start Chrome With Remote Debugging
+### Example: Start Chrome With Remote Debugging
 
 ```bash
 "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" \
@@ -231,52 +192,28 @@ The goal is simple:
   --no-default-browser-check
 ```
 
-That creates an isolated browser data directory and exposes Chrome DevTools on `9222`.
-
-### Alternative: Use A Secondary Chromium Browser
-
-If Chrome is your daily browser, point your automation workflow at another Chromium
-browser instead.
-
-Example using Ulaa:
+### Example: Reuse a Secondary Profile
 
 ```bash
-"/Applications/Ulaa.app/Contents/MacOS/Ulaa" \
+"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" \
   --remote-debugging-port=9222 \
-  --user-data-dir="$HOME/.axis-browser-data" \
-  --no-first-run
+  --profile-directory="Work"
 ```
 
-The same idea applies in reverse:
-- if Ulaa is your daily browser, use Chrome for Axis Browser automation
-- if Brave is your daily browser, use Chrome or Chromium for automation
+Use `chrome://version` to inspect the internal profile name if needed.
 
-### Alternative: Reuse An Existing Secondary Browser Profile
+## Local Helper Scripts Are Optional
 
-If you already keep a separate Chromium "Work" profile, you can launch that profile
-with remote debugging instead of using a brand-new `--user-data-dir`.
+Helpers like these are not part of Axis Browser itself:
+- `axis-init`
+- `axis-human`
+- `axisb-init`
+- `axisb-human`
+- `axi-start`
 
-Example using a Ulaa profile:
+They are only user-defined shell helpers.
 
-```bash
-"/Applications/Ulaa.app/Contents/MacOS/Ulaa" \
-  --remote-debugging-port=9222 \
-  --profile-directory="Default Work"
-```
-
-To find the correct internal profile name:
-- open the browser in that profile
-- visit `chrome://version` or the browser-specific equivalent such as `ulaa://version`
-- copy the last segment from the reported Profile Path
-
-This pattern is useful when:
-- you want persistent cookies from a dedicated automation profile
-- you do not want Axis Browser automation mixed into your main personal browser profile
-- you are already using a non-default Chromium browser just for automation work
-
-### Optional Shell Helper
-
-If you want a convenience helper in your shell profile:
+### Example Destructive Helper
 
 ```bash
 axis-init() {
@@ -295,48 +232,38 @@ axis-init() {
 }
 ```
 
-Warning:
-- this helper kills running instances of `Google Chrome` before relaunching
-- only use this pattern with a dedicated automation browser or profile
-- if you want the same pattern with Ulaa or another Chromium browser, swap the binary path and process name accordingly
+Important:
+- this is a local helper example, not a built-in command
+- it is destructive
+- use it only with a dedicated automation browser or dedicated automation profile
 
-Then:
+If you use a helper like this, follow it with:
 
 ```bash
-axis-init
-axis stop
-axis pages
+axis-browser stop
+axis-browser pages
 ```
 
-Why `axis stop`:
-- the bridge is persistent
-- if it was started under a different target config, you want a clean restart
+## Authentication and Session State
 
-## Authentication Workflow
+### Standard username/password or magic-link flows
 
-### Standard Username/Password Or Magic-Link Flows
-
-1. launch the shared Chrome session
+1. launch the shared browser session
 2. open the app manually once
 3. log in manually
-4. keep the browser profile for later automated work
+4. keep the profile for later automated work
 
-That is enough for most local development apps.
-
-### Google SSO Or Other Sensitive SSO Providers
+### Google SSO or other sensitive SSO flows
 
 Some providers dislike browsers launched with debugging flags.
 
-A safe pattern is:
-
+Safe pattern:
 1. launch the same user-data-dir without remote debugging
 2. log in manually
 3. fully quit the browser
 4. relaunch the same user-data-dir with `--remote-debugging-port=9222`
 
-The shared browser profile keeps the session cookies.
-
-### Example Human-Login Helper
+### Human-login helper example
 
 ```bash
 axis-human() {
@@ -347,199 +274,135 @@ axis-human() {
 }
 ```
 
-Again: this is a local helper, not a built-in `Axis Browser` command.
+Again: local helper, not a built-in command.
 
-## Daily Workflow
+## Playwright Rules
 
-1. start your local dev server
-2. launch or reuse the shared automation browser session on `9222`
-3. log in manually if needed
-4. use `Axis Browser` to inspect the current state
-5. use Playwright CLI to verify flows after code changes
-6. use `agent-browser` only if a quick visual-only check is easier than using Axis Browser and Playwright
+### Shared-session Playwright
 
-## Axis Browser Workflow
+When the user's real authenticated session matters, attach to the existing Chrome session on `9222`.
 
-Start with:
-
-```bash
-export CHROME_DEVTOOLS_AXI_BROWSER_URL=http://127.0.0.1:9222
-axis stop
-axis pages
-axis snapshot
-```
-
-Useful commands:
-
-```bash
-axis open http://localhost:3000
-axis snapshot
-axis console
-axis network
-axis network-get 42
-axis click @12
-axis fill @18 hello@example.com
-axis eval "document.title"
-axis wait 2000
-```
-
-## Raw CDP Cross-Check
-
-If tab discovery feels wrong, cross-check the browser directly:
-
-```bash
-curl -s http://127.0.0.1:9222/json/list
-```
-
-If raw CDP shows tabs that `axis pages` does not:
-
-```bash
-axis stop
-axis pages
-```
-
-That is the correct recovery path.
-
-## Debugging Protocol
-
-When a browser-based feature is broken:
-
-1. reproduce it with `Axis Browser`
-2. run `axis console`
-3. run `axis network`
-4. inspect the failing request or exception
-5. only then change code
-
-Do not guess first.
-
-## Example Prompt Pattern For Agents
-
-```text
-Target URL: http://localhost:3000/dashboard
-Issue: The "Retry Install" button fails silently.
-
-Use Axis Browser to:
-1. open the page
-2. snapshot the DOM
-3. reproduce the issue
-4. capture console and network output
-5. report the actual failure before proposing code changes
-```
-
-## Playwright CLI Workflow
-
-Use Playwright when you want a reusable test or scripted verification.
-
-### Shared-Session Playwright Pattern
+Use this pattern:
 
 ```ts
 import { chromium } from "playwright";
 
 (async () => {
   const browser = await chromium.connectOverCDP("http://localhost:9222");
+
   const contexts = browser.contexts();
   const pages = contexts.flatMap((context) => context.pages());
 
   let page = pages.find((p) => /localhost:3000/.test(p.url()));
   if (!page) {
-    page = pages[0];
+    for (const candidate of pages) {
+      if (/Dashboard|Open WebUI/i.test(await candidate.title())) {
+        page = candidate;
+        break;
+      }
+    }
   }
+  page ??= pages[0];
 
-  // do work
+  // your automation here
 
   await browser.disconnect();
 })();
 ```
 
 Rules:
-- do not assume `pages()[0]` is the right tab in multi-tab sessions
-- do not call `browser.close()` if you attached to the shared browser
-- use `disconnect()` instead
+- do not assume `pages()[0]` is the right tab
+- enumerate pages and select by URL or title
+- use `disconnect()`, not `browser.close()`, when attached to the shared browser
+- do not use `chromium.launch()` when you need the user's real shared session
+- do not use a Playwright MCP server when a CLI script is enough
 
-## When To Use Isolated Playwright Instead
+### Isolated Playwright
 
-Use an isolated Playwright run when:
-- you want a second opinion independent of the shared session
+Use isolated Playwright when:
+- you want a clean second opinion
 - you want clean browser state
-- you want a one-off screenshot or verification check
+- you want one-off verification independent of the shared session
 
-Do not confuse that with the shared user session.
+Treat isolated Playwright as an independent browser, not as proof that the shared user session is healthy.
 
-## Agent Browser Workflow (Optional Fallback)
+### Basic Auth rule
 
-Use `agent-browser` when the question is mainly visual:
-- is the page layout broken
-- is spacing wrong
-- is the font rendering correctly
-- is the UI aesthetically correct
+For HTTP basic-auth sites, do not rely on the native browser prompt as the main automation path.
 
-Do not use it as the default choice for data or state debugging.
+Prefer:
+- a pre-authenticated URL for one-off checks
+- Playwright `httpCredentials` in an isolated context
+- or a shared-session tab that is already authenticated
 
-## Suggested Tool Selection Rule
+## agent-browser Rule
 
-A simple heuristic:
+Use `agent-browser` only when the task is mostly visual:
+- layout checks
+- spacing checks
+- font rendering checks
+- screenshot-oriented sanity checks
 
-- if the problem is logic, state, or network: use `Axis Browser`
-- if the problem is regression-proof execution: use Playwright CLI
-- if the problem is purely visual and the other two are overkill: use `agent-browser`
+Do not use it for primary state debugging, network debugging, or routine interaction when Axis Browser is sufficient.
 
-## Safe Prompting Conventions
+## Tool Selection Heuristic
 
-Good shorthand for agents:
+Use this quick rule:
+- if the problem is logic, state, console, or network: use Axis Browser
+- if the problem is repeatable execution or verification: use Playwright CLI
+- if the problem is purely visual: use `agent-browser`
 
-- "axis to http://localhost:3000"
-- "axis snapshot"
-- "axis console"
-- "axis network"
-- "write a Playwright CLI script and run it against the shared browser on 9222"
-- "use agent-browser only if a visual check is easier than Axis Browser and Playwright"
+## Prompt Patterns For Agents
 
-Avoid vague prompts like:
+Good prompts:
+- "Use Axis Browser to reproduce the issue and inspect console and network first"
+- "Open the shared browser on `9222`, snapshot the page, and report the actual failing request"
+- "Write a Playwright CLI script and run it against the shared browser on `9222`"
+- "Use `agent-browser` only if a visual check is easier than Axis Browser and Playwright"
+
+Bad prompts:
 - "debug the UI somehow"
 - "use whatever browser tool you want"
 
-Clear tool intent saves time and tokens.
-
 ## Troubleshooting
 
-### Bridge Feels Stale
+### The bridge feels stale
 
 ```bash
-axis stop
-axis pages
+axis-browser stop
+axis-browser pages
 ```
 
-### Tabs Do Not Match What You See
+### Tabs do not match what you see
 
 ```bash
 curl -s http://127.0.0.1:9222/json/list
-axis stop
-axis pages
+axis-browser stop
+axis-browser pages
 ```
 
-### Shared Login State Is Missing
+### Shared login state is missing
 
-- check that the browser was launched with the intended `--user-data-dir`
-- make sure you reused the same profile folder between manual login and automated usage
+- confirm you reused the intended `--user-data-dir` or profile
+- confirm you logged into that same profile manually first
 - for SSO flows, log in manually first and relaunch with debugging enabled
 
-### Basic Auth Keeps Prompting
+### Basic auth keeps prompting
 
 - close all tabs for that origin
 - retry in a fresh incognito window
-- retry with a fresh `axis` bridge
-- use an isolated Playwright check to confirm the server accepts the credentials
+- retry after `axis-browser stop`
+- use one isolated Playwright check to confirm the server accepts the credentials at all
 
 ## Final Recommendation
 
 If you want one default habit:
-
-- use `Axis Browser` as the daily driver
+- use Axis Browser as the daily driver
 - use Playwright CLI as the execution layer
-- keep `agent-browser` as an optional visual specialist, not a required part of the workflow
+- keep `agent-browser` as an optional visual specialist
 
-That combination is usually the most efficient balance of:
+That is usually the best balance of:
 - speed
 - token cost
 - reproducibility
-- practicality
+- practical debugging

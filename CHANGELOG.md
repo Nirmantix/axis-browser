@@ -31,8 +31,9 @@ unreleased section below until the next tagged release.
 
 ### Documentation
 
-* move public install and usage guidance into `README.md` and keep
-  `docs/vibe-coding-browser-workflow.md` as the public workflow guide
+* keep `README.md` as the source of truth for install, commands, env vars,
+  and runtime behavior, and keep `docs/vibe-coding-browser-workflow.md` as
+  the workflow-only guide
 * document GitHub-first installation for the fork and how to replace an older
   upstream global install cleanly
 * tone down fork-first branding, document the destructive nature of
