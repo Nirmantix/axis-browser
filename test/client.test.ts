@@ -47,10 +47,12 @@ describe("mapErrorMessage", () => {
 describe("bridgeConfigsMatch", () => {
   it("matches identical bridge fingerprints", () => {
     const current = {
+      autoConnect: false,
       browserUrl: "http://127.0.0.1:9222",
       userDataDir: null,
       headed: false,
       chromeArgs: ["--flag-a"],
+      wsHeaders: null,
     };
 
     expect(bridgeConfigsMatch({ ...current }, current)).toBe(true);
@@ -58,19 +60,23 @@ describe("bridgeConfigsMatch", () => {
 
   it("rejects stale bridge configs when the browser target changes", () => {
     const current = {
+      autoConnect: false,
       browserUrl: "http://127.0.0.1:9222",
       userDataDir: null,
       headed: false,
       chromeArgs: [],
+      wsHeaders: null,
     };
 
     expect(
       bridgeConfigsMatch(
         {
+          autoConnect: false,
           browserUrl: null,
           userDataDir: null,
           headed: false,
           chromeArgs: [],
+          wsHeaders: null,
         },
         current,
       ),
@@ -79,13 +85,65 @@ describe("bridgeConfigsMatch", () => {
 
   it("rejects pid files without saved bridge config", () => {
     const current = {
+      autoConnect: false,
       browserUrl: null,
       userDataDir: null,
       headed: false,
       chromeArgs: [],
+      wsHeaders: null,
     };
 
     expect(bridgeConfigsMatch(undefined, current)).toBe(false);
+  });
+
+  it("rejects stale bridge configs when auto-connect mode changes", () => {
+    const current = {
+      autoConnect: true,
+      browserUrl: null,
+      userDataDir: null,
+      headed: false,
+      chromeArgs: [],
+      wsHeaders: null,
+    };
+
+    expect(
+      bridgeConfigsMatch(
+        {
+          autoConnect: false,
+          browserUrl: null,
+          userDataDir: null,
+          headed: false,
+          chromeArgs: [],
+          wsHeaders: null,
+        },
+        current,
+      ),
+    ).toBe(false);
+  });
+
+  it("rejects stale bridge configs when websocket headers change", () => {
+    const current = {
+      autoConnect: false,
+      browserUrl: "wss://cluster.example/launch",
+      userDataDir: null,
+      headed: false,
+      chromeArgs: [],
+      wsHeaders: '{"Authorization":"Bearer new"}',
+    };
+
+    expect(
+      bridgeConfigsMatch(
+        {
+          autoConnect: false,
+          browserUrl: "wss://cluster.example/launch",
+          userDataDir: null,
+          headed: false,
+          chromeArgs: [],
+          wsHeaders: '{"Authorization":"Bearer old"}',
+        },
+        current,
+      ),
+    ).toBe(false);
   });
 });
 

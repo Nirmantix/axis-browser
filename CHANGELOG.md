@@ -2,7 +2,7 @@
 
 This changelog tracks public changes for Axis Browser.
 
-Versions `0.1.15` and below are inherited from the upstream `chrome-devtools-axi`
+Versions `0.1.18` and below are inherited from the upstream `chrome-devtools-axi`
 release history. Axis Browser-specific work since the fork is tracked in the
 unreleased section below until the next tagged release.
 
@@ -10,6 +10,11 @@ unreleased section below until the next tagged release.
 
 ### Features
 
+* sync upstream `0.1.16`-`0.1.18` updates while preserving Axis Browser
+  branding, compatibility commands, and `~/.axis-browser` runtime state
+* support `CHROME_DEVTOOLS_AXI_AUTO_CONNECT` for Chrome 144+ auto-connect
+* support `ws://` and `wss://` browser endpoints plus
+  `CHROME_DEVTOOLS_AXI_WS_HEADERS`
 * brand the public CLI and docs as Axis Browser while keeping upstream-compatible
   package identity and commands (`axis-browser`, `axib`, and
   `chrome-devtools-axi`)
@@ -21,20 +26,41 @@ unreleased section below until the next tagged release.
 * harden bridge startup with dedicated `~/.axis-browser` runtime state,
   managed `chrome-devtools-mcp` cache, stale bridge recovery on port `9224`,
   and installed-build preference for the compiled bridge entrypoint
+* keep bridge fingerprinting aligned with the effective connection mode,
+  including auto-connect and websocket headers
 
 ### Documentation
 
-* move public install and usage guidance into `README.md` and keep
-  `docs/vibe-coding-browser-workflow.md` as the public workflow guide
+* keep `README.md` as the source of truth for install, commands, env vars,
+  and runtime behavior, and keep `docs/vibe-coding-browser-workflow.md` as
+  the workflow-only guide
 * document GitHub-first installation for the fork and how to replace an older
   upstream global install cleanly
 * tone down fork-first branding, document the destructive nature of
   `axis-init`-style helpers, and recommend a dedicated automation browser or
   profile for shared-session workflows
+* document websocket browser endpoints in the public configuration guide
 * clarify that the default browser-tool stack is Axis Browser plus Playwright,
   with `agent-browser` only as an optional visual fallback
 
-## Upstream History
+## [0.1.18](https://github.com/kunchenguid/chrome-devtools-axi/compare/chrome-devtools-axi-v0.1.17...chrome-devtools-axi-v0.1.18) (2026-04-25)
+
+### Miscellaneous Chores
+
+* release 0.1.18 ([cdb5c4b](https://github.com/kunchenguid/chrome-devtools-axi/commit/cdb5c4be015e03d62478db2fc5ea12e69c2b8c44))
+
+## [0.1.17](https://github.com/kunchenguid/chrome-devtools-axi/compare/chrome-devtools-axi-v0.1.16...chrome-devtools-axi-v0.1.17) (2026-04-16)
+
+### Bug Fixes
+
+* **ws:** support websocket browser endpoints and validate ws headers ([#37](https://github.com/kunchenguid/chrome-devtools-axi/issues/37)) ([8376a4f](https://github.com/kunchenguid/chrome-devtools-axi/commit/8376a4fd8c5bbc22d19598b64d25da6de7587eae))
+
+## [0.1.16](https://github.com/kunchenguid/chrome-devtools-axi/compare/chrome-devtools-axi-v0.1.15...chrome-devtools-axi-v0.1.16) (2026-04-16)
+
+### Features
+
+* add `CHROME_DEVTOOLS_AXI_AUTO_CONNECT` for Chrome 144+ auto-connect ([#33](https://github.com/kunchenguid/chrome-devtools-axi/issues/33)) ([542f176](https://github.com/kunchenguid/chrome-devtools-axi/commit/542f1762b8d63aacbfe19019c07c58758ab7517b))
+* support `ws://` and `wss://` browser URLs plus `CHROME_DEVTOOLS_AXI_WS_HEADERS` ([c8710d5](https://github.com/kunchenguid/chrome-devtools-axi/commit/c8710d5ca958e08985180e4e5cf48c7ba8db0530))
 
 ## [0.1.15](https://github.com/kunchenguid/chrome-devtools-axi/compare/chrome-devtools-axi-v0.1.14...chrome-devtools-axi-v0.1.15) (2026-04-11)
 
