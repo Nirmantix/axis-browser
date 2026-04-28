@@ -6,3 +6,6 @@ dist/
 # Internal-only local maintenance and automation files
 maintainance.md
 .airlock/
+
+# Local analysis artifacts
+chrome-devtools-axi-repomix-full.xml
