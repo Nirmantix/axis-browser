@@ -69,9 +69,11 @@ Axis Browser adds bridge target fingerprinting and safer local bridge recovery:
 - stale local bridge wrappers on `9224` can now be shut down and recovered more reliably
 
 That fingerprint currently includes:
+- `CHROME_DEVTOOLS_AXI_AUTO_CONNECT`
 - `CHROME_DEVTOOLS_AXI_BROWSER_URL`
-- `CHROME_DEVTOOLS_AXI_USER_DATA_DIR`
-- headed vs headless mode
+- `CHROME_DEVTOOLS_AXI_WS_HEADERS` for `ws://` and `wss://` endpoints
+- `CHROME_DEVTOOLS_AXI_USER_DATA_DIR` when launching a managed browser
+- effective headed vs headless mode
 - forwarded Chrome args
 
 ## Maintenance Model
@@ -419,6 +421,32 @@ The bridge server port defaults to `9224`. Override it with an environment varia
 ```sh
 export CHROME_DEVTOOLS_AXI_PORT=9225
 ```
+
+Connect to an existing Chrome instance instead of launching one:
+
+```sh
+export CHROME_DEVTOOLS_AXI_BROWSER_URL=http://127.0.0.1:9222
+```
+
+`CHROME_DEVTOOLS_AXI_BROWSER_URL` accepts both `http://` or `https://` URLs and `ws://` or `wss://` endpoints:
+
+- `http(s)://` uses `--browserUrl` and fetches `/json/version` to discover the WebSocket URL.
+- `ws(s)://` uses `--wsEndpoint` directly.
+
+For authenticated `ws://` or `wss://` endpoints, pass JSON headers with `CHROME_DEVTOOLS_AXI_WS_HEADERS`:
+
+```sh
+export CHROME_DEVTOOLS_AXI_BROWSER_URL=wss://cluster.example/launch
+export CHROME_DEVTOOLS_AXI_WS_HEADERS='{"Authorization":"Bearer token"}'
+```
+
+Chrome 144+ auto-connect is also supported for the user's running Chrome:
+
+```sh
+export CHROME_DEVTOOLS_AXI_AUTO_CONNECT=1
+```
+
+When auto-connect is enabled, it takes precedence over `CHROME_DEVTOOLS_AXI_BROWSER_URL` and `CHROME_DEVTOOLS_AXI_USER_DATA_DIR`.
 
 State is stored in `~/.axis-browser/`:
 

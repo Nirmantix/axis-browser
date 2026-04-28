@@ -209,9 +209,11 @@ export function bridgeConfigsMatch(
   if (!existing) return false;
 
   return (
+    existing.autoConnect === current.autoConnect &&
     existing.browserUrl === current.browserUrl &&
     existing.userDataDir === current.userDataDir &&
     existing.headed === current.headed &&
+    existing.wsHeaders === current.wsHeaders &&
     existing.chromeArgs.length === current.chromeArgs.length &&
     existing.chromeArgs.every((value, index) => value === current.chromeArgs[index])
   );

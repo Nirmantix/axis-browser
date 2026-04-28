@@ -47,13 +47,20 @@ flags[2]:
   --help, -v/-V/--version
 
 environment:
+  CHROME_DEVTOOLS_AXI_AUTO_CONNECT  Set to 1 to connect to the user's running Chrome (144+)
+                                    via chrome://inspect/#remote-debugging instead of launching
+                                    a new browser. Requires remote debugging enabled in Chrome.
   CHROME_DEVTOOLS_AXI_HEADED        Set to 1 to run Chrome in headed (visible) mode
   CHROME_DEVTOOLS_AXI_CHROME_ARGS   Whitespace-separated Chrome flags forwarded to the browser
                                     (no shell-style quoting; flags with spaces are not supported)
                                     e.g. "--enable-gpu --ignore-gpu-blocklist"
   CHROME_DEVTOOLS_AXI_PORT          Bridge server port (default: 9224)
-  CHROME_DEVTOOLS_AXI_BROWSER_URL   Connect to an existing Chrome instance instead of launching one
-                                    e.g. "http://127.0.0.1:9222"
+  CHROME_DEVTOOLS_AXI_BROWSER_URL   Connect to an existing Chrome instance instead of launching one.
+                                    http(s):// uses --browserUrl (fetches /json/version).
+                                    ws(s):// uses --wsEndpoint (direct WebSocket).
+                                    e.g. "http://127.0.0.1:9222" or "wss://cluster.example/launch"
+  CHROME_DEVTOOLS_AXI_WS_HEADERS    JSON headers for ws(s):// endpoints (only with BROWSER_URL=wss?://)
+                                    e.g. '{"Authorization":"Bearer token"}'
   CHROME_DEVTOOLS_AXI_USER_DATA_DIR Persistent Chrome profile directory (skips --isolated mode)
                                     e.g. "/path/to/.chrome-profile"
   CHROME_DEVTOOLS_AXI_DISABLE_HOOKS Set to 1 to skip auto-installing session hooks

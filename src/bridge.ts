@@ -31,10 +31,12 @@ export const PRIMARY_PID_FILE = join(PRIMARY_STATE_DIR, "bridge.pid");
 export const MCP_CACHE_DIR = join(PRIMARY_STATE_DIR, "npm-cache");
 
 export interface BridgeConfigSnapshot {
+  autoConnect: boolean;
   browserUrl: string | null;
   userDataDir: string | null;
   headed: boolean;
   chromeArgs: string[];
+  wsHeaders: string | null;
 }
 
 export interface BridgeContentBlock {
@@ -76,11 +78,26 @@ export function getBridgeConfigSnapshot(
   env: NodeJS.ProcessEnv = process.env,
 ): BridgeConfigSnapshot {
   const rawChromeArgs = env.CHROME_DEVTOOLS_AXI_CHROME_ARGS?.trim() ?? "";
+  const autoConnect = env.CHROME_DEVTOOLS_AXI_AUTO_CONNECT === "1";
+  const browserUrl = autoConnect
+    ? null
+    : env.CHROME_DEVTOOLS_AXI_BROWSER_URL ?? null;
+  const usingBrowserUrl = browserUrl !== null;
+  const isWsBrowserUrl = browserUrl !== null && /^wss?:\/\//i.test(browserUrl);
+
   return {
-    browserUrl: env.CHROME_DEVTOOLS_AXI_BROWSER_URL ?? null,
-    userDataDir: env.CHROME_DEVTOOLS_AXI_USER_DATA_DIR ?? null,
-    headed: env.CHROME_DEVTOOLS_AXI_HEADED === "1",
+    autoConnect,
+    browserUrl,
+    userDataDir:
+      autoConnect || usingBrowserUrl
+        ? null
+        : env.CHROME_DEVTOOLS_AXI_USER_DATA_DIR ?? null,
+    headed:
+      autoConnect || usingBrowserUrl
+        ? false
+        : env.CHROME_DEVTOOLS_AXI_HEADED === "1",
     chromeArgs: rawChromeArgs ? rawChromeArgs.split(/\s+/) : [],
+    wsHeaders: isWsBrowserUrl ? env.CHROME_DEVTOOLS_AXI_WS_HEADERS ?? null : null,
   };
 }
 
@@ -288,13 +305,44 @@ function writeReadySignal(): void {
 export function buildTransportArgs(): string[] {
   const args = ["-y", "chrome-devtools-mcp@latest"];
 
+  const autoConnect = process.env.CHROME_DEVTOOLS_AXI_AUTO_CONNECT === "1";
   const browserUrl = process.env.CHROME_DEVTOOLS_AXI_BROWSER_URL;
   const userDataDir = process.env.CHROME_DEVTOOLS_AXI_USER_DATA_DIR;
 
-  if (browserUrl) {
-    // Connect to an existing Chrome instance — skip --isolated and --headless
+  if (autoConnect) {
+    // Chrome 144+ built-in remote debugging via chrome://inspect/#remote-debugging.
+    // Connects to the user's running Chrome - no separate browser launched.
+    args.push("--autoConnect");
+  } else if (browserUrl) {
+    // Connect to an existing Chrome instance - skip --isolated and --headless
     // since the user manages the browser lifecycle externally.
-    args.push(`--browserUrl=${browserUrl}`);
+    // ws://|wss:// route to --wsEndpoint (direct WebSocket), http(s):// to --browserUrl
+    // (which fetches /json/version to discover the WebSocket URL).
+    const isWs = /^wss?:\/\//i.test(browserUrl);
+    if (isWs) {
+      args.push(`--wsEndpoint=${browserUrl}`);
+      const wsHeaders = process.env.CHROME_DEVTOOLS_AXI_WS_HEADERS;
+      if (wsHeaders) {
+        let parsedHeaders: unknown;
+        try {
+          parsedHeaders = JSON.parse(wsHeaders);
+        } catch {
+          throw new Error("CHROME_DEVTOOLS_AXI_WS_HEADERS must be valid JSON");
+        }
+        if (
+          parsedHeaders === null ||
+          typeof parsedHeaders !== "object" ||
+          Array.isArray(parsedHeaders)
+        ) {
+          throw new Error(
+            "CHROME_DEVTOOLS_AXI_WS_HEADERS must be a JSON object",
+          );
+        }
+        args.push(`--wsHeaders=${wsHeaders}`);
+      }
+    } else {
+      args.push(`--browserUrl=${browserUrl}`);
+    }
   } else {
     if (userDataDir) {
       // Persistent profile — skip --isolated so the profile is preserved.
