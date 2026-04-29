@@ -157,6 +157,12 @@ Requirements:
 - Python 3.11+
 - `uv`
 
+On macOS, install `uv` first if it is missing:
+
+```bash
+brew install uv
+```
+
 Typical install:
 
 ```bash
@@ -212,13 +218,14 @@ On a new Mac, a practical setup order is:
 5. decide whether you want a shared local Chrome profile on `9222`
 6. add local shell helpers only if you actually want them
 
-Verify the resulting commands:
+Verify the required commands and any optional commands you installed:
 
 ```bash
 axis-browser --version
 axib --version
 browser-harness --help
 playwright-cli --help
+# Optional, only if installed:
 agent-browser --help
 ```
 
