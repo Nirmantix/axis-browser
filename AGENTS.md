@@ -155,6 +155,21 @@ npm test -- --run test/cli-runtime.test.ts test/main.test.ts test/run.test.ts
 - wait for required checks and review
 - merge only through the protected GitHub flow
 
+## Browser Tooling Guidance For This Repo
+
+When updating browser-workflow docs or answering browser-tooling questions for this repo, keep the public guidance aligned with this order:
+- `Browser Harness` = preferred unconstrained browser driver when the user wants maximum flexibility
+- `Axis Browser` = preferred compact diagnostic tool for console, network, and shared-Chrome debugging
+- `Playwright CLI` = preferred repeatable execution and verification layer
+- `agent-browser` = optional fallback utility, not the default first choice
+
+Also preserve these workflow rules unless the owner asks otherwise:
+- a shared Chrome profile on `9222` is optional, not mandatory
+- recommend shared Chrome only when real login state, cookies, or manual+agent continuity matter
+- recommend isolated browser sessions when reproducibility or disposability matters more
+- treat `axis`, `axi`, `axisb`, `axis-init`, `axis-human`, `axisb-init`, and `axisb-human` as local user-defined helpers or aliases, not built-in commands
+- prefer `axis-browser` in reusable public examples unless local aliases are explicitly labeled as local-only
+
 ## Private Notes
 
 There is also a local private playbook named `maintainance.md` in this repo root.

@@ -143,6 +143,88 @@ Expose the commands globally from the checkout:
 npm link
 ```
 
+## Optional Companion Tool Stack
+
+Axis Browser works on its own.
+If you also want the multi-tool coding-agent stack described in the workflow guide, install these optional companions too:
+
+### Browser Harness
+
+Browser Harness is the preferred unconstrained browser driver in this repo's broader workflow.
+It is especially useful when the site is messy, screenshot-first exploration is easier, or the agent may need to write helper code or domain skills.
+
+Requirements:
+- Python 3.11+
+- `uv`
+
+Typical install:
+
+```bash
+git clone https://github.com/browser-use/browser-harness.git ~/Developer/browser-harness
+cd ~/Developer/browser-harness
+uv tool install -e .
+browser-harness --help
+```
+
+Register its global skill for coding agents:
+
+```bash
+mkdir -p "${CODEX_HOME:-$HOME/.codex}/skills/browser-harness"
+ln -sf ~/Developer/browser-harness/SKILL.md "${CODEX_HOME:-$HOME/.codex}/skills/browser-harness/SKILL.md"
+```
+
+For Claude Code, add an import to `~/.claude/CLAUDE.md` that points at the same `SKILL.md`.
+Then run:
+
+```bash
+browser-harness --setup
+```
+
+### Playwright CLI
+
+Playwright CLI is the preferred repeatable execution and verification layer.
+
+```bash
+npm install -g @playwright/cli@latest
+playwright-cli install --skills
+playwright-cli --help
+```
+
+### agent-browser
+
+`agent-browser` is optional in this stack.
+Keep it as a fallback utility rather than the default daily driver.
+
+```bash
+npm install -g agent-browser
+agent-browser install
+agent-browser --help
+```
+
+## Fresh Mac Setup Checklist
+
+On a new Mac, a practical setup order is:
+
+1. install Axis Browser from GitHub
+2. install Browser Harness and register its global skill
+3. install Playwright CLI and its skills
+4. optionally install `agent-browser`
+5. decide whether you want a shared local Chrome profile on `9222`
+6. add local shell helpers only if you actually want them
+
+Verify the resulting commands:
+
+```bash
+axis-browser --version
+axib --version
+browser-harness --help
+playwright-cli --help
+agent-browser --help
+```
+
+For the full operating model after install — including shared Chrome, Browser Harness modes, Playwright handoff, and coding-agent prompts — read:
+- [docs/vibe-coding-browser-workflow.md](docs/vibe-coding-browser-workflow.md)
+
 ## Quick Start
 
 ```bash
@@ -189,6 +271,44 @@ axis-browser pages
 
 For the full shared-browser operating model, read:
 - [docs/vibe-coding-browser-workflow.md](docs/vibe-coding-browser-workflow.md)
+
+## Optional Local Shell Helpers
+
+These are **not** built-in commands.
+They are only local shell helpers you may choose to add on your own machine.
+
+A minimal `~/.zshrc` example for a dedicated automation Chrome profile on macOS:
+
+```bash
+export CHROME_DEVTOOLS_AXI_BROWSER_URL=http://127.0.0.1:9222
+
+axis-init() {
+  killall "Google Chrome" >/dev/null 2>&1 || true
+  pkill -9 -i "Google Chrome" >/dev/null 2>&1 || true
+  pkill -f "chrome-devtools-mcp" >/dev/null 2>&1 || true
+  mkdir -p "$HOME/.axis-browser-data"
+
+  "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" \
+    --remote-debugging-port=9222 \
+    --user-data-dir="$HOME/.axis-browser-data" \
+    --no-first-run \
+    --no-default-browser-check >/dev/null 2>&1 &
+}
+
+axis-human() {
+  mkdir -p "$HOME/.axis-browser-data"
+  "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" \
+    --user-data-dir="$HOME/.axis-browser-data" \
+    --no-first-run
+}
+
+alias axis='axis-browser'
+```
+
+Use those only if you want a shared local browser profile on `9222`.
+Swap Chrome for another Chromium browser if that is your dedicated automation browser.
+
+For when to use `axis-init`, when not to use it, and how Browser Harness or Playwright fit around it, read the workflow guide.
 
 ## How It Works
 

@@ -816,6 +816,26 @@ Use this quick rule:
 - if real cookies/login state matter across tools: use a shared Chrome profile
 - if clean reproducibility matters more: do not use a shared Chrome profile
 
+## Using This Stack In Any Project Folder
+
+A good goal on a fresh machine is:
+- install the tools globally once
+- register Browser Harness and Playwright CLI skills globally once
+- then let coding agents use them from any repo without re-installing browser tooling per project
+
+Practical setup model:
+- `axis-browser`, `axib`, and `chrome-devtools-axi` are real installed commands
+- Browser Harness is installed as a global editable tool and its `SKILL.md` is registered globally
+- Playwright CLI has `install --skills` run once
+- `agent-browser` stays optional
+
+For reusable instructions across projects, prefer built-in public command names like:
+- `axis-browser`
+- `browser-harness`
+- `playwright-cli`
+
+If you personally maintain local aliases like `axis='axis-browser'`, that is fine for your own shell usage, but do not assume other machines or other agents have those aliases unless you say so explicitly.
+
 ## Prompt Patterns For Agents
 
 Good prompts:
@@ -830,6 +850,73 @@ Bad prompts:
 - "use whatever browser tool you want"
 - "always use shared Chrome"
 - "always use isolated browsers"
+
+### Prompt template — Browser Harness first
+
+Use this when Browser Harness should be the default driver:
+
+```text
+Use Browser Harness first for this browser task.
+
+If the site becomes hard to reason about, use screenshots, raw CDP, or Browser Harness helpers as needed.
+If the issue becomes a state, console, or network debugging problem, switch to Axis Browser for diagnosis.
+If the final answer needs a repeatable proof, write and run a Playwright CLI verification afterwards.
+Use a shared local Chrome profile only if real login state matters; otherwise stay isolated.
+Use agent-browser only if it is clearly the easiest remaining option.
+```
+
+### Prompt template — Shared-session debugging
+
+Use this when the shared local browser on `9222` matters:
+
+```text
+The shared browser on http://127.0.0.1:9222 is already managed externally.
+Do not reset or relaunch it unless I explicitly ask.
+
+Use Axis Browser first to inspect the real page state.
+Run `axis-browser snapshot`, then inspect `axis-browser console` and `axis-browser network` after important interactions.
+If freer interaction is needed, attach Browser Harness to the same shared browser.
+If repeatable proof is needed, use Playwright attached to the same shared browser and disconnect cleanly instead of closing it.
+```
+
+### Prompt template — Axis + Playwright UI verification
+
+Use this when you want compact diagnostics first and repeatable verification second:
+
+```text
+Target URL: [INSERT URL]
+Goal: verify the real rendered behavior, not assumptions from code.
+
+Workflow:
+1. Use `axis-browser open <url>`.
+2. Run `axis-browser snapshot` first.
+3. Interact with the key controls using Axis Browser.
+4. After important actions, inspect:
+   - `axis-browser snapshot`
+   - `axis-browser console`
+   - `axis-browser network`
+5. If a repeatable flow check is needed, write and run a Playwright CLI verification.
+6. If login blocks progress, ask me to log in manually instead of inventing credentials.
+
+Do not use `chromium.launch()` when the task depends on the shared browser.
+Do not close the shared browser from Playwright.
+```
+
+### Prompt template — New project default briefing
+
+Use this when opening a project folder where the coding agent does not yet know your browser-tool order:
+
+```text
+My browser-tool preference order is:
+1. Browser Harness for unconstrained browser work
+2. Axis Browser for compact diagnostics, console, and network
+3. Playwright CLI for repeatable verification and scripted execution
+4. agent-browser only as an optional fallback
+
+Use a shared Chrome profile only when real cookies, manual login continuity, or cross-tool shared session state matter.
+Otherwise prefer isolated browser sessions.
+Do not assume local aliases like `axis` exist unless I explicitly say they do.
+```
 
 ## Troubleshooting
 
