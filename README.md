@@ -15,14 +15,14 @@ It is optimized for:
 - shared Chrome on `9222`
 - low-token page inspection
 - repeatable debugging with console, network, and snapshots
-- practical handoff between `axis-browser`, Playwright CLI, and other tooling
+- practical shared-Chrome debugging with `axis-browser`
 
 ## Documentation Map
 
 This repo intentionally keeps only two public docs with distinct roles:
 
 - `README.md` — source of truth for install, commands, environment variables, runtime behavior, and development
-- `docs/vibe-coding-browser-workflow.md` — source of truth for the shared-`9222` workflow, tool selection, Playwright usage, and troubleshooting habits
+- `docs/vibe-coding-browser-workflow.md` — source of truth for the Axis Browser shared-`9222` workflow and troubleshooting habits
 
 If you see old notes that mention different paths, aliases, or helper scripts, prefer this README and the workflow guide.
 
@@ -70,6 +70,11 @@ The fork-specific behavior is intentionally small:
 - Axis Browser branding and compatibility aliases
 
 ## Install
+
+Requirements:
+- Node.js `20+`
+- Bun or npm
+- Chrome or Chromium for browser automation
 
 The recommended install path for this fork is GitHub, not the upstream npm package.
 
@@ -187,7 +192,7 @@ axis-browser stop
 axis-browser pages
 ```
 
-For the full shared-browser operating model, read:
+For the full public shared-browser operating model, read:
 - [docs/vibe-coding-browser-workflow.md](docs/vibe-coding-browser-workflow.md)
 
 ## How It Works

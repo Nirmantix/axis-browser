@@ -36,12 +36,11 @@ unreleased section below until the next tagged release.
   the workflow-only guide
 * document GitHub-first installation for the fork and how to replace an older
   upstream global install cleanly
-* tone down fork-first branding, document the destructive nature of
-  `axis-init`-style helpers, and recommend a dedicated automation browser or
-  profile for shared-session workflows
+* tone down fork-first branding, clearly label `axis-init`-style helpers as
+  optional local shell functions, and recommend a dedicated automation browser
+  or profile for shared-session workflows
 * document websocket browser endpoints in the public configuration guide
-* clarify that the default browser-tool stack is Axis Browser plus Playwright,
-  with `agent-browser` only as an optional visual fallback
+* keep public workflow docs focused on the Axis Browser shared-Chrome use case
 
 ## [0.1.18](https://github.com/kunchenguid/chrome-devtools-axi/compare/chrome-devtools-axi-v0.1.17...chrome-devtools-axi-v0.1.18) (2026-04-25)
 
