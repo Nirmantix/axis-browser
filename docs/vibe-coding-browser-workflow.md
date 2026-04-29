@@ -485,6 +485,130 @@ Prefer Browser Harness remote/cloud mode when:
 If you still need auth state in that remote browser, Browser Harness has its own profile-sync workflow for cookies.
 That is a different strategy from a local shared Chrome profile.
 
+## Browser Harness mode guide
+
+A good practical Browser Harness model is:
+- start with the harness directly when it can attach cleanly on its own
+- switch to a shared local Chrome only when real local session state matters
+- use an isolated local or remote browser when you want quiet, disposable automation
+
+### Mode 0 — Direct Browser Harness attach
+
+Use this when:
+- Browser Harness can already attach through its own setup flow
+- you do not care about sharing state with Axis Browser or Playwright
+- you do not need a dedicated `9222` convention
+- you are okay with Browser Harness managing the attach story itself
+
+This is often the simplest Browser Harness path.
+
+### Mode 1 — Shared visible Chrome via a local `axis-init`-style helper
+
+Use this when you need:
+- existing cookies
+- logged-in sessions
+- OAuth / SSO state
+- wp-admin or other persistent admin sessions
+- one visible browser window shared across tools
+- manual + agent handoff in the same local browser
+
+Typical flow:
+
+```bash
+axis-init
+curl -s http://127.0.0.1:9222/json/version
+```
+
+Then point Browser Harness at that shared browser.
+
+For a local Chrome DevTools HTTP endpoint, prefer `BU_CDP_URL` because Browser Harness can resolve `/json/version` itself:
+
+```bash
+BU_CDP_URL=http://127.0.0.1:9222 browser-harness -c '
+new_tab("https://example.com")
+wait_for_load()
+print(page_info())
+'
+```
+
+If you already have the exact WebSocket URL, `BU_CDP_WS` is also valid:
+
+```bash
+WS=$(curl -s http://127.0.0.1:9222/json/version | node -e 'let s=""; process.stdin.on("data", d => s += d); process.stdin.on("end", () => console.log(JSON.parse(s).webSocketDebuggerUrl))')
+BU_CDP_WS="$WS" browser-harness -c '
+new_tab("https://example.com")
+wait_for_load()
+print(page_info())
+'
+```
+
+Caveats:
+- this can open tabs in your visible shared browser
+- it can interact with the same logged-in session you are using manually
+- it is the right choice only when shared local state matters more than isolation
+
+### Mode 2 — Isolated local headless Chrome
+
+Use this when you want:
+- quiet backend scraping
+- public page checks
+- discovery workflows
+- repeatable automation without touching your visible browser
+- no keyboard/mouse interference
+- no clutter in your shared Chrome
+
+Generic pattern:
+
+```bash
+CHROME="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+TMP_PROFILE=$(mktemp -d /tmp/browser-harness-profile-XXXXXX)
+PORT=9333
+
+"$CHROME" \
+  --headless=new \
+  --disable-gpu \
+  --no-first-run \
+  --no-default-browser-check \
+  --remote-debugging-port="$PORT" \
+  --user-data-dir="$TMP_PROFILE" \
+  about:blank &
+```
+
+Then connect Browser Harness to that isolated browser:
+
+```bash
+BU_CDP_URL="http://127.0.0.1:$PORT" browser-harness -c '
+new_tab("https://example.com")
+wait_for_load()
+print(page_info())
+'
+```
+
+Use `BU_CDP_WS` instead only if you specifically want to resolve and pin the exact WebSocket yourself.
+
+Caveats:
+- this is usually the better mode for public scraping and disposable checks
+- you are responsible for cleanup of the temporary profile and background Chrome process
+- this gives up your real local logged-in session state by design
+
+### Mode 3 — Browser Harness remote/cloud browser
+
+Use this when you need:
+- strong isolation
+- multiple parallel agent browsers
+- proxies
+- a disposable remote browser
+- no dependence on your local Chrome at all
+
+This is often better than a local shared browser when realism of your local profile is not required.
+
+## Browser Harness rule of thumb
+
+- need login, cookies, or the user's real local session: use a shared local Chrome and point Browser Harness at it
+- need quiet backend scraping or disposable checks: use an isolated local headless Chrome
+- need scalable isolation, proxies, or parallel browsers: use Browser Harness remote/cloud mode
+- if Browser Harness can already attach directly and none of the above constraints matter: just use it directly
+
 ## How Playwright Fits With Shared Chrome
 
 ### Shared-session Playwright
