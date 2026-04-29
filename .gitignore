@@ -9,3 +9,7 @@ maintainance.md
 
 # Local analysis artifacts
 chrome-devtools-axi-repomix-full.xml
+
+# Local/private personal guides
+.local-docs/
+personal-browser-automation-guide.md

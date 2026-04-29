@@ -109,9 +109,9 @@ Keep these true unless the owner explicitly asks otherwise:
 
 Keep public docs clean and unambiguous:
 - `README.md` = source of truth for install, commands, env vars, runtime behavior, development
-- `docs/vibe-coding-browser-workflow.md` = source of truth for workflow, shared `9222` usage, Playwright handoff, and troubleshooting habits
+- `docs/vibe-coding-browser-workflow.md` = source of truth for the public Axis Browser workflow, shared `9222` usage, and troubleshooting habits
 
-If docs drift, consolidate them instead of duplicating conflicting guidance.
+If docs drift, consolidate them instead of duplicating conflicting guidance. Keep local-only browser-tool-stack notes out of tracked public docs.
 
 ## Current Intentional Fork Delta
 
