@@ -29,6 +29,11 @@ unreleased section below until the next tagged release.
 * keep bridge fingerprinting aligned with the effective connection mode,
   including auto-connect and websocket headers
 
+### CI
+
+* disable release-please automation for this repo; releases remain manual unless
+  the owner chooses to re-enable automation later
+
 ### Documentation
 
 * keep `README.md` as the source of truth for install, commands, env vars,
