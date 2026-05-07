@@ -10,10 +10,14 @@ import {
   getSessionSnapshotIfRunning,
   stopBridge,
 } from "./client.js";
-import { readStdin, runScript } from "./run.js";
+import { bumpGeneration, getCurrentGeneration } from "./generation.js";
+import { parseEvalOutput, readStdin, runScript } from "./run.js";
 import {
+  checkUidGeneration,
   countRefs,
   extractTitle,
+  parseStampedUid,
+  stampSnapshotGeneration,
   truncateSnapshot,
   truncateText,
 } from "./snapshot.js";
@@ -24,8 +28,14 @@ const HOME_DESCRIPTION =
 
 const VERSION = readPackageVersion();
 const RAW_STDOUT_MARKER = "__CHROME_DEVTOOLS_AXI_RAW__";
+const PAGE_GENERATION_KEY = "__chromeDevtoolsAxiSnapshotGeneration";
 
 type CliStdout = Pick<NodeJS.WriteStream, "write">;
+
+type ToolCaller = (
+  name: string,
+  args?: Record<string, unknown>,
+) => Promise<string>;
 
 export type MainOptions = {
   argv?: string[];
@@ -106,13 +116,15 @@ args:
   <path>  File path to save the screenshot (required)
 
 flags:
-  --uid @<uid>    Capture a specific element instead of the full viewport
+  --uid @<uid>    Capture a specific element instead of the full viewport.
+                  Refs are generation-tagged (e.g. @g3:12) - pass them back
+                  exactly as printed. A stale ref returns STALE_REF.
   --full-page     Capture the entire scrollable page
   --format <fmt>  Image format: png (default), jpeg, or webp
 
 examples:
   chrome-devtools-axi screenshot ./page.png
-  chrome-devtools-axi screenshot ./element.png --uid @3
+  chrome-devtools-axi screenshot ./element.png --uid @g1:3
   chrome-devtools-axi screenshot ./full.png --full-page --format jpeg`,
 
   snapshot: `usage: chrome-devtools-axi snapshot [--full]
@@ -129,28 +141,32 @@ examples:
 Click an interactive element by its ref from the snapshot.
 
 args:
-  @<uid>  Element ref from snapshot (required)
+  @<uid>  Element ref from snapshot (required). Refs are generation-tagged
+          (e.g. @g3:12) - pass them back exactly as printed. A stale ref
+          (older generation) returns a STALE_REF error so you know to re-snapshot.
 
 flags:
   --full  Show complete snapshot without truncation
 
 examples:
-  chrome-devtools-axi click @1
-  chrome-devtools-axi click @12 --full`,
+  chrome-devtools-axi click @g1:1
+  chrome-devtools-axi click @g2:12 --full`,
 
   fill: `usage: chrome-devtools-axi fill @<uid> <text> [--full]
 Fill a form field with text.
 
 args:
-  @<uid>  Element ref from snapshot (required)
+  @<uid>  Element ref from snapshot (required). Refs are generation-tagged
+          (e.g. @g3:12) - pass them back exactly as printed. A stale ref
+          returns a STALE_REF error so you know to re-snapshot.
   <text>  Text to fill (required)
 
 flags:
   --full  Show complete snapshot without truncation
 
 examples:
-  chrome-devtools-axi fill @3 "hello world"
-  chrome-devtools-axi fill @3 "search query" --full`,
+  chrome-devtools-axi fill @g1:3 "hello world"
+  chrome-devtools-axi fill @g2:3 "search query" --full`,
 
   type: `usage: chrome-devtools-axi type <text> [--full]
 Type text at the currently focused element.
@@ -338,39 +354,42 @@ examples:
 Hover over an element to trigger hover states.
 
 args:
-  @<uid>  Element ref from snapshot (required)
+  @<uid>  Element ref from snapshot (required). Refs are generation-tagged
+          (e.g. @g3:12) - pass them back exactly as printed. A stale ref
+          returns a STALE_REF error so you know to re-snapshot.
 
 flags:
   --full  Show complete snapshot without truncation
 
 examples:
-  chrome-devtools-axi hover @5`,
+  chrome-devtools-axi hover @g1:5`,
 
   drag: `usage: chrome-devtools-axi drag @<from> @<to> [--full]
 Drag an element onto another element.
 
 args:
-  @<from>  Element to drag (required)
-  @<to>    Element to drop onto (required)
+  @<from>  Element to drag (required). Use refs from the latest snapshot.
+  @<to>    Element to drop onto (required). Stale refs return STALE_REF.
 
 flags:
   --full  Show complete snapshot without truncation
 
 examples:
-  chrome-devtools-axi drag @3 @7`,
+  chrome-devtools-axi drag @g1:3 @g1:7`,
 
   fillform: `usage: chrome-devtools-axi fillform @<uid>=<value>... [--full]
 Fill multiple form fields at once.
 
 args:
-  @<uid>=<value>  One or more field entries (required)
+  @<uid>=<value>  One or more field entries from the latest snapshot (required).
+                  Stale refs return STALE_REF.
 
 flags:
   --full  Show complete snapshot without truncation
 
 examples:
-  chrome-devtools-axi fillform @1="hello" @2="world"
-  chrome-devtools-axi fillform @3="user@email.com" @4="password123"`,
+  chrome-devtools-axi fillform @g1:1="hello" @g1:2="world"
+  chrome-devtools-axi fillform @g2:3="user@email.com" @g2:4="password123"`,
 
   dialog: `usage: chrome-devtools-axi dialog <accept|dismiss> [text]
 Handle a browser dialog (alert, confirm, prompt).
@@ -388,14 +407,15 @@ examples:
 Upload a file through a file input element.
 
 args:
-  @<uid>  File input element ref from snapshot (required)
+  @<uid>  File input element ref from snapshot (required). Refs are
+          generation-tagged; stale refs return STALE_REF.
   <path>  Local file path to upload (required)
 
 flags:
   --full  Show complete snapshot without truncation
 
 examples:
-  chrome-devtools-axi upload @5 ./photo.jpg`,
+  chrome-devtools-axi upload @g1:5 ./photo.jpg`,
 
   // Emulation
   emulate: `usage: chrome-devtools-axi emulate [flags]
@@ -962,9 +982,96 @@ function stripSnapshotHeader(text: string): string {
   return text.replace(/^[\s\S]*?##\s+Latest page snapshot\s*\n/, "");
 }
 
-/** Strip leading @ from uid ref. */
-function parseUid(arg: string): string {
-  return arg.startsWith("@") ? arg.slice(1) : arg;
+/**
+ * Strip the `@` prefix and any generation tag from a uid ref, validating
+ * that the tag (if present) matches the current snapshot generation. A
+ * stale tag throws a loud STALE_REF error rather than letting a silent
+ * no-op fall through to upstream MCP.
+ */
+export function parseUid(arg: string): string {
+  const current = getCurrentGeneration();
+  const check = checkUidGeneration(arg, current);
+  if (check.stale) {
+    throwStaleRef(arg, check.refGeneration, current);
+  }
+  return check.uid;
+}
+
+/** Tag a freshly captured snapshot with a bumped generation marker. */
+async function stampFresh(snapshot: string): Promise<string> {
+  const generation = bumpGeneration();
+  await markPageSnapshotGeneration(generation);
+  return stampSnapshotGeneration(snapshot, generation);
+}
+
+function throwStaleRef(
+  arg: string,
+  refGeneration: number | null,
+  currentGeneration: number,
+): never {
+  const refRaw = arg.startsWith("@") ? arg.slice(1) : arg;
+  throw new CdpError(
+    `Stale ref @${refRaw}: from snapshot generation ${refGeneration}, current is ${currentGeneration}. Re-snapshot to get fresh refs.`,
+    "STALE_REF",
+    [
+      "Run `chrome-devtools-axi snapshot` to capture current refs, then retry the action",
+    ],
+  );
+}
+
+async function markPageSnapshotGeneration(generation: number): Promise<void> {
+  const key = JSON.stringify(PAGE_GENERATION_KEY);
+  try {
+    await callTool("evaluate_script", {
+      function: `() => {
+  const key = ${key};
+  const previous = globalThis[key];
+  if (previous && previous.observer) previous.observer.disconnect();
+  const state = { generation: ${generation}, mutations: 0, observer: null };
+  const observer = new MutationObserver(() => { state.mutations += 1; });
+  observer.observe(document.documentElement || document, { childList: true, subtree: true, attributes: true, characterData: true });
+  state.observer = observer;
+  globalThis[key] = state;
+  return state.generation;
+}`,
+    });
+  } catch {
+  }
+}
+
+async function getPageRefGeneration(caller: ToolCaller): Promise<number> {
+  const key = JSON.stringify(PAGE_GENERATION_KEY);
+  const fallback = getCurrentGeneration();
+  try {
+    const output = await caller("evaluate_script", {
+      function: `() => {
+  const state = globalThis[${key}];
+  if (!state || typeof state.generation !== 'number') return ${fallback};
+  const mutations = typeof state.mutations === 'number' ? state.mutations : 0;
+  return state.generation + mutations;
+}`,
+    });
+    const parsed = parseEvalOutput(output);
+    return typeof parsed === "number" && Number.isFinite(parsed)
+      ? parsed
+      : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+export async function parseUidFresh(
+  arg: string,
+  caller: ToolCaller = callTool,
+): Promise<string> {
+  const { generation } = parseStampedUid(arg);
+  const current =
+    generation === null ? getCurrentGeneration() : await getPageRefGeneration(caller);
+  const check = checkUidGeneration(arg, current);
+  if (check.stale) {
+    throwStaleRef(arg, check.refGeneration, current);
+  }
+  return check.uid;
 }
 
 function isRecoverableOpenError(error: unknown): error is CdpError {
@@ -985,9 +1092,11 @@ async function callWithSnapshot(
 ): Promise<string> {
   const result = await callTool(name, { ...args, includeSnapshot: true });
   const snapshot = parseSnapshotFromResponse(result);
-  if (snapshot && snapshot.length > 0) return stripSnapshotHeader(snapshot);
+  if (snapshot && snapshot.length > 0) {
+    return await stampFresh(stripSnapshotHeader(snapshot));
+  }
   // Fallback: take snapshot separately
-  return stripSnapshotHeader(await callTool("take_snapshot"));
+  return await stampFresh(stripSnapshotHeader(await callTool("take_snapshot")));
 }
 
 const SCROLL_FUNCTIONS: Record<string, string> = {
@@ -1013,12 +1122,12 @@ async function handleOpen(args: string[], full: boolean): Promise<string> {
     }
     await callTool("new_page", { url });
   }
-  const snapshot = stripSnapshotHeader(await callTool("take_snapshot"));
+  const snapshot = await stampFresh(stripSnapshotHeader(await callTool("take_snapshot")));
   return formatPageOutput(snapshot, "open", url, full);
 }
 
 async function handleSnapshot(full: boolean): Promise<string> {
-  const snapshot = stripSnapshotHeader(await callTool("take_snapshot"));
+  const snapshot = await stampFresh(stripSnapshotHeader(await callTool("take_snapshot")));
   return formatPageOutput(snapshot, "snapshot", undefined, full);
 }
 
@@ -1031,7 +1140,7 @@ async function handleScreenshot(args: string[]): Promise<string> {
   }
 
   const toolArgs: Record<string, unknown> = { filePath: parsed.filePath };
-  if (parsed.uid) toolArgs.uid = parsed.uid;
+  if (parsed.uid) toolArgs.uid = await parseUidFresh(parsed.uid);
   if (parsed.fullPage) toolArgs.fullPage = true;
   if (parsed.format) toolArgs.format = parsed.format;
 
@@ -1047,7 +1156,7 @@ async function handleClick(args: string[], full: boolean): Promise<string> {
     ]);
   }
 
-  const snapshot = await callWithSnapshot("click", { uid: parseUid(uid) });
+  const snapshot = await callWithSnapshot("click", { uid: await parseUidFresh(uid) });
   return formatPageOutput(snapshot, "click", undefined, full);
 }
 
@@ -1066,7 +1175,7 @@ async function handleFill(args: string[], full: boolean): Promise<string> {
   }
 
   const snapshot = await callWithSnapshot("fill", {
-    uid: parseUid(uid),
+    uid: await parseUidFresh(uid),
     value,
   });
   return formatPageOutput(snapshot, "fill", undefined, full);
@@ -1093,7 +1202,7 @@ async function handleType(args: string[], full: boolean): Promise<string> {
   }
 
   await callTool("type_text", { text });
-  const snapshot = stripSnapshotHeader(await callTool("take_snapshot"));
+  const snapshot = await stampFresh(stripSnapshotHeader(await callTool("take_snapshot")));
   return formatPageOutput(snapshot, "type", undefined, full);
 }
 
@@ -1107,13 +1216,13 @@ async function handleScroll(args: string[], full: boolean): Promise<string> {
   }
 
   await callTool("evaluate_script", { function: fn });
-  const snapshot = stripSnapshotHeader(await callTool("take_snapshot"));
+  const snapshot = await stampFresh(stripSnapshotHeader(await callTool("take_snapshot")));
   return formatPageOutput(snapshot, "scroll", undefined, full);
 }
 
 async function handleBack(full: boolean): Promise<string> {
   await callTool("navigate_page", { type: "back" });
-  const snapshot = stripSnapshotHeader(await callTool("take_snapshot"));
+  const snapshot = await stampFresh(stripSnapshotHeader(await callTool("take_snapshot")));
   return formatPageOutput(snapshot, "back", undefined, full);
 }
 
@@ -1245,7 +1354,7 @@ async function handleNewPage(args: string[], full: boolean): Promise<string> {
   const toolArgs: Record<string, unknown> = { url };
   if (background) toolArgs.background = true;
   await callTool("new_page", toolArgs);
-  const snapshot = stripSnapshotHeader(await callTool("take_snapshot"));
+  const snapshot = await stampFresh(stripSnapshotHeader(await callTool("take_snapshot")));
   return formatPageOutput(snapshot, "newpage", url, full);
 }
 
@@ -1266,7 +1375,7 @@ async function handleSelectPage(
     ]);
   }
   await callTool("select_page", { pageId });
-  const snapshot = stripSnapshotHeader(await callTool("take_snapshot"));
+  const snapshot = await stampFresh(stripSnapshotHeader(await callTool("take_snapshot")));
   return formatPageOutput(snapshot, "selectpage", undefined, full);
 }
 
@@ -1329,7 +1438,7 @@ async function handleHover(args: string[], full: boolean): Promise<string> {
       "Run `chrome-devtools-axi hover @<uid>` — get uid from snapshot",
     ]);
   }
-  const snapshot = await callWithSnapshot("hover", { uid: parseUid(uid) });
+  const snapshot = await callWithSnapshot("hover", { uid: await parseUidFresh(uid) });
   return formatPageOutput(snapshot, "hover", undefined, full);
 }
 
@@ -1342,8 +1451,8 @@ async function handleDrag(args: string[], full: boolean): Promise<string> {
     ]);
   }
   const snapshot = await callWithSnapshot("drag", {
-    from_uid: parseUid(from),
-    to_uid: parseUid(to),
+    from_uid: await parseUidFresh(from),
+    to_uid: await parseUidFresh(to),
   });
   return formatPageOutput(snapshot, "drag", undefined, full);
 }
@@ -1352,10 +1461,13 @@ async function handleFillForm(args: string[], full: boolean): Promise<string> {
   const { entries } = parseFillFormArgs(args);
   if (entries.length === 0) {
     throw new CdpError("No valid field entries", "VALIDATION_ERROR", [
-      'Run `chrome-devtools-axi fillform @1="hello" @2="world"` to fill multiple fields',
+      'Run `chrome-devtools-axi fillform @g1:1="hello" @g1:2="world"` to fill multiple fields',
     ]);
   }
-  const snapshot = await callWithSnapshot("fill_form", { elements: entries });
+  const validated = await Promise.all(
+    entries.map(async (e) => ({ uid: await parseUidFresh(e.uid), value: e.value })),
+  );
+  const snapshot = await callWithSnapshot("fill_form", { elements: validated });
   return formatPageOutput(snapshot, "fillform", undefined, full);
 }
 
@@ -1387,7 +1499,7 @@ async function handleUpload(args: string[], full: boolean): Promise<string> {
     ]);
   }
   const snapshot = await callWithSnapshot("upload_file", {
-    uid: parseUid(uid),
+    uid: await parseUidFresh(uid),
     filePath,
   });
   return formatPageOutput(snapshot, "upload", undefined, full);
@@ -1520,7 +1632,7 @@ async function handleHome(_full: boolean): Promise<string> {
       renderHelp(["Run `chrome-devtools-axi open <url>` to start browsing"]),
     ]);
   }
-  const snapshot = stripSnapshotHeader(result);
+  const snapshot = await stampFresh(stripSnapshotHeader(result));
   const title = extractTitle(snapshot);
   const refs = countRefs(snapshot);
   const page: Record<string, unknown> = {};
