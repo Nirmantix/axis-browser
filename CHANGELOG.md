@@ -3,10 +3,9 @@
 This changelog tracks public changes for Axis Browser.
 
 Versions `0.1.18` and below are inherited from the upstream `chrome-devtools-axi`
-release history. Axis Browser-specific work since the fork is tracked in the
-unreleased section below until the next tagged release.
+release history.
 
-## Unreleased
+## 0.1.22 (2026-05-15)
 
 ### Features
 

@@ -1,7 +1,9 @@
 node_modules/
 dist/
-.desloppify/
 .DS_Store
+
+# Agent instruction files (private, repo-scoped)
+AGENTS.md
 
 # Internal-only local maintenance and automation files
 maintainance.md
@@ -9,8 +11,28 @@ maintainance.md
 
 # Local analysis artifacts
 chrome-devtools-axi-repomix-full.xml
+*.repomix-*.xml
 
 # Local/private personal guides and skills
 .local-docs/
 skills/
 personal-browser-automation-guide.md
+
+# Editor and IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+Thumbs.db
+
+# pnpm store (if local)
+.pnpm-store/
+
+# Test coverage
+coverage/
+
+# Kiro spec files (local development only)
+.kiro/
