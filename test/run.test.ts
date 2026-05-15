@@ -58,10 +58,10 @@ describe("no-args output", () => {
 
     const output = String(write.mock.calls[0]?.[0]);
     expect(output).toContain(
-      "Run `axis-browser open <url>` to start browsing",
+      "Run `chrome-devtools-axi open <url>` to start browsing",
     );
     expect(output).toContain("help[1]:");
-    expect(output).not.toContain("axis-browser run");
+    expect(output).not.toContain("chrome-devtools-axi run");
   });
 });
 
@@ -244,6 +244,15 @@ describe("createPageHelper", () => {
     expect(callTool).toHaveBeenCalledWith("click", { uid: "5" });
   });
 
+  it("page.click accepts stamped uid refs", async () => {
+    callTool.mockResolvedValueOnce("");
+
+    const page = createPageHelper(callTool);
+    await page.click("@g7:12_3");
+
+    expect(callTool).toHaveBeenCalledWith("click", { uid: "12_3" });
+  });
+
   it("page.click with CSS selector uses evaluate_script", async () => {
     callTool.mockResolvedValueOnce("");
 
@@ -273,6 +282,15 @@ describe("createPageHelper", () => {
 
     const page = createPageHelper(callTool);
     await page.fill("@3", "hello");
+
+    expect(callTool).toHaveBeenCalledWith("fill", { uid: "3", value: "hello" });
+  });
+
+  it("page.fill accepts stamped uid refs", async () => {
+    callTool.mockResolvedValueOnce("");
+
+    const page = createPageHelper(callTool);
+    await page.fill("@g7:3", "hello");
 
     expect(callTool).toHaveBeenCalledWith("fill", { uid: "3", value: "hello" });
   });
@@ -474,6 +492,61 @@ describe("page.eval variants", () => {
     const fn = callTool.mock.calls[0][1].function;
     expect(fn).toContain("() => []");
   });
+
+  it("unwraps an arrow IIFE so MCP receives a function (not a value)", async () => {
+    callTool.mockResolvedValueOnce(
+      "Script ran on page and returned:\n```json\n42\n```",
+    );
+
+    const page = createPageHelper(callTool);
+    const result = await page.eval("(() => 42)()");
+
+    // The function passed to MCP should be a callable arrow, not the IIFE
+    // double-wrapped as `() => ((() => 42)())`.
+    expect(callTool).toHaveBeenCalledWith("evaluate_script", {
+      function: "() => 42",
+    });
+    expect(result).toBe(42);
+  });
+
+  it("unwraps a multi-statement arrow IIFE", async () => {
+    callTool.mockResolvedValueOnce(
+      "Script ran on page and returned:\n```json\n6\n```",
+    );
+
+    const page = createPageHelper(callTool);
+    await page.eval("(() => { const x = 5; return x + 1 })()");
+
+    expect(callTool).toHaveBeenCalledWith("evaluate_script", {
+      function: "() => { const x = 5; return x + 1 }",
+    });
+  });
+
+  it("unwraps an async arrow IIFE", async () => {
+    callTool.mockResolvedValueOnce(
+      "Script ran on page and returned:\n```json\n7\n```",
+    );
+
+    const page = createPageHelper(callTool);
+    await page.eval("(async () => 7)()");
+
+    expect(callTool).toHaveBeenCalledWith("evaluate_script", {
+      function: "async () => 7",
+    });
+  });
+
+  it("passes a bare arrow string through unchanged", async () => {
+    callTool.mockResolvedValueOnce(
+      "Script ran on page and returned:\n```json\n42\n```",
+    );
+
+    const page = createPageHelper(callTool);
+    await page.eval("() => 42");
+
+    expect(callTool).toHaveBeenCalledWith("evaluate_script", {
+      function: "() => 42",
+    });
+  });
 });
 
 // --- 10. isUidRef detection ---
@@ -488,6 +561,11 @@ describe("isUidRef", () => {
   it("recognizes bare numeric refs", () => {
     expect(isUidRef("5")).toBe(true);
     expect(isUidRef("26_181")).toBe(true);
+  });
+
+  it("recognizes generation-stamped refs", () => {
+    expect(isUidRef("@g7:12")).toBe(true);
+    expect(isUidRef("g7:12_3")).toBe(true);
   });
 
   it("rejects CSS selectors", () => {
