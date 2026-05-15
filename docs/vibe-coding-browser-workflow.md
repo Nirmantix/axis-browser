@@ -100,6 +100,8 @@ axis-browser console
 axis-browser network
 ```
 
+Snapshot refs now carry a generation prefix (e.g., `@g1:3` instead of `@3`). Always pass refs back exactly as printed. If the page re-rendered between your snapshot and action, you get a clear `STALE_REF` error — just re-snapshot and retry.
+
 After each meaningful interaction, inspect actual browser state before changing application code:
 
 ```bash
@@ -237,6 +239,20 @@ Do not change ports casually. Every tool and shell that talks to the shared brow
 ```bash
 axis-browser stop
 axis-browser pages
+```
+
+The bridge now uses deep health checks to detect when the attached Chrome target has gone away. In most cases, simply running a command will auto-recycle a stale bridge without needing a manual stop.
+
+### Bridge startup is slow
+
+If the bridge takes more than 30 seconds to start (common on cold systems using npx):
+
+```bash
+# Option 1: Install chrome-devtools-mcp globally for ~1-2s startup
+npm install -g chrome-devtools-mcp
+
+# Option 2: Extend the timeout
+export CHROME_DEVTOOLS_AXI_BRIDGE_TIMEOUT_MS=60000
 ```
 
 ### Chrome CDP is not reachable
