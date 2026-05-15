@@ -1,6 +1,7 @@
 {
   "name": "chrome-devtools-axi",
-  "version": "0.1.18",
+  "version": "0.1.22",
+  "packageManager": "pnpm@11.1.1",
   "description": "Axis Browser: fast, token-efficient Chrome automation for shared CDP workflows",
   "type": "module",
   "repository": {
@@ -40,7 +41,7 @@
     "dev": "tsx bin/chrome-devtools-axi.ts",
     "test": "vitest run",
     "test:watch": "vitest",
-    "prepublishOnly": "npm run build"
+    "prepublishOnly": "pnpm run build"
   },
   "license": "MIT",
   "engines": {
@@ -49,10 +50,11 @@
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.12.1",
     "@toon-format/toon": "^2.1.0",
-    "axi-sdk-js": "^0.1.5"
+    "axi-sdk-js": "^0.1.6"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
+    "prettier": "^3.8.3",
     "tsx": "^4.0.0",
     "typescript": "^5.7.0",
     "vitest": "^3.0.0"

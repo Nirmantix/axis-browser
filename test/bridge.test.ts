@@ -1,16 +1,18 @@
 import { describe, expect, it, beforeEach, afterEach } from "vitest";
+import { IncomingMessage, ServerResponse } from "node:http";
+import { Socket } from "node:net";
 import {
   buildTransportArgs,
+  detectGlobalMcpPath,
   extractToolText,
-  getBridgeConfigSnapshot,
   getErrorMessage,
-  getTransportEnv,
+  handleBridgeRequest,
   isBridgeClientConnected,
-  MCP_CACHE_DIR,
+  isBridgeTargetReachable,
   parseBridgeCallPayload,
-  PRIMARY_PID_FILE,
-  PRIMARY_STATE_DIR,
   resolveBridgeScript,
+  resolveTransportSpec,
+  type BridgeClient,
 } from "../src/bridge.js";
 
 describe("extractToolText", () => {
@@ -54,26 +56,6 @@ describe("getErrorMessage", () => {
 describe("resolveBridgeScript", () => {
   it("prefers the TypeScript bridge entrypoint in the repo checkout", () => {
     expect(resolveBridgeScript(import.meta.dirname)).toMatch(/bin\/chrome-devtools-axi-bridge\.ts$/);
-  });
-
-  it("prefers the built bridge entrypoint when running from dist", () => {
-    const simulatedDistDir = import.meta.dirname.replace(/\/test$/, "/dist/src");
-    expect(resolveBridgeScript(simulatedDistDir)).toMatch(/bin\/chrome-devtools-axi-bridge\.js$/);
-  });
-});
-
-describe("state paths", () => {
-  it("uses the branded axis-browser state directory", () => {
-    expect(PRIMARY_STATE_DIR).toMatch(/\.axis-browser$/);
-    expect(PRIMARY_PID_FILE).toMatch(/\.axis-browser\/bridge\.pid$/);
-    expect(MCP_CACHE_DIR).toMatch(/\.axis-browser\/npm-cache$/);
-  });
-});
-
-describe("getTransportEnv", () => {
-  it("forces a dedicated npm cache under the axis-browser state dir", () => {
-    const env = getTransportEnv({ npm_config_cache: "/tmp/old-cache" });
-    expect(env.npm_config_cache).toBe(MCP_CACHE_DIR);
   });
 });
 
@@ -251,71 +233,165 @@ describe("buildTransportArgs", () => {
   });
 });
 
-describe("getBridgeConfigSnapshot", () => {
-  it("normalizes the current bridge configuration from env", () => {
-    const config = getBridgeConfigSnapshot({
-      CHROME_DEVTOOLS_AXI_BROWSER_URL: "http://127.0.0.1:9222",
-      CHROME_DEVTOOLS_AXI_USER_DATA_DIR: "/tmp/profile",
-      CHROME_DEVTOOLS_AXI_HEADED: "1",
-      CHROME_DEVTOOLS_AXI_CHROME_ARGS: "  --flag-a\t--flag-b\n--flag-c  ",
-    });
+describe("resolveTransportSpec", () => {
+  const savedEnv: Record<string, string | undefined> = {};
 
-    expect(config).toEqual({
-      autoConnect: false,
-      browserUrl: "http://127.0.0.1:9222",
-      userDataDir: null,
-      headed: false,
-      chromeArgs: ["--flag-a", "--flag-b", "--flag-c"],
-      wsHeaders: null,
-    });
+  beforeEach(() => {
+    savedEnv.CHROME_DEVTOOLS_AXI_MCP_PATH = process.env.CHROME_DEVTOOLS_AXI_MCP_PATH;
+    savedEnv.CHROME_DEVTOOLS_AXI_HEADED = process.env.CHROME_DEVTOOLS_AXI_HEADED;
+    savedEnv.CHROME_DEVTOOLS_AXI_BROWSER_URL = process.env.CHROME_DEVTOOLS_AXI_BROWSER_URL;
+    savedEnv.CHROME_DEVTOOLS_AXI_USER_DATA_DIR = process.env.CHROME_DEVTOOLS_AXI_USER_DATA_DIR;
+    savedEnv.CHROME_DEVTOOLS_AXI_AUTO_CONNECT = process.env.CHROME_DEVTOOLS_AXI_AUTO_CONNECT;
+    delete process.env.CHROME_DEVTOOLS_AXI_MCP_PATH;
+    delete process.env.CHROME_DEVTOOLS_AXI_HEADED;
+    delete process.env.CHROME_DEVTOOLS_AXI_BROWSER_URL;
+    delete process.env.CHROME_DEVTOOLS_AXI_USER_DATA_DIR;
+    delete process.env.CHROME_DEVTOOLS_AXI_AUTO_CONNECT;
   });
 
-  it("normalizes websocket headers only for websocket browser endpoints", () => {
-    const config = getBridgeConfigSnapshot({
-      CHROME_DEVTOOLS_AXI_BROWSER_URL: "wss://cluster.example/launch",
-      CHROME_DEVTOOLS_AXI_WS_HEADERS: '{"Authorization":"Bearer token"}',
-      CHROME_DEVTOOLS_AXI_HEADED: "1",
-    });
-
-    expect(config).toEqual({
-      autoConnect: false,
-      browserUrl: "wss://cluster.example/launch",
-      userDataDir: null,
-      headed: false,
-      chromeArgs: [],
-      wsHeaders: '{"Authorization":"Bearer token"}',
-    });
+  afterEach(() => {
+    for (const [key, value] of Object.entries(savedEnv)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
   });
 
-  it("normalizes auto-connect as the effective connection mode", () => {
-    const config = getBridgeConfigSnapshot({
-      CHROME_DEVTOOLS_AXI_AUTO_CONNECT: "1",
-      CHROME_DEVTOOLS_AXI_BROWSER_URL: "http://127.0.0.1:9222",
-      CHROME_DEVTOOLS_AXI_USER_DATA_DIR: "/tmp/profile",
-      CHROME_DEVTOOLS_AXI_HEADED: "1",
-    });
-
-    expect(config).toEqual({
-      autoConnect: true,
-      browserUrl: null,
-      userDataDir: null,
-      headed: false,
-      chromeArgs: [],
-      wsHeaders: null,
-    });
+  it("defaults to spawning via npx when MCP_PATH is unset and auto-detection finds nothing", () => {
+    // Inject a probe that simulates "no global chrome-devtools-mcp" so the
+    // test outcome doesn't depend on the host machine's npm install state.
+    const probe = {
+      existsSync: () => false,
+      getNpmPrefix: () => "/usr",
+    };
+    const spec = resolveTransportSpec(probe);
+    expect(spec.command).toBe("npx");
+    expect(spec.args[0]).toBe("-y");
+    expect(spec.args[1]).toBe("chrome-devtools-mcp@latest");
+    // Default mcp args follow
+    expect(spec.args).toContain("--isolated");
+    expect(spec.args).toContain("--headless");
   });
 
-  it("defaults optional bridge config to null / false / empty list", () => {
-    const config = getBridgeConfigSnapshot({});
+  it("spawns node directly when CHROME_DEVTOOLS_AXI_MCP_PATH is set", () => {
+    process.env.CHROME_DEVTOOLS_AXI_MCP_PATH = "/opt/mcp/build/src/bin/chrome-devtools-mcp.js";
+    const spec = resolveTransportSpec();
+    expect(spec.command).toBe(process.execPath);
+    expect(spec.args[0]).toBe("/opt/mcp/build/src/bin/chrome-devtools-mcp.js");
+    // Strips the npx-only `-y, chrome-devtools-mcp@latest` prefix
+    expect(spec.args).not.toContain("-y");
+    expect(spec.args).not.toContain("chrome-devtools-mcp@latest");
+    // Preserves the mcp-specific args
+    expect(spec.args).toContain("--isolated");
+    expect(spec.args).toContain("--headless");
+  });
 
-    expect(config).toEqual({
-      autoConnect: false,
-      browserUrl: null,
-      userDataDir: null,
-      headed: false,
-      chromeArgs: [],
-      wsHeaders: null,
-    });
+  it("preserves --browserUrl when MCP_PATH and BROWSER_URL are both set", () => {
+    process.env.CHROME_DEVTOOLS_AXI_MCP_PATH = "/opt/mcp.js";
+    process.env.CHROME_DEVTOOLS_AXI_BROWSER_URL = "http://127.0.0.1:9222";
+    const spec = resolveTransportSpec();
+    expect(spec.command).toBe(process.execPath);
+    expect(spec.args[0]).toBe("/opt/mcp.js");
+    expect(spec.args).toContain("--browserUrl=http://127.0.0.1:9222");
+    expect(spec.args).not.toContain("--isolated");
+  });
+
+  it("treats an empty MCP_PATH as unset", () => {
+    process.env.CHROME_DEVTOOLS_AXI_MCP_PATH = "";
+    const probe = {
+      existsSync: () => false,
+      getNpmPrefix: () => null,
+    };
+    const spec = resolveTransportSpec(probe);
+    expect(spec.command).toBe("npx");
+  });
+
+  it("auto-detects a globally-installed chrome-devtools-mcp when MCP_PATH is unset", () => {
+    const probe = {
+      existsSync: (path: string) =>
+        path ===
+        "/usr/lib/node_modules/chrome-devtools-mcp/build/src/bin/chrome-devtools-mcp.js",
+      getNpmPrefix: () => "/usr",
+    };
+    const spec = resolveTransportSpec(probe);
+    expect(spec.command).toBe(process.execPath);
+    expect(spec.args[0]).toBe(
+      "/usr/lib/node_modules/chrome-devtools-mcp/build/src/bin/chrome-devtools-mcp.js",
+    );
+    expect(spec.args).not.toContain("-y");
+    expect(spec.args).not.toContain("chrome-devtools-mcp@latest");
+    expect(spec.args).toContain("--isolated");
+  });
+
+  it("falls back to npx when auto-detection finds nothing", () => {
+    const probe = {
+      existsSync: () => false,
+      getNpmPrefix: () => "/usr",
+    };
+    const spec = resolveTransportSpec(probe);
+    expect(spec.command).toBe("npx");
+    expect(spec.args[0]).toBe("-y");
+  });
+
+  it("falls back to npx when npm prefix is unavailable", () => {
+    const probe = {
+      existsSync: () => true, // would match anything if asked
+      getNpmPrefix: () => null,
+    };
+    const spec = resolveTransportSpec(probe);
+    expect(spec.command).toBe("npx");
+  });
+
+  it("explicit MCP_PATH always wins over auto-detection", () => {
+    process.env.CHROME_DEVTOOLS_AXI_MCP_PATH = "/explicit/override.js";
+    const probe = {
+      existsSync: () => true,
+      getNpmPrefix: () => "/usr",
+    };
+    const spec = resolveTransportSpec(probe);
+    expect(spec.command).toBe(process.execPath);
+    expect(spec.args[0]).toBe("/explicit/override.js");
+  });
+});
+
+describe("detectGlobalMcpPath", () => {
+  it("returns the canonical MCP path when npm prefix + the file both exist", () => {
+    const probe = {
+      existsSync: (path: string) =>
+        path ===
+        "/opt/npm/lib/node_modules/chrome-devtools-mcp/build/src/bin/chrome-devtools-mcp.js",
+      getNpmPrefix: () => "/opt/npm",
+    };
+
+    expect(detectGlobalMcpPath(probe)).toBe(
+      "/opt/npm/lib/node_modules/chrome-devtools-mcp/build/src/bin/chrome-devtools-mcp.js",
+    );
+  });
+
+  it("returns null when the file is missing", () => {
+    const probe = {
+      existsSync: () => false,
+      getNpmPrefix: () => "/opt/npm",
+    };
+
+    expect(detectGlobalMcpPath(probe)).toBeNull();
+  });
+
+  it("returns null when npm prefix is null (npm not installed)", () => {
+    const probe = {
+      existsSync: () => true,
+      getNpmPrefix: () => null,
+    };
+
+    expect(detectGlobalMcpPath(probe)).toBeNull();
+  });
+
+  it("returns null when npm prefix is the empty string", () => {
+    const probe = {
+      existsSync: () => true,
+      getNpmPrefix: () => "",
+    };
+
+    expect(detectGlobalMcpPath(probe)).toBeNull();
   });
 });
 
@@ -340,5 +416,169 @@ describe("bridge health", () => {
     });
 
     expect(healthy).toBe(true);
+  });
+});
+
+describe("isBridgeTargetReachable", () => {
+  it("returns ok when list_pages succeeds", async () => {
+    const client: BridgeClient = {
+      listTools: async () => ({ tools: [] }),
+      callTool: async ({ name }) => {
+        expect(name).toBe("list_pages");
+        return { content: [] };
+      },
+      close: async () => {},
+    };
+
+    const result = await isBridgeTargetReachable(client);
+    expect(result.ok).toBe(true);
+  });
+
+  it("returns ok=false with reason when the CDP target is gone", async () => {
+    const client: BridgeClient = {
+      listTools: async () => ({ tools: [] }),
+      callTool: async () => {
+        throw new Error("Target closed");
+      },
+      close: async () => {},
+    };
+
+    const result = await isBridgeTargetReachable(client);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.reason).toContain("Target closed");
+    }
+  });
+});
+
+function makeRequest(method: string, url: string): IncomingMessage {
+  const req = new IncomingMessage(new Socket());
+  req.method = method;
+  req.url = url;
+  return req;
+}
+
+interface CapturedResponse {
+  statusCode: number;
+  body: string;
+  headers: Record<string, string>;
+}
+
+function makeResponse(): { res: ServerResponse; captured: CapturedResponse } {
+  const captured: CapturedResponse = {
+    statusCode: 0,
+    body: "",
+    headers: {},
+  };
+  const req = new IncomingMessage(new Socket());
+  const res = new ServerResponse(req);
+  const origSetHeader = res.setHeader.bind(res);
+  res.setHeader = ((name: string, value: string | number | string[]) => {
+    captured.headers[String(name).toLowerCase()] = String(value);
+    return origSetHeader(name, value as string);
+  }) as typeof res.setHeader;
+  res.end = ((chunk?: unknown) => {
+    if (typeof chunk === "string") captured.body += chunk;
+    captured.statusCode = res.statusCode;
+    return res;
+  }) as typeof res.end;
+  return { res, captured };
+}
+
+describe("handleBridgeRequest /health", () => {
+  it("returns 200 ok for shallow /health when MCP is connected", async () => {
+    const client: BridgeClient = {
+      listTools: async () => ({ tools: [] }),
+      callTool: async () => ({ content: [] }),
+      close: async () => {},
+    };
+    const { res, captured } = makeResponse();
+
+    await handleBridgeRequest(client, makeRequest("GET", "/health"), res);
+
+    expect(captured.statusCode).toBe(200);
+    expect(JSON.parse(captured.body)).toEqual({ status: "ok" });
+  });
+
+  it("returns 503 when MCP server is disconnected", async () => {
+    const client: BridgeClient = {
+      listTools: async () => {
+        throw new Error("Not connected");
+      },
+      callTool: async () => ({}),
+      close: async () => {},
+    };
+    const { res, captured } = makeResponse();
+
+    await handleBridgeRequest(client, makeRequest("GET", "/health"), res);
+
+    expect(captured.statusCode).toBe(503);
+    expect(JSON.parse(captured.body)).toMatchObject({ status: "error" });
+  });
+
+  it("returns 503 from /health?deep=1 when CDP target is unreachable", async () => {
+    const client: BridgeClient = {
+      // Shallow probe (listTools) passes — local MCP server is fine.
+      listTools: async () => ({ tools: [] }),
+      // Deep probe (list_pages) fails — attached browser is gone.
+      callTool: async () => {
+        throw new Error("Target closed");
+      },
+      close: async () => {},
+    };
+    const { res, captured } = makeResponse();
+
+    await handleBridgeRequest(
+      client,
+      makeRequest("GET", "/health?deep=1"),
+      res,
+    );
+
+    expect(captured.statusCode).toBe(503);
+    const body = JSON.parse(captured.body);
+    expect(body.status).toBe("error");
+    expect(body.error).toContain("CDP target unreachable");
+    expect(body.reason).toContain("Target closed");
+  });
+
+  it("returns 200 from /health?deep=1 when both MCP and CDP target are healthy", async () => {
+    let listPagesCalls = 0;
+    const client: BridgeClient = {
+      listTools: async () => ({ tools: [] }),
+      callTool: async ({ name }) => {
+        if (name === "list_pages") listPagesCalls++;
+        return { content: [] };
+      },
+      close: async () => {},
+    };
+    const { res, captured } = makeResponse();
+
+    await handleBridgeRequest(
+      client,
+      makeRequest("GET", "/health?deep=1"),
+      res,
+    );
+
+    expect(captured.statusCode).toBe(200);
+    expect(JSON.parse(captured.body)).toEqual({ status: "ok" });
+    expect(listPagesCalls).toBe(1);
+  });
+
+  it("does not invoke the deep CDP probe on the shallow /health path", async () => {
+    let callToolCalls = 0;
+    const client: BridgeClient = {
+      listTools: async () => ({ tools: [] }),
+      callTool: async () => {
+        callToolCalls++;
+        return { content: [] };
+      },
+      close: async () => {},
+    };
+    const { res, captured } = makeResponse();
+
+    await handleBridgeRequest(client, makeRequest("GET", "/health"), res);
+
+    expect(captured.statusCode).toBe(200);
+    expect(callToolCalls).toBe(0);
   });
 });

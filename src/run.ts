@@ -9,11 +9,85 @@ import { mkdtempSync, writeFileSync, unlinkSync, rmdirSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { CdpError } from "./client.js";
+import { parseStampedUid } from "./snapshot.js";
 
 type CallTool = (
   name: string,
   args?: Record<string, unknown>,
 ) => Promise<string>;
+
+// --- JS expression wrapping ---
+
+/**
+ * If `s` is a no-arg IIFE of the form `(<fn-expr>)()`, return `<fn-expr>`.
+ * Returns `s` unchanged otherwise. Walks parens with depth-tracking and
+ * skips string literals so nested parens inside strings don't fool us.
+ *
+ * Conservative: only unwraps when the trailing call is `()` (empty args),
+ * which covers the common documented IIFE form.
+ */
+function unwrapNoArgIIFE(s: string): string {
+  const candidate = s.endsWith(";") ? s.slice(0, -1).trimEnd() : s;
+  if (candidate.length < 4 || candidate[0] !== "(" || !candidate.endsWith(")")) {
+    return s;
+  }
+  let depth = 0;
+  let inString: string | null = null;
+  let escape = false;
+  let closeIdx = -1;
+  for (let i = 0; i < candidate.length; i++) {
+    const c = candidate[i];
+    if (escape) {
+      escape = false;
+      continue;
+    }
+    if (inString) {
+      if (c === "\\") {
+        escape = true;
+        continue;
+      }
+      if (c === inString) inString = null;
+      continue;
+    }
+    if (c === '"' || c === "'" || c === "`") {
+      inString = c;
+      continue;
+    }
+    if (c === "(") depth++;
+    else if (c === ")") {
+      depth--;
+      if (depth === 0) {
+        closeIdx = i;
+        break;
+      }
+    }
+  }
+  if (closeIdx < 0) return s;
+  const rest = candidate.slice(closeIdx + 1).trim();
+  if (rest !== "()") return s;
+  const inner = candidate.slice(1, closeIdx).trim();
+  if (
+    /^(async\s*)?(\(.*?\)\s*=>|[a-zA-Z_$][a-zA-Z0-9_$]*\s*=>|function[\s*(])/.test(
+      inner,
+    )
+  ) {
+    return inner;
+  }
+  return s;
+}
+
+/** Wrap plain JS expressions for MCP evaluate_script, but pass functions through unchanged. */
+export function wrapJsExpression(js: string): string {
+  const trimmed = unwrapNoArgIIFE(js.trim());
+  if (
+    /^(async\s*)?(\(.*?\)\s*=>|[a-zA-Z_$][a-zA-Z0-9_$]*\s*=>|function[\s*(])/.test(
+      trimmed,
+    )
+  ) {
+    return trimmed;
+  }
+  return `() => (${trimmed})`;
+}
 
 // --- Value parsing ---
 
@@ -49,7 +123,7 @@ function stripSnapshotHeader(text: string): string {
 
 /** Strip leading @ from uid ref string. */
 function parseUid(ref: string): string {
-  return ref.startsWith("@") ? ref.slice(1) : ref;
+  return parseStampedUid(ref).uid;
 }
 
 /** Check if an open error is recoverable by falling back to new_page. */
@@ -63,7 +137,7 @@ function isRecoverableOpenError(error: unknown): boolean {
 
 // --- Selector detection ---
 
-const UID_RE = /^@?\d[\d_]*$/;
+const UID_RE = /^@?(?:\d[\d_]*|g\d+:.+)$/;
 
 /** Returns true when the string looks like a @uid ref (e.g. "@12", "26_181"). */
 export function isUidRef(s: string): boolean {
@@ -128,7 +202,7 @@ export function createPageHelper(callTool: CallTool): PageHelper {
       const fn =
         typeof jsOrFn === "function"
           ? String(jsOrFn)
-          : `() => (${jsOrFn.trim()})`;
+          : wrapJsExpression(jsOrFn);
       return evalJs(fn);
     },
 

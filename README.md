@@ -51,7 +51,7 @@ Those are only user-defined aliases or shell helpers if you create them yourself
 - `Windows`: partially supported today
 
 Current Windows gaps:
-- stale bridge recovery still relies on Unix-specific listener inspection (`lsof` / `ps`) when the shutdown endpoint is unavailable
+- stale bridge recovery relies on Unix-specific process inspection (`lsof` / `ps`) for some edge cases
 - the documented shared-session helper snippets are shell-first examples, not native PowerShell helpers
 - there is no Windows CI coverage in this repo yet
 
@@ -63,11 +63,9 @@ Axis Browser is designed around three practical goals:
 - stable attachment to already-running Chrome sessions
 
 The fork-specific behavior is intentionally small:
-- bridge target fingerprinting
-- forced bridge restart when the effective target changes
-- safer local bridge recovery on `9224`
-- dedicated `chrome-devtools-mcp` cache under `~/.axis-browser/npm-cache`
-- Axis Browser branding and compatibility aliases
+- Axis Browser branding and compatibility aliases (`axis-browser`, `axib`)
+- runtime state under `~/.axis-browser` instead of `~/.chrome-devtools-axi`
+- cross-platform-safe build chmod step
 
 ## Install
 
@@ -131,8 +129,8 @@ npm install -g github:Nirmantix/axis-browser
 ```bash
 git clone https://github.com/Nirmantix/axis-browser.git
 cd axis-browser
-npm install
-npm run build
+pnpm install
+pnpm run build
 ```
 
 Run from the checkout:
@@ -152,7 +150,7 @@ npm link
 
 ```bash
 axis-browser open https://example.com
-axis-browser click @1
+axis-browser click @g1:1
 ```
 
 Example output:
@@ -163,10 +161,12 @@ snapshot:
 RootWebArea "Example Domain"
   heading "Example Domain"
   paragraph "This domain is for use in illustrative examples..."
-  uid=1 link "More information..."
+  uid=g1:1 link "More information..."
 help[1]:
-  Run `axis-browser click @1` to click the "More information..." link
+  Run `axis-browser click @g1:1` to click the "More information..." link
 ```
+
+Refs in snapshot output carry a `g<N>:` generation prefix that bumps every time a new accessibility tree is captured. Pass refs back exactly as printed — if the page re-rendered between snapshot and action, the action fails loudly with `STALE_REF` instead of silently no-op'ing, so the agent re-snapshots and retries.
 
 ## Shared Chrome Quick Start
 
@@ -214,8 +214,9 @@ For the full public shared-browser operating model, read:
 ```
 
 - **Persistent bridge** — keeps one MCP session alive across CLI calls
-- **Auto-lifecycle** — starts on demand and writes state to `~/.axis-browser/bridge.pid`
+- **Auto-lifecycle** — starts on demand, writes state to `~/.axis-browser/bridge.pid`, recycles stale CDP targets after a deep health check, and reaps child processes on stop
 - **Snapshot parsing** — extracts accessibility-tree refs (`uid=`) for lightweight interaction
+- **Generation tagging** — refs carry a `g<N>:` prefix; stale refs from prior snapshots are rejected with `STALE_REF`
 - **TOON encoding** — keeps structured output compact compared with heavier browser payloads
 
 ## CLI Reference
@@ -233,7 +234,12 @@ For the full public shared-browser operating model, read:
 | `eval <js>`       | Evaluate a JavaScript expression or function |
 | `run`             | Execute a multi-step script from stdin       |
 
-`eval` wraps plain input as `() => (<expr>)` before sending it to DevTools. For multi-statement logic, pass an arrow function, `function`, or IIFE yourself.
+`eval` wraps plain input as `() => (<expr>)` before sending it to DevTools. For multi-statement logic, pass an arrow function or `function`. No-arg IIFE form `(...)()` is accepted too and unwrapped automatically.
+
+```sh
+axis-browser eval "document.title"
+axis-browser eval "() => { const rows = [...document.querySelectorAll('tr')]; return rows.map((row) => row.textContent) }"
+```
 
 ### Interaction
 
@@ -291,7 +297,7 @@ For the full public shared-browser operating model, read:
 | `start` | Start the bridge server |
 | `stop`  | Stop the bridge server  |
 
-Running with no command shows the CLI home view. If an active session exists, the home view includes page metadata; otherwise it shows the no-session help block.
+Running with no command shows the CLI home view. It prepends `bin` and `description` metadata, then includes the current snapshot when a browser session is active or the no-session status/help block when one is not.
 
 ### Flags
 
@@ -322,6 +328,10 @@ Running with no command shows the CLI home view. If an active session exists, th
 | `--response-file <path>`    | Save response body (network-get)            |
 | `--request-file <path>`     | Save request body (network-get)             |
 
+`console --type` accepts `log`, `debug`, `info`, `error`, `warn`, `dir`, `dirxml`, `table`, `trace`, `clear`, `startGroup`, `startGroupCollapsed`, `endGroup`, `assert`, `profile`, `profileEnd`, `count`, `timeEnd`, `verbose`, `issue`, and `all`.
+`network --type` accepts `document`, `stylesheet`, `image`, `media`, `font`, `script`, `texttrack`, `xhr`, `fetch`, `prefetch`, `eventsource`, `websocket`, `manifest`, `signedexchange`, `ping`, `cspviolationreport`, `preflight`, `fedcm`, `other`, and `all`.
+For both commands, `all` or an omitted `--type` returns every item.
+
 ## Configuration
 
 ### Connection Mode Precedence
@@ -330,8 +340,6 @@ Axis Browser uses these connection modes in order:
 1. `CHROME_DEVTOOLS_AXI_AUTO_CONNECT=1`
 2. `CHROME_DEVTOOLS_AXI_BROWSER_URL=...`
 3. managed browser launch using `CHROME_DEVTOOLS_AXI_USER_DATA_DIR` or an isolated temp profile
-
-That effective target is fingerprinted. If the target changes, the bridge is restarted instead of being silently reused.
 
 ### Environment Variables
 
@@ -344,6 +352,8 @@ That effective target is fingerprinted. If the target changes, the bridge is res
 | `CHROME_DEVTOOLS_AXI_HEADED` | Set to `1` to run the managed browser in headed mode |
 | `CHROME_DEVTOOLS_AXI_CHROME_ARGS` | Whitespace-separated Chrome flags forwarded to the browser |
 | `CHROME_DEVTOOLS_AXI_PORT` | Override the bridge port (default: `9224`) |
+| `CHROME_DEVTOOLS_AXI_MCP_PATH` | Absolute path to a local `chrome-devtools-mcp` binary (skips npx) |
+| `CHROME_DEVTOOLS_AXI_BRIDGE_TIMEOUT_MS` | Bridge readiness deadline in ms (default: `30000`; useful for slow npx bootstrap) |
 | `CHROME_DEVTOOLS_AXI_DISABLE_HOOKS` | Set to `1` to skip packaged session-hook installation |
 
 Examples:
@@ -378,12 +388,10 @@ When auto-connect is enabled, it takes precedence over `CHROME_DEVTOOLS_AXI_BROW
 
 State is stored in `~/.axis-browser/`:
 
-| File | Purpose |
-| --- | --- |
-| `bridge.pid` | PID, port, and effective target fingerprint for the running bridge |
-| `npm-cache/` | Dedicated cache used for `npx chrome-devtools-mcp@latest` |
-
-The dedicated npm cache makes bridge startup less sensitive to a broken or machine-specific global npm cache configuration.
+| File                  | Purpose                                    |
+| --------------------- | ------------------------------------------ |
+| `bridge.pid`          | PID and port of the running bridge         |
+| `snapshot-generation` | Counter used to detect stale uid refs      |
 
 ### Session Hooks
 
@@ -391,18 +399,19 @@ On supported agents, the packaged CLI also installs a `SessionStart` hook in:
 - `~/.claude/settings.json`
 - `~/.codex/hooks.json`
 
-It also enables `codex_hooks` in:
+It also enables `hooks` in:
 - `~/.codex/config.toml`
 
 Set `CHROME_DEVTOOLS_AXI_DISABLE_HOOKS=1` to skip that behavior.
 
-Development entrypoints such as `npm run dev` and `bin/chrome-devtools-axi.ts` do not modify those hook files.
+Development entrypoints such as `pnpm run dev` and `bin/chrome-devtools-axi.ts` do not modify those hook files.
 
 ## Development
 
 ```bash
-npm run build
-npm run dev
-npm test
-npm run test:watch
+pnpm install
+pnpm run build
+pnpm run dev
+pnpm test
+pnpm run test:watch
 ```

@@ -5,13 +5,15 @@
  * persistent MCP session. Exposes a simple HTTP API:
  *   POST /call  { name, args }  → { result }
  *   GET  /tools                 → [{ name, description }]
- *   GET  /health                → { status: "ok" }
+ *   GET  /health                → { status: "ok" } or 503 { status: "error", error }
+ *   GET  /health?deep=1         → also verifies the attached CDP target; 503 may include reason
  *
  * Writes a PID file to ~/.axis-browser/bridge.pid on startup.
  */
 
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+import { execSync } from "node:child_process";
 import {
   createServer,
   type IncomingMessage,
@@ -26,18 +28,8 @@ const DEFAULT_PORT = Number.parseInt(
   process.env.CHROME_DEVTOOLS_AXI_PORT ?? "9224",
   10,
 );
-export const PRIMARY_STATE_DIR = join(homedir(), ".axis-browser");
-export const PRIMARY_PID_FILE = join(PRIMARY_STATE_DIR, "bridge.pid");
-export const MCP_CACHE_DIR = join(PRIMARY_STATE_DIR, "npm-cache");
-
-export interface BridgeConfigSnapshot {
-  autoConnect: boolean;
-  browserUrl: string | null;
-  userDataDir: string | null;
-  headed: boolean;
-  chromeArgs: string[];
-  wsHeaders: string | null;
-}
+const STATE_DIR = join(homedir(), ".axis-browser");
+const PID_FILE = join(STATE_DIR, "bridge.pid");
 
 export interface BridgeContentBlock {
   type: string;
@@ -74,44 +66,33 @@ export async function isBridgeClientConnected(
   }
 }
 
-export function getBridgeConfigSnapshot(
-  env: NodeJS.ProcessEnv = process.env,
-): BridgeConfigSnapshot {
-  const rawChromeArgs = env.CHROME_DEVTOOLS_AXI_CHROME_ARGS?.trim() ?? "";
-  const autoConnect = env.CHROME_DEVTOOLS_AXI_AUTO_CONNECT === "1";
-  const browserUrl = autoConnect
-    ? null
-    : env.CHROME_DEVTOOLS_AXI_BROWSER_URL ?? null;
-  const usingBrowserUrl = browserUrl !== null;
-  const isWsBrowserUrl = browserUrl !== null && /^wss?:\/\//i.test(browserUrl);
-
-  return {
-    autoConnect,
-    browserUrl,
-    userDataDir:
-      autoConnect || usingBrowserUrl
-        ? null
-        : env.CHROME_DEVTOOLS_AXI_USER_DATA_DIR ?? null,
-    headed:
-      autoConnect || usingBrowserUrl
-        ? false
-        : env.CHROME_DEVTOOLS_AXI_HEADED === "1",
-    chromeArgs: rawChromeArgs ? rawChromeArgs.split(/\s+/) : [],
-    wsHeaders: isWsBrowserUrl ? env.CHROME_DEVTOOLS_AXI_WS_HEADERS ?? null : null,
-  };
+/**
+ * Probe whether the bridge's underlying CDP target is reachable. Drives one
+ * round-trip MCP tool call (`list_pages`) that requires a live browser/CDP
+ * connection — `listTools()` alone only confirms the local MCP server is up,
+ * not that the attached browser is still alive. Used by `/health?deep=1` so
+ * `ensureBridge` can detect a stale bridge after the user kills + restarts
+ * the underlying Chrome/Electron target.
+ */
+export async function isBridgeTargetReachable(
+  client: BridgeClient,
+): Promise<{ ok: true } | { ok: false; reason: string }> {
+  try {
+    await client.callTool({ name: "list_pages", arguments: {} });
+    return { ok: true };
+  } catch (error) {
+    return { ok: false, reason: getErrorMessage(error) };
+  }
 }
 
 function writePidFile(port: number): void {
-  mkdirSync(PRIMARY_STATE_DIR, { recursive: true });
-  writeFileSync(
-    PRIMARY_PID_FILE,
-    JSON.stringify({ pid: process.pid, port, config: getBridgeConfigSnapshot() }),
-  );
+  mkdirSync(STATE_DIR, { recursive: true });
+  writeFileSync(PID_FILE, JSON.stringify({ pid: process.pid, port }));
 }
 
 function removePidFile(): void {
   try {
-    unlinkSync(PRIMARY_PID_FILE);
+    unlinkSync(PID_FILE);
   } catch {
     // Already gone — fine
   }
@@ -168,30 +149,8 @@ export function resolveBridgeScript(importMetaDir: string): string {
     importMetaDir,
     "../bin/chrome-devtools-axi-bridge.js",
   );
-  if (builtScript.includes(`${resolve(importMetaDir, "..")}/bin/`)) {
-    // When the installed CLI is executing from dist/, prefer the built bridge so
-    // startup does not depend on `tsx` resolution from the caller's cwd.
-    const distDir = `${resolve(importMetaDir, "..")}`;
-    if (distDir.endsWith("/dist")) {
-      return builtScript;
-    }
-  }
   const sourceScript = builtScript.replace(/\.js$/, ".ts");
   return existsSync(sourceScript) ? sourceScript : builtScript;
-}
-
-export function getTransportEnv(
-  env: NodeJS.ProcessEnv = process.env,
-): Record<string, string> {
-  const mergedEnv = {
-    ...env,
-    npm_config_cache: MCP_CACHE_DIR,
-  };
-  return Object.fromEntries(
-    Object.entries(mergedEnv).filter(
-      (entry): entry is [string, string] => typeof entry[1] === "string",
-    ),
-  );
 }
 
 async function readRequestBody(req: IncomingMessage): Promise<string> {
@@ -240,22 +199,34 @@ async function handleCallRequest(
   writeJson(res, 200, { result: extractToolText(getToolContent(result)) });
 }
 
-export type ShutdownHandler = () => Promise<void>;
-
 export async function handleBridgeRequest(
   client: BridgeClient,
   req: IncomingMessage,
   res: ServerResponse,
-  shutdown?: ShutdownHandler,
 ): Promise<void> {
   res.setHeader("Content-Type", "application/json");
 
-  if (req.method === "GET" && req.url === "/health") {
-    if (await isBridgeClientConnected(client)) {
-      writeJson(res, 200, { status: "ok" });
-    } else {
-      writeJson(res, 503, { error: "Not connected" });
+  if (
+    req.method === "GET" &&
+    (req.url === "/health" || req.url?.startsWith("/health?"))
+  ) {
+    if (!(await isBridgeClientConnected(client))) {
+      writeJson(res, 503, { status: "error", error: "Not connected" });
+      return;
     }
+    const deep = req.url.includes("deep=1");
+    if (deep) {
+      const probe = await isBridgeTargetReachable(client);
+      if (!probe.ok) {
+        writeJson(res, 503, {
+          status: "error",
+          error: "CDP target unreachable",
+          reason: probe.reason,
+        });
+        return;
+      }
+    }
+    writeJson(res, 200, { status: "ok" });
     return;
   }
 
@@ -269,14 +240,6 @@ export async function handleBridgeRequest(
       await handleCallRequest(client, req, res);
       return;
     }
-
-    if (req.method === "POST" && req.url === "/shutdown" && shutdown) {
-      writeJson(res, 200, { status: "shutting_down" });
-      setImmediate(() => {
-        void shutdown();
-      });
-      return;
-    }
   } catch (error) {
     writeJson(res, 500, { error: getErrorMessage(error) });
     return;
@@ -285,12 +248,9 @@ export async function handleBridgeRequest(
   writeJson(res, 404, { error: "not found" });
 }
 
-export function createBridgeServer(
-  client: BridgeClient,
-  shutdown?: ShutdownHandler,
-): Server {
+export function createBridgeServer(client: BridgeClient): Server {
   return createServer((req, res) => {
-    void handleBridgeRequest(client, req, res, shutdown);
+    void handleBridgeRequest(client, req, res);
   });
 }
 
@@ -365,13 +325,89 @@ export function buildTransportArgs(): string[] {
   return args;
 }
 
+/**
+ * Probe interface for {@link detectGlobalMcpPath}. Defaults to real `node:fs`
+ * + `npm prefix -g`; injectable for tests.
+ */
+export interface McpPathProbe {
+  existsSync: (path: string) => boolean;
+  getNpmPrefix: () => string | null;
+}
+
+const DEFAULT_MCP_PATH_PROBE: McpPathProbe = {
+  existsSync: (path) => existsSync(path),
+  getNpmPrefix: () => {
+    try {
+      return execSync("npm prefix -g", {
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "ignore"],
+      }).trim();
+    } catch {
+      return null;
+    }
+  },
+};
+
+/**
+ * Auto-detect a globally-installed chrome-devtools-mcp by probing
+ * `$(npm prefix -g)/lib/node_modules/chrome-devtools-mcp/build/src/bin/chrome-devtools-mcp.js`.
+ *
+ * Returns the resolved path on success, or null if npm is unavailable or the
+ * package isn't installed. Used as the auto-fallback in
+ * {@link resolveTransportSpec} when `CHROME_DEVTOOLS_AXI_MCP_PATH` isn't set.
+ */
+export function detectGlobalMcpPath(
+  probe: McpPathProbe = DEFAULT_MCP_PATH_PROBE,
+): string | null {
+  const prefix = probe.getNpmPrefix();
+  if (!prefix || prefix.length === 0) return null;
+  const candidate = join(
+    prefix,
+    "lib",
+    "node_modules",
+    "chrome-devtools-mcp",
+    "build",
+    "src",
+    "bin",
+    "chrome-devtools-mcp.js",
+  );
+  return probe.existsSync(candidate) ? candidate : null;
+}
+
+/**
+ * Resolve the command + args used to spawn the chrome-devtools-mcp transport.
+ *
+ * Resolution order (most → least specific):
+ *   1. `CHROME_DEVTOOLS_AXI_MCP_PATH` env var — explicit override, always wins.
+ *   2. Auto-detect: probe a globally-installed `chrome-devtools-mcp` via
+ *      `$(npm prefix -g)/lib/node_modules/chrome-devtools-mcp/build/src/bin/chrome-devtools-mcp.js`.
+ *      If found, spawn `node <path>` directly — starts in ~1-2s vs. the
+ *      30s+ npx-bootstrap path.
+ *   3. Fall back to `npx -y chrome-devtools-mcp@latest`. On systems with a
+ *      slow link or large global cache this can race the bridge's readiness
+ *      deadline; install the package globally to skip it:
+ *        npm install -g chrome-devtools-mcp
+ */
+export function resolveTransportSpec(
+  probe: McpPathProbe = DEFAULT_MCP_PATH_PROBE,
+): { command: string; args: string[] } {
+  const mcpArgs = buildTransportArgs();
+  const explicit = process.env.CHROME_DEVTOOLS_AXI_MCP_PATH;
+  const mcpPath =
+    explicit && explicit.length > 0 ? explicit : detectGlobalMcpPath(probe);
+  if (mcpPath) {
+    // Strip the npx prefix `["-y", "chrome-devtools-mcp@latest"]` — direct
+    // node spawn doesn't need it.
+    return {
+      command: process.execPath,
+      args: [mcpPath, ...mcpArgs.slice(2)],
+    };
+  }
+  return { command: "npx", args: mcpArgs };
+}
+
 function createTransport(): StdioClientTransport {
-  mkdirSync(MCP_CACHE_DIR, { recursive: true });
-  return new StdioClientTransport({
-    command: "npx",
-    args: buildTransportArgs(),
-    env: getTransportEnv(),
-  });
+  return new StdioClientTransport(resolveTransportSpec());
 }
 
 function createBridgeClient(): Client {
@@ -396,6 +432,13 @@ export async function runBridge(port = DEFAULT_PORT): Promise<void> {
   await client.connect(transport);
   logBridgeMessage("Connected to chrome-devtools-mcp");
 
+  const server = createBridgeServer(client);
+  server.listen(port, "127.0.0.1", () => {
+    writePidFile(port);
+    logBridgeMessage(`Listening on http://127.0.0.1:${port}`);
+    writeReadySignal();
+  });
+
   let shuttingDown = false;
   const shutdown = async () => {
     if (shuttingDown) return;
@@ -407,21 +450,11 @@ export async function runBridge(port = DEFAULT_PORT): Promise<void> {
     process.exit(0);
   };
 
-  const server = createBridgeServer(client, shutdown);
-  server.listen(port, "127.0.0.1", () => {
-    writePidFile(port);
-    logBridgeMessage(`Listening on http://127.0.0.1:${port}`);
-    writeReadySignal();
-  });
-
   // Kill our entire process group on exit so chrome-devtools-mcp children
   // don't survive as orphans. The bridge is spawned with detached:true,
   // making it a process group leader — all children share our PGID.
   process.on("exit", () => {
     removePidFile();
-    if (process.platform === "win32") {
-      return;
-    }
     try {
       process.kill(-process.pid, "SIGTERM");
     } catch {
