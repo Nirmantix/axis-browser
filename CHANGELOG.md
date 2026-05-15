@@ -14,6 +14,8 @@ unreleased section below until the next tagged release.
   checks, stale bridge recycling, IIFE unwrapping, Codex hooks feature flag)
 * add `CHROME_DEVTOOLS_AXI_MCP_PATH` env var for custom MCP binary path
 * add `CHROME_DEVTOOLS_AXI_BRIDGE_TIMEOUT_MS` env var for slow npx bootstrap
+* auto-detect globally-installed `chrome-devtools-mcp` for faster bridge startup
+  (skips ~30s npx bootstrap when the package is installed globally)
 * generation-tagged snapshot refs (`g<N>:uid`) with `STALE_REF` error on mismatch
 * deep health checks (`/health?deep=1`) detect stale CDP targets automatically
 * switch build system to pnpm (following upstream)

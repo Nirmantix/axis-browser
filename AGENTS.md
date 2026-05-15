@@ -69,7 +69,7 @@ git diff --stat origin/main..upstream/main
 
 Also inspect:
 - `package.json`
-- `package-lock.json`
+- `pnpm-lock.yaml`
 - `src/`
 - `test/`
 - `.github/workflows/`
@@ -116,34 +116,31 @@ If docs drift, consolidate them instead of duplicating conflicting guidance. Kee
 ## Current Intentional Fork Delta
 
 At the time of writing, the meaningful fork-specific behavior is:
-- bridge config fingerprinting
-- bridge restart when the effective target changes
-- dedicated `chrome-devtools-mcp` cache under `~/.axis-browser/npm-cache`
-- stale local bridge recovery on `9224`
-- Axis Browser branding and compatibility aliases
-- cross-platform-safe build chmod step
+- Axis Browser branding and compatibility aliases (`axis-browser`, `axib`)
+- runtime state under `~/.axis-browser` instead of upstream's `~/.chrome-devtools-axi`
+- cross-platform-safe build chmod step (Node-based instead of POSIX-only `chmod`)
 
-Do not keep fork-only code if upstream makes it unnecessary.
+The fork delta is intentionally minimal. Do not keep fork-only code if upstream makes it unnecessary.
 
 ## Validation Requirements
 
 Minimum required validation after maintenance work:
 
 ```bash
-npm test
-npm run build
+pnpm test
+pnpm run build
 ```
 
 If bridge / session logic changed, also run:
 
 ```bash
-npm test -- --run test/bridge.test.ts test/client.test.ts
+pnpm test -- --run test/bridge.test.ts test/client.test.ts
 ```
 
 If CLI copy / help / command behavior changed, also run:
 
 ```bash
-npm test -- --run test/cli-runtime.test.ts test/main.test.ts test/run.test.ts
+pnpm test -- --run test/cli-runtime.test.ts test/main.test.ts test/run.test.ts
 ```
 
 ## Git / PR Flow
