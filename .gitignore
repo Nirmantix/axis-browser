@@ -36,3 +36,6 @@ coverage/
 
 # Kiro spec files (local development only)
 .kiro/
+
+# Browser skill artifacts
+.tmp/
