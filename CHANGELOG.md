@@ -18,6 +18,14 @@ release history.
 * generation-tagged snapshot refs (`g<N>:uid`) with `STALE_REF` error on mismatch
 * deep health checks (`/health?deep=1`) detect stale CDP targets automatically
 * switch build system to pnpm (following upstream)
+* add local `browser-skill` — host-neutral browser automation Agent Skills
+  package maintained in an ignored nested repo when present; install it into
+  the appropriate global or project agent skills location (`~/.codex/skills/`,
+  `~/.claude/skills/`, `~/.config/opencode/skills/`,
+  `~/.config/agents/skills/`, `.agents/skills/`, or via Kiro / AGENTS.md
+  adapters) rather than through the Axis Browser package; the nested skill
+  README is the source of truth for the full Claude Code, Codex, OpenCode, Pi,
+  Kiro, AGENTS.md, and neutral `.agents` install matrix
 
 ### Bug Fixes
 

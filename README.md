@@ -24,7 +24,34 @@ This repo intentionally keeps only two public docs with distinct roles:
 - `README.md` — source of truth for install, commands, environment variables, runtime behavior, and development
 - `docs/vibe-coding-browser-workflow.md` — source of truth for the Axis Browser shared-`9222` workflow and troubleshooting habits
 
+The optional `skills/browser-skill/` folder is intentionally ignored by the
+parent Axis Browser repo and is maintained as its own standalone nested Git
+repo when present. Its own `README.md` and `SKILL.md` are the source of truth
+for the host-neutral browser automation skill; this README remains the source
+of truth for the Axis Browser CLI itself.
+
 If you see old notes that mention different paths, aliases, or helper scripts, prefer this README and the workflow guide.
+
+## Browser Skill Companion
+
+This checkout may include `skills/browser-skill/`, a companion Agent Skills
+package for browser-driven work across Claude Code, Codex, OpenCode, Pi, Kiro,
+and AGENTS.md hosts. It routes tasks across Browser Harness, Playwright, Axis
+Browser, BrowserAct, Firecrawl, and related tools.
+
+Key boundaries:
+- The skill is not shipped as part of the parent Axis Browser package.
+- The parent repo keeps `skills/` ignored on purpose.
+- Publish or share the skill from its nested repo, not from the Axis Browser
+  release flow.
+- Global vs project install paths, credentials guidance, and Browserbase
+  comparison live in the skill's own `README.md`.
+- For tool setup guidance, run the skill's read-only checker:
+
+```bash
+cd skills/browser-skill
+bash scripts/check-prerequisites.sh --print-install-commands
+```
 
 ## Command Names
 
