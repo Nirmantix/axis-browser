@@ -25,7 +25,8 @@ release history.
   `~/.config/agents/skills/`, `.agents/skills/`, or via Kiro / AGENTS.md
   adapters) rather than through the Axis Browser package; the nested skill
   README is the source of truth for the full Claude Code, Codex, OpenCode, Pi,
-  Kiro, AGENTS.md, and neutral `.agents` install matrix
+  Kiro, AGENTS.md, and neutral `.agents` install matrix plus optional Notte and
+  CloakBrowser guidance
 
 ### Bug Fixes
 

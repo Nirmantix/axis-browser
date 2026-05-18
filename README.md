@@ -37,7 +37,7 @@ If you see old notes that mention different paths, aliases, or helper scripts, p
 This checkout may include `skills/browser-skill/`, a companion Agent Skills
 package for browser-driven work across Claude Code, Codex, OpenCode, Pi, Kiro,
 and AGENTS.md hosts. It routes tasks across Browser Harness, Playwright, Axis
-Browser, BrowserAct, Firecrawl, and related tools.
+Browser, Notte, CloakBrowser, BrowserAct, Firecrawl, and related tools.
 
 Key boundaries:
 - The skill is not shipped as part of the parent Axis Browser package.
@@ -46,6 +46,8 @@ Key boundaries:
   release flow.
 - Global vs project install paths, credentials guidance, and Browserbase
   comparison live in the skill's own `README.md`.
+- Optional Notte/CloakBrowser workflows, tool-stack guidance, and comparison
+  docs also live in the nested skill repo.
 - For tool setup guidance, run the skill's read-only checker:
 
 ```bash
