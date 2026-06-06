@@ -20,6 +20,14 @@ workstation with this repo checked out can point projects at
 `/path/to/axis-browser/skills/browser-skill`, while a new machine must install
 the machine-level browser tools first.
 
+If this checkout includes `prompts/`, the `;absetup`, `;abcheck`, `;abuse`, and
+`;abhealth` text-expander prompts are thin wrappers around `skills/browser-skill/`
+and its scripts. They do not replace this CLI guide and they do not create a
+second browser-tool router.
+
+For the full machine → skill → project → task lifecycle, read
+`docs/better-workflow-lifecycle-design.md`.
+
 ## Core Idea
 
 Axis Browser is most useful when you want a compact CLI view into a real browser session:

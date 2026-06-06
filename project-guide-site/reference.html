@@ -82,6 +82,16 @@
             <div><strong>Expected output</strong><p>Missing tools, auth presence signals, no installs, no secret values.</p></div>
           </div>
           <div class="trigger-row">
+            <div><strong>Machine setup</strong><p><code>bash "$SKILL_DIR/scripts/check-prerequisites.sh" --install</code><br><code>bash "$SKILL_DIR/scripts/check-prerequisites.sh" --install --dry-run</code></p></div>
+            <div><strong>Routes to</strong><p>Permission-gated machine-level install audit.</p></div>
+            <div><strong>Expected output</strong><p>Core and optional tool actions approved, skipped, or blocked. No credential writes.</p></div>
+          </div>
+          <div class="trigger-row">
+            <div><strong>Health audit</strong><p><code>bash "$SKILL_DIR/scripts/check-prerequisites.sh" --update</code><br><code>bash "$SKILL_DIR/scripts/check-prerequisites.sh" --update --dry-run</code></p></div>
+            <div><strong>Routes to</strong><p>Report-first version audit for shared tools.</p></div>
+            <div><strong>Expected output</strong><p>Current/latest versions, risk notes, pre-update record under `.tmp/axis-browser-health/` when applied.</p></div>
+          </div>
+          <div class="trigger-row">
             <div><strong>Verified run</strong><p><code>node "$SKILL_DIR/scripts/init-verified-run.mjs" --task "..." --slug run</code><br><code>node "$SKILL_DIR/scripts/validate-verified-run.mjs" --run .tmp/verified-runs/run</code></p></div>
             <div><strong>Routes to</strong><p>Evidence-backed browser task workflow.</p></div>
             <div><strong>Expected output</strong><p>Validated STEP markers with exit code 0, 1, or 2.</p></div>
@@ -90,8 +100,28 @@
 
         <article class="trigger-category category-blue">
           <div class="category-heading">
-            <h2>Agent entry phrases</h2>
-            <p>Use these phrases to steer a coding agent cleanly.</p>
+            <h2>Prompt shortcodes and agent entry phrases</h2>
+            <p>Use shortcodes for repeatable entry points and plain phrases for task-specific routing.</p>
+          </div>
+          <div class="trigger-row">
+            <div><strong>;absetup</strong><p>Machine setup and install audit.</p></div>
+            <div><strong>Routes to</strong><p>`prompts/absetup.md` and `check-prerequisites.sh --install`.</p></div>
+            <div><strong>Expected output</strong><p>Tool status, approved/skipped installs, and credential gaps with values hidden.</p></div>
+          </div>
+          <div class="trigger-row">
+            <div><strong>;abcheck</strong><p>Target-project readiness.</p></div>
+            <div><strong>Routes to</strong><p>`prompts/abcheck.md`, `setup.sh`, and `check-prerequisites.sh`.</p></div>
+            <div><strong>Expected output</strong><p>`.tmp/` readiness, available browser tools, and project-local Playwright recommendation.</p></div>
+          </div>
+          <div class="trigger-row">
+            <div><strong>;abuse</strong><p>Browser task launcher.</p></div>
+            <div><strong>Routes to</strong><p>`prompts/abuse.md` and `SKILL.md`.</p></div>
+            <div><strong>Expected output</strong><p>Selected skill reference, selected tool, and evidence paths.</p></div>
+          </div>
+          <div class="trigger-row">
+            <div><strong>;abhealth</strong><p>Monthly or biweekly health audit.</p></div>
+            <div><strong>Routes to</strong><p>`prompts/abhealth.md` and `check-prerequisites.sh --update`.</p></div>
+            <div><strong>Expected output</strong><p>Version audit, changelog impact, stale-doc findings, and proposed follow-up edits.</p></div>
           </div>
           <div class="trigger-row">
             <div><strong>Debug</strong><p>"Use browser-skill to debug why signup fails."</p></div>

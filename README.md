@@ -19,10 +19,11 @@ It is optimized for:
 
 ## Documentation Map
 
-This repo intentionally keeps only two public docs with distinct roles:
+This repo keeps a small set of public docs with distinct roles:
 
 - `README.md` — source of truth for install, commands, environment variables, runtime behavior, and development
 - `docs/vibe-coding-browser-workflow.md` — source of truth for the Axis Browser shared-`9222` workflow and troubleshooting habits
+- `docs/better-workflow-lifecycle-design.md` — source of truth for the broader Axis Browser workflow lifecycle: machine setup, skill availability, project readiness, task use, and health audits
 
 The optional `skills/browser-skill/` folder is intentionally ignored by the
 parent Axis Browser repo and is maintained as its own standalone nested Git
@@ -49,7 +50,10 @@ Key boundaries:
 - Optional Notte, CloakBrowser, BrowserAct, Firecrawl, Webwright comparison,
   verified-run, and reusable-workflow guidance also live in the nested skill
   repo.
-- For tool setup guidance, run the skill's read-only checker:
+- For tool setup guidance, run the skill's checker. Use
+  `--print-install-commands` for read-only guidance, `--install` for
+  permission-gated machine setup, and `--update` for permission-gated health
+  audits:
 
 ```bash
 cd skills/browser-skill
@@ -67,6 +71,11 @@ Portability note:
 - Run `bash "$BROWSER_SKILL_DIR/scripts/setup.sh"` once inside each target
   project so `.tmp/` evidence folders and `.gitignore` hygiene are created in
   the right repository.
+- Text-expander prompts live under `prompts/` when present:
+  `;absetup` for machine setup/audit, `;abcheck` for target-project readiness,
+  `;abuse` for loading the browser-skill router, and `;abhealth` for periodic
+  maintenance audits. These prompts are wrappers around the skill and scripts;
+  they are not a second browser routing system.
 
 ## Command Names
 

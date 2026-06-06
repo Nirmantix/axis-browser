@@ -40,11 +40,11 @@
 
       <section class="intro" aria-labelledby="page-title">
         <h1 id="page-title">Pick tools by job, not by novelty.</h1>
-        <p>The Axis Browser workflow is tool-routed. Axis Browser is the compact diagnostic path; Browser Harness and Playwright handle broader automation; paid or specialized services stay optional.</p>
+        <p>The Axis Browser workflow is tool-routed. Axis Browser is the compact diagnostic path, Browser Harness handles interactive browser work, and Playwright is added project-local for deterministic automation.</p>
       </section>
 
       <section class="section" aria-labelledby="core-tools">
-        <h2 id="core-tools">Core stack</h2>
+        <h2 id="core-tools">Core and common tools</h2>
         <div class="tool-grid">
           <article class="tool-card">
             <strong>Axis Browser</strong>
@@ -61,7 +61,7 @@
             <a href="https://github.com/browser-use/browser-harness" target="_blank" rel="noopener">GitHub</a>
             <ul>
               <li>Use for visual control, iframes, odd widgets, and flexible browser operation.</li>
-              <li>Install from a durable editable checkout.</li>
+              <li>Install from a durable editable checkout such as `$HOME/Developer/browser-harness`.</li>
             </ul>
           </article>
           <article class="tool-card">
@@ -69,8 +69,8 @@
             <p>Deterministic browser automation library and test backend.</p>
             <a href="https://playwright.dev" target="_blank" rel="noopener">Official docs</a>
             <ul>
-              <li>Use for repeatable scripts, traces, API mocking, CI, and cross-browser checks.</li>
-              <li>Install project-local with `npm install -D playwright`.</li>
+              <li>Use for repeatable scripts, traces, API mocking, CI, visual regression, and cross-browser checks.</li>
+              <li>Install project-local when the target project needs those capabilities.</li>
             </ul>
           </article>
           <article class="tool-card">
@@ -147,6 +147,16 @@
               <li>Borrow verified-run and reusable-script discipline through browser-skill.</li>
             </ul>
           </article>
+          <article class="tool-card">
+            <strong>Browserbase skills</strong>
+            <p>Separate Browserbase cloud/session ecosystem with its own CLI, API key, and platform workflows.</p>
+            <a href="https://github.com/browserbase/skills" target="_blank" rel="noopener">Skills GitHub</a>
+            <a href="https://www.browserbase.com/" target="_blank" rel="noopener">Website</a>
+            <ul>
+              <li>Use only when the task intentionally targets Browserbase cloud sessions or platform features.</li>
+              <li>Do not route normal Axis Browser work through Browserbase skills by default.</li>
+            </ul>
+          </article>
         </div>
       </section>
 
@@ -168,7 +178,7 @@
             </tr>
             <tr>
               <td>Write CI-grade automation</td>
-              <td>Playwright</td>
+              <td>Project-local Playwright</td>
               <td>Deterministic waits, traces, network interception, cross-browser.</td>
             </tr>
             <tr>
@@ -180,6 +190,11 @@
               <td>Work on protected targets</td>
               <td>BrowserAct, Notte, or CloakBrowser</td>
               <td>Only with explicit authorization and credential hygiene.</td>
+            </tr>
+            <tr>
+              <td>Use Browserbase cloud sessions</td>
+              <td>Browserbase skills</td>
+              <td>Separate ecosystem; only when Browserbase infrastructure is explicitly required.</td>
             </tr>
             <tr>
               <td>Need reusable proof</td>

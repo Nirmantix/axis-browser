@@ -40,7 +40,7 @@
 
       <section class="intro" aria-labelledby="page-title">
         <h1 id="page-title">Two setup routes: current workstation or fresh machine.</h1>
-        <p>The browser-skill folder is portable. The installed browser tools are machine-local. Each target project still needs its own `.tmp/` artifact setup, and Playwright should be project-local for deterministic scripts or CI.</p>
+        <p>The browser-skill folder is portable. Installed browser tools are machine-local. Each target project still needs `.tmp/` artifact setup, and Playwright stays project-local for deterministic scripts, traces, or CI.</p>
       </section>
 
       <section class="section" aria-labelledby="portability">
@@ -66,9 +66,9 @@
                 <td>Install globally once per machine, or run from a local checkout.</td>
               </tr>
               <tr>
-                <td>Browser Harness, Playwright browsers, optional CLIs</td>
+                <td>Browser Harness, optional CLIs, Playwright browsers</td>
                 <td>No. These are machine/project dependencies, not bundled inside the skill.</td>
-                <td>Use `check-prerequisites.sh` in each project to see what is available.</td>
+                <td>Use `check-prerequisites.sh` to see what is available; install Playwright inside target projects only when needed.</td>
               </tr>
               <tr>
                 <td>Project artifacts</td>
@@ -121,7 +121,7 @@ bash "$SKILL_DIR/scripts/check-prerequisites.sh" --print-install-commands</pre>
 node --version
 npm --version
 
-<span class="comment"># 2. Install Axis Browser globally from this fork.</span>
+<span class="comment"># 2. Install Axis Browser globally from this fork when missing.</span>
 npm install -g github:Nirmantix/axis-browser
 
 <span class="comment"># Or with Bun when Bun is the selected global package manager.</span>
@@ -140,7 +140,10 @@ cp -R /path/to/browser-skill "$HOME/.config/agents/skills/browser-skill"
 export BROWSER_SKILL_DIR="$HOME/.config/agents/skills/browser-skill"
 export SKILL_DIR="$BROWSER_SKILL_DIR"
 
-<span class="comment"># 4. In each target project, initialize artifacts and verify tools.</span>
+<span class="comment"># 4. Review and install machine-level browser workflow tools.</span>
+bash "$SKILL_DIR/scripts/check-prerequisites.sh" --install
+
+<span class="comment"># 5. In each target project, initialize artifacts and verify tools.</span>
 cd /path/to/target-project
 bash "$SKILL_DIR/scripts/setup.sh"
 bash "$SKILL_DIR/scripts/check-prerequisites.sh" --print-install-commands</pre>
@@ -150,7 +153,7 @@ bash "$SKILL_DIR/scripts/check-prerequisites.sh" --print-install-commands</pre>
           <div class="workflow-chain">
             <article class="phase-card">
               <strong>macOS</strong>
-              <p>Use Homebrew or the standard local installer for Node.js, `uv`, `jq`, ImageMagick, and optional CLIs. Axis Browser itself is a Node global install.</p>
+              <p>Use Homebrew or standard installers for Node.js, `uv`, `jq`, ImageMagick, and optional CLIs. Axis Browser itself is a Node global install.</p>
             </article>
             <article class="phase-card">
               <strong>Linux</strong>
@@ -183,11 +186,11 @@ bash "$SKILL_DIR/scripts/check-prerequisites.sh" --print-install-commands</pre>
             <tr>
               <td>Repeatable scripts</td>
               <td><code>npm install -D playwright</code><br><code>npx playwright install chromium</code></td>
-              <td>Project-local Playwright is the deterministic backend for traces, CI, and reusable scripts.</td>
+              <td>Project-local Playwright is the deterministic backend for traces, CI, reusable scripts, visual regression, and cross-browser checks.</td>
             </tr>
             <tr>
               <td>Interactive browser work</td>
-              <td><code>uv --version</code><br><code>git clone https://github.com/browser-use/browser-harness</code><br><code>uv tool install -e .</code></td>
+              <td><code>uv --version</code><br><code>git clone https://github.com/browser-use/browser-harness "$HOME/Developer/browser-harness"</code><br><code>(cd "$HOME/Developer/browser-harness" &amp;&amp; uv tool install -e .)</code></td>
               <td>Browser Harness is the default high-capability browser control path in the skill router.</td>
             </tr>
             <tr>
@@ -204,10 +207,47 @@ bash "$SKILL_DIR/scripts/check-prerequisites.sh" --print-install-commands</pre>
         <div class="feature-board">
           <pre>bash "$SKILL_DIR/scripts/check-prerequisites.sh"
 bash "$SKILL_DIR/scripts/check-prerequisites.sh" --print-install-commands
+bash "$SKILL_DIR/scripts/check-prerequisites.sh" --install --dry-run
+bash "$SKILL_DIR/scripts/check-prerequisites.sh" --update --dry-run
 axis-browser open https://example.com
 axis-browser snapshot</pre>
-          <p class="muted-lead">The prerequisite checker is read-only. It prints missing tools, credential presence signals, and setup gaps without installing packages or writing secrets.</p>
+          <p class="muted-lead">Default and print modes are read-only. Install and update modes are permission-gated, keep credentials out of files, and never install project-local libraries globally.</p>
         </div>
+      </section>
+
+      <section class="section" aria-labelledby="shortcodes">
+        <h2 id="shortcodes">Shortcut prompts</h2>
+        <table class="decision-table">
+          <thead>
+            <tr>
+              <th>Shortcode</th>
+              <th>Scope</th>
+              <th>Underlying route</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>;absetup</code></td>
+              <td>Machine setup audit</td>
+              <td><code>check-prerequisites.sh --install</code></td>
+            </tr>
+            <tr>
+              <td><code>;abcheck</code></td>
+              <td>Target-project readiness</td>
+              <td><code>setup.sh</code> and <code>check-prerequisites.sh</code></td>
+            </tr>
+            <tr>
+              <td><code>;abuse</code></td>
+              <td>Browser task launch</td>
+              <td>Load <code>SKILL.md</code>; routing happens there.</td>
+            </tr>
+            <tr>
+              <td><code>;abhealth</code></td>
+              <td>Health audit</td>
+              <td><code>check-prerequisites.sh --update</code> plus read-only content review.</td>
+            </tr>
+          </tbody>
+        </table>
       </section>
 
       <footer class="site-footer">

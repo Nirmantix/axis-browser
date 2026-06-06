@@ -75,6 +75,27 @@
         </div>
       </section>
 
+      <section class="section" aria-labelledby="health-audit">
+        <h2 id="health-audit">Workflow health audit</h2>
+        <div class="feature-board">
+          <p class="muted-lead">Run `;abhealth` monthly, biweekly, or after major browser-tool releases. The audit keeps prompts, skills, scripts, docs, and the microsite aligned with the installed tool stack and official upstream docs.</p>
+          <div class="workflow-chain">
+            <article class="phase-card">
+              <strong>1. Version audit</strong>
+              <p>Run `check-prerequisites.sh --update` to compare shared machine tools, record pre-update versions, and ask before each update.</p>
+            </article>
+            <article class="phase-card">
+              <strong>2. Content audit</strong>
+              <p>Review prompts, `SKILL.md`, references, scripts, README files, workflow docs, and microsite pages for stale or conflicting guidance.</p>
+            </article>
+            <article class="phase-card">
+              <strong>3. Report only by default</strong>
+              <p>Write findings under `.tmp/axis-browser-health/`. Tracked docs, scripts, and prompts change only in a separate approved edit pass.</p>
+            </article>
+          </div>
+        </div>
+      </section>
+
       <section class="section" aria-labelledby="repo-reality">
         <h2 id="repo-reality">Repo guardrails</h2>
         <table class="decision-table">
@@ -170,6 +191,16 @@
               <td><code>pnpm test -- --run test/main.test.ts test/cli-runtime.test.ts</code></td>
               <td>Check for private paths, deleted links, local alias assumptions, and stale references.</td>
             </tr>
+            <tr>
+              <td>Prompt or browser-skill setup changes</td>
+              <td><code>corepack pnpm test</code><br><code>node --test test/*.node.mjs</code> inside <code>skills/browser-skill</code></td>
+              <td>Verify prompt contracts, install/update modes, verified-run behavior, and reference links.</td>
+            </tr>
+            <tr>
+              <td>Microsite changes</td>
+              <td><code>python3 skills/project-guide-microsite/scripts/validate_static_site.py project-guide-site</code></td>
+              <td>Check local links, static HTML structure, and file URL readiness.</td>
+            </tr>
           </tbody>
         </table>
       </section>
@@ -206,6 +237,13 @@ Breaking-change risk: [none / remaining risks]
 Validation run: [...]
 PR: [URL or not opened]
 Manual follow-up: [none or list]</pre>
+          <pre>Axis Browser workflow health:
+Tool update audit: [.tmp/axis-browser-health/update-*.md or none]
+Prompt drift: [none or list]
+Skill/script drift: [none or list]
+Microsite drift: [none or list]
+External docs checked: [links]
+Approved changes applied: [none or list]</pre>
         </div>
       </section>
 

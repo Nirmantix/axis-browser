@@ -50,7 +50,11 @@
         </article>
         <article>
           <h2>Fresh machine route</h2>
-          <p>Install Node, Axis Browser, Browser Harness, and project-local Playwright before expecting the skill to have full browser power.</p>
+          <p>Run the setup audit, install machine-level tools, then add project-local Playwright only where deterministic automation is needed.</p>
+        </article>
+        <article>
+          <h2>Prompt shortcodes</h2>
+          <p>`;absetup`, `;abcheck`, `;abuse`, and `;abhealth` are thin wrappers around browser-skill and its scripts.</p>
         </article>
         <article>
           <h2>Need to debug a live app?</h2>
@@ -149,6 +153,43 @@
         </div>
       </section>
 
+      <section class="section" aria-labelledby="prompts-title">
+        <h2 id="prompts-title">Prompt entry points</h2>
+        <p class="muted-lead">The shortcodes are convenience entry points. They do not replace `SKILL.md`, and they do not create another routing system.</p>
+        <div class="feature-board">
+          <div class="route-grid">
+            <article class="route-card">
+              <div class="route-head"><h3>;absetup</h3></div>
+              <ul>
+                <li><span>scope</span> Machine setup and install audit.</li>
+                <li><span>runs</span> `check-prerequisites.sh --install`.</li>
+              </ul>
+            </article>
+            <article class="route-card">
+              <div class="route-head"><h3>;abcheck</h3></div>
+              <ul>
+                <li><span>scope</span> Target-project readiness.</li>
+                <li><span>runs</span> `setup.sh`, then `check-prerequisites.sh`.</li>
+              </ul>
+            </article>
+            <article class="route-card">
+              <div class="route-head"><h3>;abuse</h3></div>
+              <ul>
+                <li><span>scope</span> Browser task launcher.</li>
+                <li><span>runs</span> Loads `SKILL.md`; all routing stays there.</li>
+              </ul>
+            </article>
+            <article class="route-card">
+              <div class="route-head"><h3>;abhealth</h3></div>
+              <ul>
+                <li><span>scope</span> Monthly or biweekly health audit.</li>
+                <li><span>runs</span> `check-prerequisites.sh --update` plus read-only content review.</li>
+              </ul>
+            </article>
+          </div>
+        </div>
+      </section>
+
       <section class="section" aria-labelledby="stats-title">
         <h2 id="stats-title">At a glance</h2>
         <div class="stat-grid">
@@ -163,9 +204,9 @@
             <p>Task routes for screenshots, debugging, traces, accessibility, performance, scraping, and verification.</p>
           </div>
           <div class="stat-item">
-            <span class="stat-number">9</span>
-            <span class="stat-label">Skill scripts</span>
-            <p>Setup, prerequisites, traces, reports, screenshots, and verified-run scaffolding.</p>
+            <span class="stat-number">4</span>
+            <span class="stat-label">Prompt shortcodes</span>
+            <p>`absetup`, `abcheck`, `abuse`, and `abhealth` map operators to the skill workflow.</p>
           </div>
         </div>
       </section>
