@@ -1,0 +1,218 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Maintenance — Axis Browser</title>
+    <meta name="description" content="Private fork-maintenance workflow for keeping Axis Browser aligned with upstream chrome-devtools-axi.">
+    <meta property="og:title" content="Maintenance — Axis Browser">
+    <meta property="og:description" content="Private fork-maintenance workflow for keeping Axis Browser aligned with upstream chrome-devtools-axi.">
+    <meta property="og:image" content="./og-image.png">
+    <meta property="og:type" content="website">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="Maintenance — Axis Browser">
+    <meta name="twitter:description" content="Private fork-maintenance workflow for keeping Axis Browser aligned with upstream chrome-devtools-axi.">
+    <meta name="twitter:image" content="./og-image.png">
+    <link rel="icon" type="image/svg+xml" href="./favicon.svg">
+    <link rel="icon" sizes="any" href="./favicon.ico">
+    <link rel="apple-touch-icon" href="./apple-touch-icon.png">
+    <script>!function(){var r=document.documentElement,t,i=0,s=[0,2,4,0,-2,-4];try{t=localStorage.getItem("theme");i=parseInt(localStorage.getItem("font-step-idx"),10)||0}catch(e){}if(t)r.setAttribute("data-theme",t);r.style.setProperty("--font-step",s[i]+"px")}();</script>
+    <link rel="stylesheet" href="./styles.css">
+  </head>
+  <body>
+    <main class="site-shell">
+      <header class="top-bar" aria-label="Site navigation">
+        <a class="brand-link" href="./index.html">Axis Browser</a>
+        <nav class="site-nav">
+          <a class="nav-link" href="./index.html">Home</a>
+          <a class="nav-link" href="./workflow.html">Workflow</a>
+          <a class="nav-link" href="./setup.html">Setup</a>
+          <a class="nav-link" href="./tools.html">Tools</a>
+          <a class="nav-link" href="./reference.html">Commands</a>
+          <a class="nav-link" href="./safety.html">Safety</a>
+          <a class="nav-link active" href="./maintenance.html">Maintenance</a>
+          <a class="nav-link" href="./sources.html">Sources</a>
+          <button class="theme-toggle" id="theme-toggle" aria-label="Toggle dark mode"><svg class="icon-moon" viewBox="0 0 24 24"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg><svg class="icon-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg></button>
+          <button class="font-toggle" id="font-toggle" aria-label="Adjust font size"><span class="font-label">A</span></button>
+          <script>document.getElementById("theme-toggle").addEventListener("click",function(){var d=document.documentElement,t=d.getAttribute("data-theme")==="dark"?"light":"dark";d.setAttribute("data-theme",t);try{localStorage.setItem("theme",t)}catch(e){ } });!function(){var s=[0,2,4,0,-2,-4],l=["A","A+","A++","A","A-","A--"],b=document.getElementById("font-toggle"),n=b.querySelector(".font-label"),i=0;try{i=parseInt(localStorage.getItem("font-step-idx"),10)||0}catch(e){}function u(){document.documentElement.style.setProperty("--font-step",s[i]+"px");n.textContent=l[i];b.title="Font size: "+(s[i]===0?"Default":(s[i]>0?"+":"")+s[i]+"px")}u();b.addEventListener("click",function(){i=(i+1)%s.length;u();try{localStorage.setItem("font-step-idx",i)}catch(e){ } })}();</script>
+        </nav>
+      </header>
+
+      <section class="intro" aria-labelledby="page-title">
+        <h1 id="page-title">Maintenance workflow.</h1>
+        <p>Private operating guide for keeping the Axis Browser fork small, upgrade-friendly, and aligned with `kunchenguid/chrome-devtools-axi`.</p>
+      </section>
+
+      <section class="section" aria-labelledby="trigger-scope">
+        <h2 id="trigger-scope">When this workflow applies</h2>
+        <div class="feature-board">
+          <p class="muted-lead">Maintenance intent includes requests such as updating Axis Browser, syncing upstream, checking for upstream releases, bringing the repo current, or following the private maintenance playbook.</p>
+          <div class="route-grid">
+            <article class="route-card">
+              <div class="route-head"><h3>Primary intent</h3></div>
+              <ul>
+                <li><span>sync</span> Check upstream live state before assuming an update exists.</li>
+                <li><span>inspect</span> Review commits, tags, dependency changes, CI, docs, and release notes.</li>
+                <li><span>preserve</span> Keep only intentional Axis Browser fork deltas.</li>
+              </ul>
+            </article>
+            <article class="route-card">
+              <div class="route-head"><h3>Repository target</h3></div>
+              <ul>
+                <li><span>root</span> Resolve with `git rev-parse --show-toplevel`.</li>
+                <li><span>remote</span> `origin` remains `Nirmantix/axis-browser`.</li>
+                <li><span>upstream</span> `upstream` remains `kunchenguid/chrome-devtools-axi`.</li>
+              </ul>
+            </article>
+            <article class="route-card">
+              <div class="route-head"><h3>Private scope</h3></div>
+              <ul>
+                <li><span>private</span> The private maintenance playbook stays local and untracked.</li>
+                <li><span>public</span> Public docs stay focused on install, usage, and shared-Chrome workflow.</li>
+              </ul>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section class="section" aria-labelledby="repo-reality">
+        <h2 id="repo-reality">Repo guardrails</h2>
+        <table class="decision-table">
+          <thead>
+            <tr>
+              <th>Area</th>
+              <th>Current rule</th>
+              <th>Reason</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Branching</td>
+              <td>`main` is the only long-lived branch. Use short-lived `codex/upstream-sync-YYYYMMDD` branches.</td>
+              <td>Keeps the fork simple and protected.</td>
+            </tr>
+            <tr>
+              <td>Protected flow</td>
+              <td>Open a PR into `main`, wait for `Kilo Code Review`, merge, delete the branch, then prune stale refs.</td>
+              <td>Do not bypass protected `main` for small changes.</td>
+            </tr>
+            <tr>
+              <td>Release automation</td>
+              <td>Release-please stays disabled unless explicitly re-enabled.</td>
+              <td>Releases remain manual for this fork.</td>
+            </tr>
+            <tr>
+              <td>Nested skills</td>
+              <td>`skills/browser-skill/` stays ignored by the parent repo and maintained as a standalone nested repo when present.</td>
+              <td>The browser skill is not shipped through the parent Axis Browser release flow.</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section class="section" aria-labelledby="invariants">
+        <h2 id="invariants">Non-negotiable fork invariants</h2>
+        <div class="feature-board">
+          <div class="workflow-chain">
+            <article class="phase-card"><strong>Package identity</strong><p>Keep package name `chrome-devtools-axi` for upstream compatibility.</p></article>
+            <article class="phase-card"><strong>Commands</strong><p>Keep `axis-browser`, `axib`, and `chrome-devtools-axi` exposed.</p></article>
+            <article class="phase-card"><strong>Runtime state</strong><p>Keep runtime state under `~/.axis-browser`.</p></article>
+            <article class="phase-card"><strong>Public wording</strong><p>Public docs use `Axis Browser`, document GitHub-first install, and describe Windows support as partial.</p></article>
+            <article class="phase-card"><strong>Optional aliases</strong><p>`axis`, `axi`, and `axisb` are not built-in commands unless locally created by an operator.</p></article>
+            <article class="phase-card"><strong>Small fork delta</strong><p>Do not add unrelated product features to the fork.</p></article>
+          </div>
+        </div>
+      </section>
+
+      <section class="section" aria-labelledby="upstream-workflow">
+        <h2 id="upstream-workflow">Upstream sync workflow</h2>
+        <div class="feature-board">
+          <ol class="step-list">
+            <li><span>1</span><div><strong>Confirm remotes and fetch</strong><p>Run `git remote -v`, `git fetch origin`, `git fetch upstream --tags`, and `git fetch --prune origin`.</p></div></li>
+            <li><span>2</span><div><strong>Check whether upstream changed</strong><p>Inspect `git log --oneline origin/main..upstream/main`, `git diff --stat origin/main..upstream/main`, upstream tags, and release notes.</p></div></li>
+            <li><span>3</span><div><strong>Create a short-lived branch</strong><p>Use a branch such as `codex/upstream-sync-YYYYMMDD` before merging upstream.</p></div></li>
+            <li><span>4</span><div><strong>Inspect high-risk files before merging</strong><p>Review `package.json`, `src/cli.ts`, `src/client.ts`, `src/bridge.ts`, `src/run.ts`, hooks, suggestions, tests, docs, and CI.</p></div></li>
+            <li><span>5</span><div><strong>Merge deliberately</strong><p>Use `git merge upstream/main`, resolve conflicts by preserving only needed Axis Browser deltas, and remove obsolete fork workarounds when upstream supersedes them.</p></div></li>
+            <li><span>6</span><div><strong>Re-assert invariants</strong><p>Verify package name, bins, branding, state directory, build behavior, docs, changelog, and platform-support wording.</p></div></li>
+            <li><span>7</span><div><strong>Validate and PR</strong><p>Run the appropriate tests and build, inspect the public surface, push the branch, open a PR, wait for required review, then clean up.</p></div></li>
+          </ol>
+        </div>
+      </section>
+
+      <section class="section" aria-labelledby="validation">
+        <h2 id="validation">Validation matrix</h2>
+        <table class="decision-table">
+          <thead>
+            <tr>
+              <th>Change area</th>
+              <th>Minimum validation</th>
+              <th>Extra checks</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>General upstream sync</td>
+              <td><code>pnpm test</code><br><code>pnpm run build</code></td>
+              <td>Review dependency and workflow changes before declaring safe.</td>
+            </tr>
+            <tr>
+              <td>Bridge or session logic</td>
+              <td><code>pnpm test -- --run test/bridge.test.ts test/client.test.ts</code></td>
+              <td>Verify stale-bridge and shared-Chrome behavior.</td>
+            </tr>
+            <tr>
+              <td>CLI copy, help, or command names</td>
+              <td><code>pnpm test -- --run test/cli-runtime.test.ts test/main.test.ts test/run.test.ts</code></td>
+              <td>Verify `axis-browser`, `axib`, and `chrome-devtools-axi` remain exposed.</td>
+            </tr>
+            <tr>
+              <td>Public docs only</td>
+              <td><code>pnpm test -- --run test/main.test.ts test/cli-runtime.test.ts</code></td>
+              <td>Check for private paths, deleted links, local alias assumptions, and stale references.</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section class="section" aria-labelledby="public-doc-rules">
+        <h2 id="public-doc-rules">Public documentation rules</h2>
+        <div class="safety-band">
+          <div>
+            <strong>README.md</strong>
+            <p>Public product positioning, install/use guidance, compatibility notes, platform support, and GitHub-first install path.</p>
+          </div>
+          <div>
+            <strong>Shared workflow guide</strong>
+            <p>`docs/vibe-coding-browser-workflow.md` owns `9222` usage, bridge reset habits, tab troubleshooting, auth/session guidance, and local-helper caveats.</p>
+          </div>
+          <div>
+            <strong>CHANGELOG.md</strong>
+            <p>Keep inherited upstream history intact and keep the Axis Browser `Unreleased` section current when public behavior changes.</p>
+          </div>
+          <div>
+            <strong>Never publish private process</strong>
+            <p>Do not track the private maintenance playbook, private path prompts, Airlock scaffolding, or public docs whose main purpose is private fork maintenance.</p>
+          </div>
+        </div>
+      </section>
+
+      <section class="section" aria-labelledby="report-template">
+        <h2 id="report-template">Maintenance report format</h2>
+        <div class="feature-board">
+          <pre>Upstream changed: [yes/no]
+Upstream changes reviewed: [commits, tags, dependencies, workflows, docs]
+Fork deltas preserved / changed / removed: [...]
+Breaking-change risk: [none / remaining risks]
+Validation run: [...]
+PR: [URL or not opened]
+Manual follow-up: [none or list]</pre>
+        </div>
+      </section>
+
+      <footer class="site-footer">
+        <span>Axis Browser Workflow Guide</span>
+        <a href="./sources.html">Sources &rarr;</a>
+      </footer>
+    </main>
+  </body>
+</html>

@@ -46,14 +46,27 @@ Key boundaries:
   release flow.
 - Global vs project install paths, credentials guidance, and Browserbase
   comparison live in the skill's own `README.md`.
-- Optional Notte/CloakBrowser workflows, tool-stack guidance, and comparison
-  docs also live in the nested skill repo.
+- Optional Notte, CloakBrowser, BrowserAct, Firecrawl, Webwright comparison,
+  verified-run, and reusable-workflow guidance also live in the nested skill
+  repo.
 - For tool setup guidance, run the skill's read-only checker:
 
 ```bash
 cd skills/browser-skill
 bash scripts/check-prerequisites.sh --print-install-commands
 ```
+
+Portability note:
+- On a workstation with this repo checked out, other local projects can point at
+  the checkout's skill with `BROWSER_SKILL_DIR=/path/to/axis-browser/skills/browser-skill`.
+- That gives the agent the workflow router and scripts, not a bundled runtime.
+  Global tools such as `axis-browser` and `browser-harness` must already be
+  installed on the machine, and Playwright should still be installed
+  project-local when reusable scripts, traces, network interception, visual
+  regression, or CI are needed.
+- Run `bash "$BROWSER_SKILL_DIR/scripts/setup.sh"` once inside each target
+  project so `.tmp/` evidence folders and `.gitignore` hygiene are created in
+  the right repository.
 
 ## Command Names
 
@@ -223,6 +236,21 @@ axis-browser pages
 
 For the full public shared-browser operating model, read:
 - [docs/vibe-coding-browser-workflow.md](docs/vibe-coding-browser-workflow.md)
+
+## Evidence-Backed Agent Workflows
+
+Axis Browser itself is a CLI, not an LLM loop. Host agents compose commands such
+as `snapshot`, `console`, `network`, and `eval` into their own workflow.
+
+For browser tasks that need auditable evidence, use the optional
+`skills/browser-skill/` companion when present:
+
+- `references/verified-run.md` defines a single-pass evidence workflow with
+  `STEP_PASS`, `STEP_FAIL`, and `STEP_SKIP` validation.
+- `references/reusable-workflow.md` defines the craft pattern for turning a
+  working browser flow into a rerunnable local script.
+- Webwright is documented there as a pattern source, not as a dependency or a
+  replacement for Playwright.
 
 ## How It Works
 
@@ -434,6 +462,11 @@ It also enables `hooks` in:
 Set `CHROME_DEVTOOLS_AXI_DISABLE_HOOKS=1` to skip that behavior.
 
 Development entrypoints such as `pnpm run dev` and `bin/chrome-devtools-axi.ts` do not modify those hook files.
+
+Do not copy user-local agent config such as `.codex/`, `.claude/`,
+`.opencode/`, `.agents/`, `.pi/`, hooks, cookies, API keys, or MCP credentials
+into this repo. If any credential-bearing config is committed or shared, remove
+it according to the project's incident process and rotate the affected secrets.
 
 ## Development
 

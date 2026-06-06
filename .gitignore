@@ -4,6 +4,11 @@ dist/
 
 # Agent instruction files (private, repo-scoped)
 AGENTS.md
+.codex/
+.claude/
+.opencode/
+.agents/
+.pi/
 
 # Internal-only local maintenance and automation files
 maintainance.md

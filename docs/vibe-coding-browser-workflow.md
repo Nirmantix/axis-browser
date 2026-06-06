@@ -11,6 +11,15 @@ Source of truth split:
 
 This guide is intentionally about Axis Browser and does not document unrelated local tool stacks, shell aliases, or machine-specific helpers.
 
+If this checkout includes `skills/browser-skill/`, use that nested skill for
+multi-tool browser tasks, verified runs, reusable workflow scripts, protected
+site guidance, or tool comparison. This guide stays focused on the Axis Browser
+shared-Chrome workflow. For skill portability and setup routes, use
+`project-guide-site/setup.html` or `skills/browser-skill/README.md`: a
+workstation with this repo checked out can point projects at
+`/path/to/axis-browser/skills/browser-skill`, while a new machine must install
+the machine-level browser tools first.
+
 ## Core Idea
 
 Axis Browser is most useful when you want a compact CLI view into a real browser session:
@@ -128,6 +137,11 @@ This is especially useful for:
 - silent button failures
 - failed form submissions
 - frontend/backend contract mismatches
+
+For an auditable handoff, capture the same evidence through
+`skills/browser-skill/references/verified-run.md` when that optional skill is
+available. Axis Browser supplies compact observations; the skill supplies the
+artifact contract and validation.
 
 ## Tab Source Of Truth
 
@@ -286,4 +300,6 @@ For public Axis Browser usage:
 - use a dedicated shared Chrome profile when real login state matters
 - reset the bridge when switching targets
 - inspect snapshot, console, and network before changing app code
+- use the optional browser-skill verified-run flow when the task needs a
+  checkable evidence bundle
 - keep local aliases and personal tool stacks out of public docs

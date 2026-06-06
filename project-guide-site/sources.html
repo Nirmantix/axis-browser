@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Sources — Axis Browser</title>
+    <meta name="description" content="Source-of-truth files and official external links behind the Axis Browser workflow guide.">
+    <meta property="og:title" content="Sources — Axis Browser">
+    <meta property="og:description" content="Source-of-truth files and official external links behind the Axis Browser workflow guide.">
+    <meta property="og:image" content="./og-image.png">
+    <meta property="og:type" content="website">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="Sources — Axis Browser">
+    <meta name="twitter:description" content="Source-of-truth files and official external links behind the Axis Browser workflow guide.">
+    <meta name="twitter:image" content="./og-image.png">
+    <link rel="icon" type="image/svg+xml" href="./favicon.svg">
+    <link rel="icon" sizes="any" href="./favicon.ico">
+    <link rel="apple-touch-icon" href="./apple-touch-icon.png">
+    <script>!function(){var r=document.documentElement,t,i=0,s=[0,2,4,0,-2,-4];try{t=localStorage.getItem("theme");i=parseInt(localStorage.getItem("font-step-idx"),10)||0}catch(e){}if(t)r.setAttribute("data-theme",t);r.style.setProperty("--font-step",s[i]+"px")}();</script>
+    <link rel="stylesheet" href="./styles.css">
+  </head>
+  <body>
+    <main class="site-shell">
+      <header class="top-bar" aria-label="Site navigation">
+        <a class="brand-link" href="./index.html">Axis Browser</a>
+        <nav class="site-nav">
+          <a class="nav-link" href="./index.html">Home</a>
+          <a class="nav-link" href="./workflow.html">Workflow</a>
+          <a class="nav-link" href="./setup.html">Setup</a>
+          <a class="nav-link" href="./tools.html">Tools</a>
+          <a class="nav-link" href="./reference.html">Commands</a>
+          <a class="nav-link" href="./safety.html">Safety</a>
+          <a class="nav-link" href="./maintenance.html">Maintenance</a>
+          <a class="nav-link active" href="./sources.html">Sources</a>
+          <button class="theme-toggle" id="theme-toggle" aria-label="Toggle dark mode"><svg class="icon-moon" viewBox="0 0 24 24"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg><svg class="icon-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg></button>
+          <button class="font-toggle" id="font-toggle" aria-label="Adjust font size"><span class="font-label">A</span></button>
+          <script>document.getElementById("theme-toggle").addEventListener("click",function(){var d=document.documentElement,t=d.getAttribute("data-theme")==="dark"?"light":"dark";d.setAttribute("data-theme",t);try{localStorage.setItem("theme",t)}catch(e){ } });!function(){var s=[0,2,4,0,-2,-4],l=["A","A+","A++","A","A-","A--"],b=document.getElementById("font-toggle"),n=b.querySelector(".font-label"),i=0;try{i=parseInt(localStorage.getItem("font-step-idx"),10)||0}catch(e){}function u(){document.documentElement.style.setProperty("--font-step",s[i]+"px");n.textContent=l[i];b.title="Font size: "+(s[i]===0?"Default":(s[i]>0?"+":"")+s[i]+"px")}u();b.addEventListener("click",function(){i=(i+1)%s.length;u();try{localStorage.setItem("font-step-idx",i)}catch(e){ } })}();</script>
+        </nav>
+      </header>
+
+      <section class="intro" aria-labelledby="page-title">
+        <h1 id="page-title">Sources of truth.</h1>
+        <p>This microsite is a map, not the canonical spec. When details conflict, use the files and official links below.</p>
+      </section>
+
+      <section class="section" aria-labelledby="local-sources">
+        <h2 id="local-sources">Local project sources</h2>
+        <div class="source-grid">
+          <article class="source-card">
+            <strong>Axis Browser README</strong>
+            <p>Install commands, CLI commands, environment variables, runtime behavior, and session hooks.</p>
+            <a href="../README.md">../README.md</a>
+          </article>
+          <article class="source-card">
+            <strong>Shared Chrome workflow</strong>
+            <p>Dedicated profile setup, `9222` and `9224`, bridge reset habits, auth and tab troubleshooting.</p>
+            <a href="../docs/vibe-coding-browser-workflow.md">../docs/vibe-coding-browser-workflow.md</a>
+          </article>
+          <article class="source-card">
+            <strong>browser-skill router</strong>
+            <p>Task routing table, setup contract, command snippets, reference list, and reporting format.</p>
+            <a href="../skills/browser-skill/SKILL.md">../skills/browser-skill/SKILL.md</a>
+          </article>
+          <article class="source-card">
+            <strong>browser-skill README</strong>
+            <p>Install paths, Browserbase comparison, setup scripts, tool setup guide, and security summary.</p>
+            <a href="../skills/browser-skill/README.md">../skills/browser-skill/README.md</a>
+          </article>
+          <article class="source-card">
+            <strong>Tool stack guide</strong>
+            <p>Official links, current tool boundaries, and Webwright positioning.</p>
+            <a href="../skills/browser-skill/references/tool-stack.md">../skills/browser-skill/references/tool-stack.md</a>
+          </article>
+          <article class="source-card">
+            <strong>Verified run reference</strong>
+            <p>Check schema, STEP marker contract, validator exit codes, and artifact reporting format.</p>
+            <a href="../skills/browser-skill/references/verified-run.md">../skills/browser-skill/references/verified-run.md</a>
+          </article>
+          <article class="source-card">
+            <strong>Reusable workflow reference</strong>
+            <p>Craft-mode expectations for parameterized local browser scripts.</p>
+            <a href="../skills/browser-skill/references/reusable-workflow.md">../skills/browser-skill/references/reusable-workflow.md</a>
+          </article>
+          <article class="source-card">
+            <strong>Security policy</strong>
+            <p>Vulnerability reporting, secret handling, authorization, and artifact rules.</p>
+            <a href="../skills/browser-skill/SECURITY.md">../skills/browser-skill/SECURITY.md</a>
+          </article>
+          <article class="source-card">
+            <strong>Private maintenance playbook</strong>
+            <p>Fork-sync triggers, upstream update workflow, branch policy, validation matrix, and public-doc guardrails.</p>
+            <a href="../maintainance.md">Private maintenance playbook</a>
+          </article>
+        </div>
+      </section>
+
+      <section class="section" aria-labelledby="official-links">
+        <h2 id="official-links">Official external links</h2>
+        <div class="source-grid">
+          <article class="source-card"><strong>Axis Browser</strong><p>Project repository for this CLI fork.</p><a href="https://github.com/Nirmantix/axis-browser" target="_blank" rel="noopener">github.com/Nirmantix/axis-browser</a></article>
+          <article class="source-card"><strong>Upstream chrome-devtools-axi</strong><p>Compatibility upstream for this fork.</p><a href="https://github.com/kunchenguid/chrome-devtools-axi" target="_blank" rel="noopener">github.com/kunchenguid/chrome-devtools-axi</a></article>
+          <article class="source-card"><strong>Browser Harness</strong><p>Primary high-capability interactive browser tool.</p><a href="https://github.com/browser-use/browser-harness" target="_blank" rel="noopener">github.com/browser-use/browser-harness</a></article>
+          <article class="source-card"><strong>Playwright</strong><p>Project-local deterministic browser automation library.</p><a href="https://playwright.dev" target="_blank" rel="noopener">playwright.dev</a></article>
+          <article class="source-card"><strong>Playwright Agent CLI</strong><p>Microsoft agent-oriented CLI and skills install path.</p><a href="https://playwright.dev/agent-cli/installation" target="_blank" rel="noopener">playwright.dev/agent-cli/installation</a></article>
+          <article class="source-card"><strong>Firecrawl</strong><p>Public-page scraping, search, crawl, and Codex MCP setup.</p><a href="https://docs.firecrawl.dev/quickstarts/codex-cli" target="_blank" rel="noopener">docs.firecrawl.dev/quickstarts/codex-cli</a></article>
+          <article class="source-card"><strong>BrowserAct</strong><p>Protected-site workflow skills and Skill Forge.</p><a href="https://github.com/browser-act/skills" target="_blank" rel="noopener">github.com/browser-act/skills</a></article>
+          <article class="source-card"><strong>Notte</strong><p>Cloud browser sessions, workflow-code, Functions, vaults, and personas.</p><a href="https://docs.notte.cc/" target="_blank" rel="noopener">docs.notte.cc</a></article>
+          <article class="source-card"><strong>CloakBrowser</strong><p>Playwright/Puppeteer-compatible Chromium runtime.</p><a href="https://github.com/CloakHQ/CloakBrowser" target="_blank" rel="noopener">github.com/CloakHQ/CloakBrowser</a></article>
+          <article class="source-card"><strong>Webwright</strong><p>Microsoft research harness above Playwright. Pattern source only here.</p><a href="https://github.com/microsoft/Webwright" target="_blank" rel="noopener">github.com/microsoft/Webwright</a></article>
+        </div>
+      </section>
+
+      <section class="section" aria-labelledby="maintenance">
+        <h2 id="maintenance">When to update this site</h2>
+        <div class="feature-board">
+          <div class="workflow-chain">
+            <article class="phase-card">
+              <strong>CLI surface changes</strong>
+              <p>Update commands, env vars, bridge behavior, and shared-Chrome notes when Axis Browser changes.</p>
+            </article>
+            <article class="phase-card">
+              <strong>Skill routes change</strong>
+              <p>Update workflow, tools, setup, and commands when browser-skill references or scripts change.</p>
+            </article>
+            <article class="phase-card">
+              <strong>Tool docs change</strong>
+              <p>Re-check official links before changing install commands for Playwright CLI, Firecrawl, BrowserAct, Notte, or CloakBrowser.</p>
+            </article>
+            <article class="phase-card">
+              <strong>Fork maintenance changes</strong>
+              <p>Update the Maintenance page whenever the private maintenance playbook, upstream sync rules, branch policy, validation requirements, or public-doc guardrails change.</p>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <footer class="site-footer">
+        <span>Axis Browser Workflow Guide</span>
+        <a href="./index.html">Back to Home</a>
+      </footer>
+    </main>
+  </body>
+</html>
