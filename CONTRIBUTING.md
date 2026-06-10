@@ -4,6 +4,7 @@ Thanks for wanting to contribute.
 One rule up front:
 
 **Human-authored pull requests targeting `main` must be raised through [`no-mistakes`](https://github.com/kunchenguid/no-mistakes).**
+We require this to reduce the maintainer's burden of reviewing and merging contributions.
 
 `no-mistakes` puts a local git proxy in front of your real remote.
 Pushing through it runs an AI-driven review/test/build pipeline in an isolated worktree, forwards the push upstream only after every check passes, and opens a clean PR automatically.
@@ -31,7 +32,6 @@ See the [no-mistakes quick start](https://kunchenguid.github.io/no-mistakes/star
 ## Repo conventions
 
 - Node 20+, TypeScript, ESM-only.
-- Use TDD for bug fixes and new features.
 - Unit tests use Vitest and are co-located as `*.test.ts`.
 - Use pnpm for package scripts.
 - Run `pnpm run build` and `pnpm test` before pushing.
