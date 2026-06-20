@@ -3,7 +3,7 @@ Task Shortcode: ;absetup
 Purpose: one-off Axis Browser workflow machine setup/audit.
 
 Associated skill:
-- ./skills/browser-skill when run from the axis-browser checkout, or BROWSER_SKILL_DIR when set
+- ./skills/browser-skill when run from the axis-browser checkout, BROWSER_SKILL_DIR when set, or AXIS_BROWSER_HOME/skills/browser-skill when AXIS_BROWSER_HOME is set
 
 Run this from any shell on the target machine:
 

@@ -62,7 +62,8 @@ bash scripts/check-prerequisites.sh --print-install-commands
 
 Portability note:
 - On a workstation with this repo checked out, other local projects can point at
-  the checkout's skill with `BROWSER_SKILL_DIR=/path/to/axis-browser/skills/browser-skill`.
+  the checkout's skill with `BROWSER_SKILL_DIR=/path/to/axis-browser/skills/browser-skill`
+  or point at the workflow checkout with `AXIS_BROWSER_HOME=/path/to/axis-browser`.
 - That gives the agent the workflow router and scripts, not a bundled runtime.
   Global tools such as `axis-browser` and `browser-harness` must already be
   installed on the machine, and Playwright should still be installed

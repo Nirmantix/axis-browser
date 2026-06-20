@@ -42,7 +42,10 @@ layers:
 Agents can use the workflow only after `skills/browser-skill/` is visible to
 the agent host. Use one of these routes:
 
-- Point the session at an existing checkout with `BROWSER_SKILL_DIR`.
+- Point the session at an existing skill checkout with `BROWSER_SKILL_DIR`.
+- Point the session at an Axis Browser workflow checkout with
+  `AXIS_BROWSER_HOME`; agents then resolve
+  `$AXIS_BROWSER_HOME/skills/browser-skill`.
 - Copy or clone `skills/browser-skill/` into a host-supported skill location,
   such as `.agents/skills/browser-skill/`, `~/.codex/skills/browser-skill/`,
   `~/.claude/skills/browser-skill/`, or another path documented in the skill
@@ -136,7 +139,8 @@ behavior. Use the targeted tests above.
 The same workflow can be performed manually:
 
 1. Read `skills/browser-skill/README.md`.
-2. Export `BROWSER_SKILL_DIR`.
+2. Export `BROWSER_SKILL_DIR`, or export `AXIS_BROWSER_HOME` and resolve
+   `$AXIS_BROWSER_HOME/skills/browser-skill`.
 3. Run `setup.sh` in the target project.
 4. Run `check-prerequisites.sh`.
 5. Use `SKILL.md` to choose the task reference.

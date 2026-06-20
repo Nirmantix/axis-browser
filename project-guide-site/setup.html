@@ -58,7 +58,7 @@
               <tr>
                 <td>Workflow brain</td>
                 <td>Yes. The skill router, references, and scripts can be reused from this checkout.</td>
-                <td>The agent must know the path through `BROWSER_SKILL_DIR` or an agent-supported skill location.</td>
+                <td>The agent must know the path through `BROWSER_SKILL_DIR`, `AXIS_BROWSER_HOME`, or an agent-supported skill location.</td>
               </tr>
               <tr>
                 <td>Axis Browser CLI</td>
@@ -84,7 +84,8 @@
         <h2 id="current-mac">Route A: current macOS workstation</h2>
         <div class="setup-callout">
           <pre><span class="comment"># Run from any target project on this workstation.</span>
-export BROWSER_SKILL_DIR="/path/to/axis-browser/skills/browser-skill"
+export AXIS_BROWSER_HOME="/path/to/axis-browser"
+export BROWSER_SKILL_DIR="$AXIS_BROWSER_HOME/skills/browser-skill"
 export SKILL_DIR="$BROWSER_SKILL_DIR"
 
 <span class="comment"># Preview the only project-local writes.</span>
@@ -150,6 +151,7 @@ bash "$SKILL_DIR/scripts/check-prerequisites.sh" --print-install-commands</pre>
           <p class="muted-lead">`npx -y chrome-devtools-axi` resolves the upstream npm package, not the Axis Browser GitHub fork. Use the GitHub install path for this fork.</p>
         </div>
         <div class="feature-board">
+          <p class="muted-lead">Skill resolution order for prompt-driven setup: existing `BROWSER_SKILL_DIR`, repository-local `./skills/browser-skill`, `$AXIS_BROWSER_HOME/skills/browser-skill`, then standard agent skill locations.</p>
           <div class="workflow-chain">
             <article class="phase-card">
               <strong>macOS</strong>

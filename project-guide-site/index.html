@@ -46,7 +46,7 @@
       <section class="quick-routes" aria-label="Core routes">
         <article>
           <h2>Current workstation route</h2>
-          <p>Set `BROWSER_SKILL_DIR` to the local browser-skill path, run setup in the target repo, then verify installed tools.</p>
+          <p>Set `BROWSER_SKILL_DIR` to the skill path or `AXIS_BROWSER_HOME` to the workflow checkout, run setup in the target repo, then verify installed tools.</p>
         </article>
         <article>
           <h2>Fresh machine route</h2>
@@ -102,7 +102,7 @@
             <article class="route-card">
               <div class="route-head"><h3>Set up a project</h3></div>
               <ul>
-                <li><span>local</span> Export `BROWSER_SKILL_DIR=/path/to/browser-skill`, run setup, verify tools.</li>
+                <li><span>local</span> Export `BROWSER_SKILL_DIR=/path/to/browser-skill` or `AXIS_BROWSER_HOME=/path/to/axis-browser`, run setup, verify tools.</li>
                 <li><span>fresh</span> Install machine tools first, then install or copy browser-skill and run per-project setup.</li>
                 <li><span>output</span> A project with `.tmp/` artifacts ignored and required browser tools checked.</li>
               </ul>
