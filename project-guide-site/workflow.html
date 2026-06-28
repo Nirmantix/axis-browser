@@ -200,12 +200,12 @@ axis-browser snapshot</pre>
         <p class="muted-lead">Use this when an operator, reviewer, or future agent needs checkable proof instead of a verbal claim.</p>
         <div class="feature-board">
           <pre><span class="comment"># Scaffold a single-pass evidence bundle.</span>
-node "$SKILL_DIR/scripts/init-verified-run.mjs" \
+node "$BROWSER_SKILL_DIR/scripts/init-verified-run.mjs" \
   --task "Verify checkout renders an order confirmation" \
   --slug checkout-confirmation
 
 <span class="comment"># After filling plan.md and findings.md, validate it.</span>
-node "$SKILL_DIR/scripts/validate-verified-run.mjs" \
+node "$BROWSER_SKILL_DIR/scripts/validate-verified-run.mjs" \
   --run .tmp/verified-runs/checkout-confirmation</pre>
           <table class="decision-table">
             <thead>
@@ -245,7 +245,7 @@ node "$SKILL_DIR/scripts/validate-verified-run.mjs" \
               <strong>Start craft mode</strong>
               <p>Craft mode changes the scaffold instructions. It does not magically generate automation.</p>
             </article>
-            <pre>node "$SKILL_DIR/scripts/init-verified-run.mjs" \
+            <pre>node "$BROWSER_SKILL_DIR/scripts/init-verified-run.mjs" \
   --task "Search flights from SEA to JFK for supplied dates" \
   --slug flight-search \
   --mode craft</pre>

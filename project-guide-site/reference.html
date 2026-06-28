@@ -68,36 +68,36 @@
 
         <article class="trigger-category category-blue">
           <div class="category-heading">
-            <h2>browser-skill scripts</h2>
-            <p>Use these when the browser workflow needs setup, traces, reports, or validation.</p>
+            <h2>Setup and browser-skill routes</h2>
+            <p>Use the CLI for public setup. Use browser-skill scripts only after a trusted local router is configured.</p>
           </div>
           <div class="trigger-row">
-            <div><strong>Project setup</strong><p><code>bash "$SKILL_DIR/scripts/setup.sh"</code></p></div>
-            <div><strong>Routes to</strong><p>Project-safe setup script.</p></div>
-            <div><strong>Expected output</strong><p>`.tmp/` artifact dirs, `.gitignore` entry, prerequisite check.</p></div>
+            <div><strong>Project setup</strong><p><code>axis-browser setup --install --project /path/to/project</code></p></div>
+            <div><strong>Routes to</strong><p>Read-only report by default; router setup only when install mode is approved.</p></div>
+            <div><strong>Expected output</strong><p>Readiness status, and project artifact setup when a local router is configured.</p></div>
           </div>
           <div class="trigger-row">
-            <div><strong>Tool check</strong><p><code>bash "$SKILL_DIR/scripts/check-prerequisites.sh" --print-install-commands</code></p></div>
-            <div><strong>Routes to</strong><p>Read-only install guidance.</p></div>
+            <div><strong>Tool check</strong><p><code>axis-browser setup --json --project /path/to/project</code></p></div>
+            <div><strong>Routes to</strong><p>Machine-readable readiness report.</p></div>
             <div><strong>Expected output</strong><p>Missing tools, auth presence signals, no installs, no secret values.</p></div>
           </div>
           <div class="trigger-row">
             <div><strong>Resolve skill path</strong><p><code>BROWSER_SKILL_DIR=/path/to/browser-skill</code><br><code>AXIS_BROWSER_HOME=/path/to/axis-browser</code></p></div>
-            <div><strong>Routes to</strong><p>`BROWSER_SKILL_DIR`, repo-local `./skills/browser-skill`, `$AXIS_BROWSER_HOME/skills/browser-skill`, then standard skill locations.</p></div>
-            <div><strong>Expected output</strong><p>`SKILL_DIR` points at the browser-skill folder before setup, check, use, or health commands run.</p></div>
+            <div><strong>Routes to</strong><p>`BROWSER_SKILL_DIR`, `$AXIS_BROWSER_HOME/skills/browser-skill`, `$AXIS_PORTABLE_SKILLS_DIR/browser-skill`, then standard skill locations.</p></div>
+            <div><strong>Expected output</strong><p>Setup reports which router source was selected, or that the router source is not configured.</p></div>
           </div>
           <div class="trigger-row">
-            <div><strong>Machine setup</strong><p><code>bash "$SKILL_DIR/scripts/check-prerequisites.sh" --install</code><br><code>bash "$SKILL_DIR/scripts/check-prerequisites.sh" --install --dry-run</code></p></div>
-            <div><strong>Routes to</strong><p>Permission-gated machine-level install audit.</p></div>
+            <div><strong>Machine setup</strong><p><code>axis-browser setup --install</code></p></div>
+            <div><strong>Routes to</strong><p>Permission-gated machine-level setup report and router delegation.</p></div>
             <div><strong>Expected output</strong><p>Core and optional tool actions approved, skipped, or blocked. No credential writes.</p></div>
           </div>
           <div class="trigger-row">
-            <div><strong>Health audit</strong><p><code>bash "$SKILL_DIR/scripts/check-prerequisites.sh" --update</code><br><code>bash "$SKILL_DIR/scripts/check-prerequisites.sh" --update --dry-run</code></p></div>
-            <div><strong>Routes to</strong><p>Report-first version audit for shared tools.</p></div>
-            <div><strong>Expected output</strong><p>Current/latest versions, risk notes, pre-update record under `.tmp/axis-browser-health/` when applied.</p></div>
+            <div><strong>Health audit</strong><p><code>bash "$BROWSER_SKILL_DIR/scripts/check-prerequisites.sh" --update</code></p></div>
+            <div><strong>Routes to</strong><p>Report-first version-drift audit for shared tools.</p></div>
+            <div><strong>Expected output</strong><p>Current versions, update recommendations, and permission-gated follow-up actions.</p></div>
           </div>
           <div class="trigger-row">
-            <div><strong>Verified run</strong><p><code>node "$SKILL_DIR/scripts/init-verified-run.mjs" --task "..." --slug run</code><br><code>node "$SKILL_DIR/scripts/validate-verified-run.mjs" --run .tmp/verified-runs/run</code></p></div>
+            <div><strong>Verified run</strong><p><code>node "$BROWSER_SKILL_DIR/scripts/init-verified-run.mjs" --task "..." --slug run</code><br><code>node "$BROWSER_SKILL_DIR/scripts/validate-verified-run.mjs" --run .tmp/verified-runs/run</code></p></div>
             <div><strong>Routes to</strong><p>Evidence-backed browser task workflow.</p></div>
             <div><strong>Expected output</strong><p>Validated STEP markers with exit code 0, 1, or 2.</p></div>
           </div>
@@ -110,12 +110,12 @@
           </div>
           <div class="trigger-row">
             <div><strong>;absetup</strong><p>Machine setup and install audit.</p></div>
-            <div><strong>Routes to</strong><p>`prompts/absetup.md`, portable skill resolution, and `check-prerequisites.sh --install`.</p></div>
+            <div><strong>Routes to</strong><p>`prompts/absetup.md` and portable skill resolution.</p></div>
             <div><strong>Expected output</strong><p>Tool status, approved/skipped installs, and credential gaps with values hidden.</p></div>
           </div>
           <div class="trigger-row">
             <div><strong>;abcheck</strong><p>Target-project readiness.</p></div>
-            <div><strong>Routes to</strong><p>`prompts/abcheck.md`, portable skill resolution, `setup.sh`, and `check-prerequisites.sh`.</p></div>
+            <div><strong>Routes to</strong><p>`prompts/abcheck.md` and portable skill resolution.</p></div>
             <div><strong>Expected output</strong><p>`.tmp/` readiness, available browser tools, and project-local Playwright recommendation.</p></div>
           </div>
           <div class="trigger-row">
@@ -125,7 +125,7 @@
           </div>
           <div class="trigger-row">
             <div><strong>;abhealth</strong><p>Monthly or biweekly health audit.</p></div>
-            <div><strong>Routes to</strong><p>`prompts/abhealth.md` and `check-prerequisites.sh --update`.</p></div>
+            <div><strong>Routes to</strong><p>`prompts/abhealth.md`, router update audit when a router is configured, and read-only content consistency review.</p></div>
             <div><strong>Expected output</strong><p>Version audit, changelog impact, stale-doc findings, and proposed follow-up edits.</p></div>
           </div>
           <div class="trigger-row">

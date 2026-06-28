@@ -84,6 +84,10 @@ command. Preserve:
 
 - `src/setup.ts` as the setup engine for parsing, detection, router resolution,
   report formatting, and safe router script delegation.
+- `src/setup.ts` `chromeCheck`/`platformAppPaths` Windows detection: thread the
+  `platform` argument into `commandPath` (not `process.platform`) and detect
+  Windows Chrome and Edge under Program Files, Program Files (x86), and
+  LOCALAPPDATA, plus Chromium under Program Files (x86) only.
 - `src/cli.ts`: `handleSetup` must route `setup hooks` to
   `installHooksOrThrow()` and all other setup modes to `runSetupWorkflow`.
 - `test/setup.test.ts` coverage for parser behavior, resolver precedence,
