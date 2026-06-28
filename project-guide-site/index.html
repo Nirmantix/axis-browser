@@ -46,7 +46,7 @@
       <section class="quick-routes" aria-label="Core routes">
         <article>
           <h2>Current workstation route</h2>
-          <p>Set `BROWSER_SKILL_DIR` to the skill path or `AXIS_BROWSER_HOME` to the workflow checkout, run setup in the target repo, then verify installed tools.</p>
+          <p>Set `BROWSER_SKILL_DIR` to the skill path or `AXIS_BROWSER_HOME` to the workflow checkout, then run `axis-browser setup --project` in the target repo.</p>
         </article>
         <article>
           <h2>Fresh machine route</h2>
@@ -54,7 +54,7 @@
         </article>
         <article>
           <h2>Prompt shortcodes</h2>
-          <p>`;absetup`, `;abcheck`, `;abuse`, and `;abhealth` are thin wrappers around browser-skill and its scripts.</p>
+          <p>`;absetup`, `;abcheck`, `;abuse`, and `;abhealth` are shortcuts for setup, readiness, browser use, and health checks.</p>
         </article>
         <article>
           <h2>Need to debug a live app?</h2>
@@ -102,8 +102,8 @@
             <article class="route-card">
               <div class="route-head"><h3>Set up a project</h3></div>
               <ul>
-                <li><span>local</span> Export `BROWSER_SKILL_DIR=/path/to/browser-skill` or `AXIS_BROWSER_HOME=/path/to/axis-browser`, run setup, verify tools.</li>
-                <li><span>fresh</span> Install machine tools first, then install or copy browser-skill and run per-project setup.</li>
+                <li><span>local</span> Export `BROWSER_SKILL_DIR=/path/to/browser-skill` or `AXIS_BROWSER_HOME=/path/to/axis-browser`, then run `axis-browser setup --project`.</li>
+                <li><span>fresh</span> Run `axis-browser setup`, then install or copy browser-skill only if router-backed workflows are needed.</li>
                 <li><span>output</span> A project with `.tmp/` artifacts ignored and required browser tools checked.</li>
               </ul>
             </article>
@@ -162,14 +162,14 @@
               <div class="route-head"><h3>;absetup</h3></div>
               <ul>
                 <li><span>scope</span> Machine setup and install audit.</li>
-                <li><span>runs</span> `check-prerequisites.sh --install`.</li>
+                <li><span>runs</span> `axis-browser setup --install`.</li>
               </ul>
             </article>
             <article class="route-card">
               <div class="route-head"><h3>;abcheck</h3></div>
               <ul>
                 <li><span>scope</span> Target-project readiness.</li>
-                <li><span>runs</span> `setup.sh`, then `check-prerequisites.sh`.</li>
+                <li><span>runs</span> `axis-browser setup --project &lt;path&gt;`.</li>
               </ul>
             </article>
             <article class="route-card">
@@ -183,7 +183,7 @@
               <div class="route-head"><h3>;abhealth</h3></div>
               <ul>
                 <li><span>scope</span> Monthly or biweekly health audit.</li>
-                <li><span>runs</span> `check-prerequisites.sh --update` plus read-only content review.</li>
+                <li><span>runs</span> Router update audit when a router is configured, plus read-only content review.</li>
               </ul>
             </article>
           </div>

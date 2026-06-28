@@ -50,7 +50,7 @@
             <thead>
               <tr>
                 <th>Thing</th>
-                <th>Portable by copying or pointing at `skills/browser-skill/`?</th>
+                <th>Portable by pointing at a browser-skill checkout?</th>
                 <th>Still needed per project or machine?</th>
               </tr>
             </thead>
@@ -68,12 +68,12 @@
               <tr>
                 <td>Browser Harness, optional CLIs, Playwright browsers</td>
                 <td>No. These are machine/project dependencies, not bundled inside the skill.</td>
-                <td>Use `check-prerequisites.sh` to see what is available; install Playwright inside target projects only when needed.</td>
+                <td>Use `axis-browser setup` to see what is available; install Playwright inside target projects only when needed.</td>
               </tr>
               <tr>
                 <td>Project artifacts</td>
                 <td>No. `.tmp/` belongs to the target project.</td>
-                <td>Run `setup.sh` once inside every project where browser evidence will be saved.</td>
+                <td>Run `axis-browser setup --install --project &lt;path&gt;` for each project where browser evidence will be saved.</td>
               </tr>
             </tbody>
           </table>
@@ -85,18 +85,15 @@
         <div class="setup-callout">
           <pre><span class="comment"># Run from any target project on this workstation.</span>
 export AXIS_BROWSER_HOME="/path/to/axis-browser"
-export BROWSER_SKILL_DIR="$AXIS_BROWSER_HOME/skills/browser-skill"
-export SKILL_DIR="$BROWSER_SKILL_DIR"
 
-<span class="comment"># Preview the only project-local writes.</span>
-bash "$SKILL_DIR/scripts/setup.sh" --dry-run
+<span class="comment"># Report readiness without changing files.</span>
+axis-browser setup --project .
 
-<span class="comment"># Create .tmp/ artifact folders and .gitignore hygiene in that project.</span>
-bash "$SKILL_DIR/scripts/setup.sh"
+<span class="comment"># Preview or run permission-gated project setup.</span>
+axis-browser setup --install --project .
 
-<span class="comment"># Confirm which browser powers are actually available in that project.</span>
-bash "$SKILL_DIR/scripts/check-prerequisites.sh"
-bash "$SKILL_DIR/scripts/check-prerequisites.sh" --print-install-commands</pre>
+<span class="comment"># Emit machine-readable status for agents.</span>
+axis-browser setup --json --project .</pre>
           <p class="muted-lead">For local projects on this workstation, a central skill path is usually cleaner than copying the skill into every repository. Project-local copies are better when a repository must pin and carry its own workflow version.</p>
         </div>
         <div class="workflow-chain">
@@ -132,26 +129,23 @@ axis-browser --version
 axib --version
 chrome-devtools-axi --version
 
-<span class="comment"># 3. Install browser-skill itself somewhere the agent can find it.</span>
+<span class="comment"># 3. Optional: install browser-skill somewhere setup can find it.</span>
 mkdir -p "$HOME/.config/agents/skills"
 
 <span class="comment"># Copy browser-skill from a trusted checkout, shared archive, or internal repo.</span>
 cp -R /path/to/browser-skill "$HOME/.config/agents/skills/browser-skill"
 
 export BROWSER_SKILL_DIR="$HOME/.config/agents/skills/browser-skill"
-export SKILL_DIR="$BROWSER_SKILL_DIR"
 
-<span class="comment"># 4. Review and install machine-level browser workflow tools.</span>
-bash "$SKILL_DIR/scripts/check-prerequisites.sh" --install
+<span class="comment"># 4. Review workflow readiness.</span>
+axis-browser setup
 
-<span class="comment"># 5. In each target project, initialize artifacts and verify tools.</span>
-cd /path/to/target-project
-bash "$SKILL_DIR/scripts/setup.sh"
-bash "$SKILL_DIR/scripts/check-prerequisites.sh" --print-install-commands</pre>
+<span class="comment"># 5. In each target project, run permission-gated setup.</span>
+axis-browser setup --install --project /path/to/target-project</pre>
           <p class="muted-lead">`npx -y chrome-devtools-axi` resolves the upstream npm package, not the Axis Browser GitHub fork. Use the GitHub install path for this fork.</p>
         </div>
         <div class="feature-board">
-          <p class="muted-lead">Skill resolution order for prompt-driven setup: existing `BROWSER_SKILL_DIR`, repository-local `./skills/browser-skill`, `$AXIS_BROWSER_HOME/skills/browser-skill`, then standard agent skill locations.</p>
+          <p class="muted-lead">Setup resolver order: `BROWSER_SKILL_DIR`, `$AXIS_BROWSER_HOME/skills/browser-skill`, `$AXIS_PORTABLE_SKILLS_DIR/browser-skill`, then standard agent skill locations.</p>
           <div class="workflow-chain">
             <article class="phase-card">
               <strong>macOS</strong>
@@ -207,13 +201,13 @@ bash "$SKILL_DIR/scripts/check-prerequisites.sh" --print-install-commands</pre>
       <section class="section" aria-labelledby="verify">
         <h2 id="verify">Verify instead of guessing</h2>
         <div class="feature-board">
-          <pre>bash "$SKILL_DIR/scripts/check-prerequisites.sh"
-bash "$SKILL_DIR/scripts/check-prerequisites.sh" --print-install-commands
-bash "$SKILL_DIR/scripts/check-prerequisites.sh" --install --dry-run
-bash "$SKILL_DIR/scripts/check-prerequisites.sh" --update --dry-run
+          <pre>axis-browser setup
+axis-browser setup --json
+axis-browser setup --project /path/to/project
+axis-browser setup --install --project /path/to/project
 axis-browser open https://example.com
 axis-browser snapshot</pre>
-          <p class="muted-lead">Default and print modes are read-only. Install and update modes are permission-gated, keep credentials out of files, and never install project-local libraries globally.</p>
+          <p class="muted-lead">Default setup is read-only. Install mode is permission-gated, keeps credentials out of files, and never installs project-local libraries globally.</p>
         </div>
       </section>
 
@@ -231,12 +225,12 @@ axis-browser snapshot</pre>
             <tr>
               <td><code>;absetup</code></td>
               <td>Machine setup audit</td>
-              <td><code>check-prerequisites.sh --install</code></td>
+              <td><code>axis-browser setup --install</code></td>
             </tr>
             <tr>
               <td><code>;abcheck</code></td>
               <td>Target-project readiness</td>
-              <td><code>setup.sh</code> and <code>check-prerequisites.sh</code></td>
+              <td><code>axis-browser setup --project &lt;path&gt;</code></td>
             </tr>
             <tr>
               <td><code>;abuse</code></td>
@@ -246,7 +240,7 @@ axis-browser snapshot</pre>
             <tr>
               <td><code>;abhealth</code></td>
               <td>Health audit</td>
-              <td><code>check-prerequisites.sh --update</code> plus read-only content review.</td>
+              <td>Router update audit when a router is configured, plus read-only content review.</td>
             </tr>
           </tbody>
         </table>

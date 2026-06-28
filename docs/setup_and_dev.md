@@ -107,6 +107,9 @@ In non-interactive shells, `--install` previews router commands and does not
 prompt unless `--yes` is explicitly passed. The CLI itself never writes
 secrets, `.env` files, shell rc files, MCP credential files, or user credential
 stores.
+On Windows the report detects Chrome and Edge under `Program Files`, `Program
+Files (x86)`, and the per-user `LOCALAPPDATA` locations; Chromium under
+`Program Files (x86)` only.
 
 Expose the local checkout globally:
 

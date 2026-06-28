@@ -12,6 +12,8 @@ release history.
 * sync upstream `0.1.23`-`0.1.25` runtime and test updates
 * add `axis-browser setup` as a read-only Axis workflow bootstrap report with
   `--json`, `--project`, and non-interactive-safe `--install` modes
+* detect Windows Chrome and Edge installs (machine-wide and per-user) and
+  Chromium (machine-wide) in the `axis-browser setup` readiness report
 * add optional `browser-skill` router detection through `BROWSER_SKILL_DIR`,
   `AXIS_BROWSER_HOME`, `AXIS_PORTABLE_SKILLS_DIR`, and standard agent skill
   locations
