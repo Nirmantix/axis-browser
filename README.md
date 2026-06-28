@@ -16,15 +16,70 @@ It is optimized for:
 - low-token page inspection
 - repeatable debugging with console, network, and snapshots
 - practical shared-Chrome debugging with `axis-browser`
+- read-only setup reports for Axis workflow readiness
 
 ## Documentation Map
 
-This repo intentionally keeps only two public docs with distinct roles:
+This repo keeps a small set of public docs with distinct roles:
 
 - `README.md` — source of truth for install, commands, environment variables, runtime behavior, and development
+- `docs/setup_and_dev.md` — setup, build, usage, troubleshooting, and teardown lifecycle for the CLI
 - `docs/vibe-coding-browser-workflow.md` — source of truth for the Axis Browser shared-`9222` workflow and troubleshooting habits
+- `docs/better-workflow-lifecycle-design.md` — source of truth for the broader Axis Browser workflow lifecycle: machine setup, skill availability, project readiness, task use, and health audits
+- `docs/upstream_sync.md` — fork override shield for future upstream merges
+
+The optional `skills/browser-skill/` folder is intentionally ignored by the
+parent Axis Browser repo and is maintained as its own standalone nested Git
+repo when present. Its own `README.md` and `SKILL.md` are the source of truth
+for the host-neutral browser automation skill; this README remains the source
+of truth for the Axis Browser CLI itself.
 
 If you see old notes that mention different paths, aliases, or helper scripts, prefer this README and the workflow guide.
+
+## Browser Skill Companion
+
+This checkout may include `skills/browser-skill/`, a companion Agent Skills
+package for browser-driven work across Claude Code, Codex, OpenCode, Pi, Kiro,
+and AGENTS.md hosts. It routes tasks across Browser Harness, Playwright, Axis
+Browser, Notte, CloakBrowser, BrowserAct, Firecrawl, and related tools.
+
+Key boundaries:
+- The skill is not shipped as part of the parent Axis Browser package.
+- The parent repo keeps `skills/` ignored on purpose.
+- Publish or share the skill from its nested repo, not from the Axis Browser
+  release flow.
+- Global vs project install paths, credentials guidance, and Browserbase
+  comparison live in the skill's own `README.md`.
+- Optional Notte, CloakBrowser, BrowserAct, Firecrawl, Webwright comparison,
+  verified-run, and reusable-workflow guidance also live in the nested skill
+  repo.
+- For tool setup guidance, run the skill's checker. Use
+  `--print-install-commands` for read-only guidance, `--install` for
+  permission-gated machine setup, and `--update` for permission-gated health
+  audits:
+
+```bash
+cd skills/browser-skill
+bash scripts/check-prerequisites.sh --print-install-commands
+```
+
+Portability note:
+- On a workstation with this repo checked out, other local projects can point at
+  the checkout's skill with `BROWSER_SKILL_DIR=/path/to/axis-browser/skills/browser-skill`
+  or point at the workflow checkout with `AXIS_BROWSER_HOME=/path/to/axis-browser`.
+- That gives the agent the workflow router and scripts, not a bundled runtime.
+  Global tools such as `axis-browser` and `browser-harness` must already be
+  installed on the machine, and Playwright should still be installed
+  project-local when reusable scripts, traces, network interception, visual
+  regression, or CI are needed.
+- Run `bash "$BROWSER_SKILL_DIR/scripts/setup.sh"` once inside each target
+  project so `.tmp/` evidence folders and `.gitignore` hygiene are created in
+  the right repository.
+- Text-expander prompts live under `prompts/` when present:
+  `;absetup` for machine setup/audit, `;abcheck` for target-project readiness,
+  `;abuse` for loading the browser-skill router, and `;abhealth` for periodic
+  maintenance audits. These prompts are wrappers around the skill and scripts;
+  they are not a second browser routing system.
 
 ## Command Names
 
@@ -146,6 +201,25 @@ Expose the commands globally from the checkout:
 npm link
 ```
 
+## Benchmarks
+
+Agent ergonomics is measurable.
+The [axi benchmark](https://axi.md) runs the same 14 real-world browsing tasks (Wikipedia research, GitHub navigation, multi-site comparison, and more) through 7 browser automation setups - 5 repeats each, with `claude-sonnet-4-6` as the agent and an LLM judge scoring task success.
+
+Axis Browser's upstream-compatible `chrome-devtools-axi` command posts the lowest input tokens, cost, duration, and turn count of all 7 conditions, with 100% task success:
+
+| Condition                            | Avg Input Tokens | Avg Cost/Task | Avg Duration | Avg Turns | Success  |
+| ------------------------------------ | ---------------- | ------------- | ------------ | --------- | -------- |
+| **Axis Browser / chrome-devtools-axi** | **79,141**       | **$0.074**    | **21.5s**    | **4.5**   | **100%** |
+| dev-browser                          | 82,532           | $0.078        | 28.6s        | 4.9       | 99%      |
+| agent-browser (Vercel)               | 93,074           | $0.088        | 24.6s        | 4.8       | 99%      |
+| chrome-devtools-mcp + compressor CLI | 130,779          | $0.091        | 29.7s        | 7.6       | 100%     |
+| chrome-devtools-mcp + ToolSearch     | 133,712          | $0.096        | 29.4s        | 7.5       | 99%      |
+| chrome-devtools-mcp (raw MCP)        | 184,711          | $0.101        | 26.0s        | 6.2       | 99%      |
+| chrome-devtools-mcp code execution   | 129,606          | $0.120        | 36.2s        | 6.4       | 100%     |
+
+Against raw chrome-devtools-mcp - the very server this CLI wraps - that is 57% fewer input tokens, 26% lower cost, and 27% fewer agent turns.
+
 ## Quick Start
 
 ```bash
@@ -167,6 +241,58 @@ help[1]:
 ```
 
 Refs in snapshot output carry a `g<N>:` generation prefix that bumps every time a new accessibility tree is captured. Pass refs back exactly as printed — if the page re-rendered between snapshot and action, the action fails loudly with `STALE_REF` instead of silently no-op'ing, so the agent re-snapshots and retries.
+After a state-changing action, confirm the outcome with a fresh `snapshot`, `eval`, or `screenshot` before reporting success. A current ref can still produce no visible page change; `STALE_REF` only catches stale refs.
+
+## Setup Axis Workflow
+
+Run the bootstrap report from any project:
+
+```bash
+axis-browser setup
+```
+
+The default command is read-only. It checks Node, pnpm/Corepack,
+Chrome/Chromium, the local build, global Axis aliases, and whether the optional
+`browser-skill` workflow router is available. For machine-readable status:
+
+```bash
+axis-browser setup --json
+```
+
+Target a project explicitly:
+
+```bash
+axis-browser setup --project /path/to/project
+```
+
+Permission-gated setup is opt-in:
+
+```bash
+axis-browser setup --install --project /path/to/project
+```
+
+In non-interactive agent runs, `--install` previews commands and does not hang
+on prompts. Add `--yes` only after reviewing the printed actions. Setup never
+writes secrets, `.env` files, shell rc files, MCP credential files, or user
+credential stores.
+
+Router discovery order:
+
+- `BROWSER_SKILL_DIR`
+- `AXIS_BROWSER_HOME/skills/browser-skill`
+- `AXIS_PORTABLE_SKILLS_DIR/browser-skill`
+- standard agent skill locations
+
+If no router is configured, `axis-browser setup` still succeeds with core Axis
+status and reports that the router source is not configured. Set
+`BROWSER_SKILL_SOURCE_URL` if your environment has an approved source URL for
+the router.
+
+Agent hook setup remains explicit:
+
+```bash
+axis-browser setup hooks
+```
 
 ## Shared Chrome Quick Start
 
@@ -194,6 +320,55 @@ axis-browser pages
 
 For the full public shared-browser operating model, read:
 - [docs/vibe-coding-browser-workflow.md](docs/vibe-coding-browser-workflow.md)
+
+## Session Hook Setup
+
+To install or repair ambient `SessionStart` hooks for supported agents:
+
+```bash
+axis-browser setup hooks
+```
+
+This installs guidance for Claude Code and Codex so a new agent
+session can see current Axis Browser session context. Restart the agent session
+after running it. Development entrypoints such as `pnpm run dev` and
+`bin/chrome-devtools-axi.ts` are guarded from accidental hook installation.
+
+## Updating Axis Browser
+
+Axis Browser is distributed from GitHub. The upstream npm package named
+`chrome-devtools-axi` is not this fork, so the SDK npm self-updater is disabled
+in this project.
+
+Update with npm:
+
+```bash
+npm install -g github:Nirmantix/axis-browser
+```
+
+Update with Bun:
+
+```bash
+bun add -g github:Nirmantix/axis-browser
+```
+
+Running `axis-browser update` or `axis-browser update --check` prints this
+GitHub update guidance instead of installing from npm.
+
+## Evidence-Backed Agent Workflows
+
+Axis Browser itself is a CLI, not an LLM loop. Host agents compose commands such
+as `snapshot`, `console`, `network`, and `eval` into their own workflow.
+
+For browser tasks that need auditable evidence, use the optional
+`skills/browser-skill/` companion when present:
+
+- `references/verified-run.md` defines a single-pass evidence workflow with
+  `STEP_PASS`, `STEP_FAIL`, and `STEP_SKIP` validation.
+- `references/reusable-workflow.md` defines the craft pattern for turning a
+  working browser flow into a rerunnable local script.
+- Webwright is documented there as a pattern source, not as a dependency or a
+  replacement for Playwright.
 
 ## How It Works
 
@@ -280,6 +455,8 @@ axis-browser eval "() => { const rows = [...document.querySelectorAll('tr')]; re
 | `network`          | List network requests          |
 | `network-get [id]` | Get a specific network request |
 
+For large request or response bodies, prefer `network-get <id> --response-file <path>` or `--request-file <path>` so the body goes to disk instead of flooding agent context.
+
 ### Performance
 
 | Command                     | Description                   |
@@ -292,10 +469,18 @@ axis-browser eval "() => { const rows = [...document.querySelectorAll('tr')]; re
 
 ### Bridge
 
-| Command | Description             |
-| ------- | ----------------------- |
-| `start` | Start the bridge server |
-| `stop`  | Stop the bridge server  |
+| Command       | Description                   |
+| ------------- | ----------------------------- |
+| `start`       | Start the bridge server       |
+| `stop`        | Stop the bridge server        |
+| `setup hooks` | Install or repair agent hooks |
+
+### Maintenance
+
+| Command          | Description                                            |
+| ---------------- | ------------------------------------------------------ |
+| `update`         | Show GitHub update guidance for this fork              |
+| `update --check` | Show GitHub update guidance without contacting npm     |
 
 Running with no command shows the CLI home view. It prepends `bin` and `description` metadata, then includes the current snapshot when a browser session is active or the no-session status/help block when one is not.
 
@@ -305,6 +490,7 @@ Running with no command shows the CLI home view. It prepends `bin` and `descript
 | --------------------------- | ------------------------------------------- |
 | `--help`                    | Show usage information                      |
 | `-v`, `-V`, `--version`     | Show the installed CLI version              |
+| `--check`                   | Show GitHub update guidance (update)        |
 | `--full`                    | Show complete output without truncation     |
 | `--background`              | Open new page in background (newpage)       |
 | `--uid @<uid>`              | Target a specific element (screenshot)      |
@@ -354,7 +540,10 @@ Axis Browser uses these connection modes in order:
 | `CHROME_DEVTOOLS_AXI_PORT` | Override the bridge port (default: `9224`) |
 | `CHROME_DEVTOOLS_AXI_MCP_PATH` | Absolute path to a local `chrome-devtools-mcp` binary (skips npx) |
 | `CHROME_DEVTOOLS_AXI_BRIDGE_TIMEOUT_MS` | Bridge readiness deadline in ms (default: `30000`; useful for slow npx bootstrap) |
-| `CHROME_DEVTOOLS_AXI_DISABLE_HOOKS` | Set to `1` to skip packaged session-hook installation |
+| `BROWSER_SKILL_DIR` | Absolute path to a local `browser-skill` checkout. Highest setup resolver priority |
+| `AXIS_BROWSER_HOME` | Axis Browser checkout root; setup looks for `skills/browser-skill` below it |
+| `AXIS_PORTABLE_SKILLS_DIR` | Directory containing portable skills; setup looks for `browser-skill` below it |
+| `BROWSER_SKILL_SOURCE_URL` | Approved source URL shown when no local router is configured; no public router URL is assumed |
 
 Examples:
 
@@ -395,16 +584,19 @@ State is stored in `~/.axis-browser/`:
 
 ### Session Hooks
 
-On supported agents, the packaged CLI also installs a `SessionStart` hook in:
+Run `axis-browser setup hooks` to install or repair a `SessionStart` hook in:
 - `~/.claude/settings.json`
 - `~/.codex/hooks.json`
 
 It also enables `hooks` in:
 - `~/.codex/config.toml`
 
-Set `CHROME_DEVTOOLS_AXI_DISABLE_HOOKS=1` to skip that behavior.
-
 Development entrypoints such as `pnpm run dev` and `bin/chrome-devtools-axi.ts` do not modify those hook files.
+
+Do not copy user-local agent config such as `.codex/`, `.claude/`,
+`.opencode/`, `.agents/`, `.pi/`, hooks, cookies, API keys, or MCP credentials
+into this repo. If any credential-bearing config is committed or shared, remove
+it according to the project's incident process and rotate the affected secrets.
 
 ## Development
 
@@ -415,3 +607,8 @@ pnpm run dev
 pnpm test
 pnpm run test:watch
 ```
+
+For the full setup, troubleshooting, and teardown lifecycle, read
+[docs/setup_and_dev.md](docs/setup_and_dev.md). For future upstream merges,
+protect the fork-specific overrides listed in
+[docs/upstream_sync.md](docs/upstream_sync.md).

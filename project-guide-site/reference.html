@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Commands — Axis Browser</title>
+    <meta name="description" content="Command reference and agent entry phrases for Axis Browser and browser-skill workflows.">
+    <meta property="og:title" content="Commands — Axis Browser">
+    <meta property="og:description" content="Command reference and agent entry phrases for Axis Browser and browser-skill workflows.">
+    <meta property="og:image" content="./og-image.png">
+    <meta property="og:type" content="website">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="Commands — Axis Browser">
+    <meta name="twitter:description" content="Command reference and agent entry phrases for Axis Browser and browser-skill workflows.">
+    <meta name="twitter:image" content="./og-image.png">
+    <link rel="icon" type="image/svg+xml" href="./favicon.svg">
+    <link rel="icon" sizes="any" href="./favicon.ico">
+    <link rel="apple-touch-icon" href="./apple-touch-icon.png">
+    <script>!function(){var r=document.documentElement,t,i=0,s=[0,2,4,0,-2,-4];try{t=localStorage.getItem("theme");i=parseInt(localStorage.getItem("font-step-idx"),10)}catch(e){}if(!Number.isInteger(i)||i<0||i>=s.length)i=0;if(t)r.setAttribute("data-theme",t);r.style.setProperty("--font-step",s[i]+"px")}();</script>
+    <link rel="stylesheet" href="./styles.css">
+  </head>
+  <body>
+    <main class="site-shell">
+      <header class="top-bar" aria-label="Site navigation">
+        <a class="brand-link" href="./index.html">Axis Browser</a>
+        <nav class="site-nav">
+          <a class="nav-link" href="./index.html">Home</a>
+          <a class="nav-link" href="./workflow.html">Workflow</a>
+          <a class="nav-link" href="./setup.html">Setup</a>
+          <a class="nav-link" href="./tools.html">Tools</a>
+          <a class="nav-link active" href="./reference.html">Commands</a>
+          <a class="nav-link" href="./safety.html">Safety</a>
+          <a class="nav-link" href="./maintenance.html">Maintenance</a>
+          <a class="nav-link" href="./sources.html">Sources</a>
+          <button class="theme-toggle" id="theme-toggle" aria-label="Toggle dark mode"><svg class="icon-moon" viewBox="0 0 24 24"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg><svg class="icon-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg></button>
+          <button class="font-toggle" id="font-toggle" aria-label="Adjust font size"><span class="font-label">A</span></button>
+          <script>document.getElementById("theme-toggle").addEventListener("click",function(){var d=document.documentElement,t=d.getAttribute("data-theme")==="dark"?"light":"dark";d.setAttribute("data-theme",t);try{localStorage.setItem("theme",t)}catch(e){ } });!function(){var s=[0,2,4,0,-2,-4],l=["A","A+","A++","A","A-","A--"],b=document.getElementById("font-toggle"),n=b.querySelector(".font-label"),i=0;try{i=parseInt(localStorage.getItem("font-step-idx"),10)}catch(e){}if(!Number.isInteger(i)||i<0||i>=s.length)i=0;function u(){document.documentElement.style.setProperty("--font-step",s[i]+"px");n.textContent=l[i];b.title="Font size: "+(s[i]===0?"Default":(s[i]>0?"+":"")+s[i]+"px")}u();b.addEventListener("click",function(){i=(i+1)%s.length;u();try{localStorage.setItem("font-step-idx",i)}catch(e){ } })}();</script>
+        </nav>
+      </header>
+
+      <section class="intro" aria-labelledby="page-title">
+        <h1 id="page-title">Commands and entry phrases.</h1>
+        <p>Use these when operating Axis Browser directly or when asking an agent to route work through browser-skill.</p>
+      </section>
+
+      <section class="trigger-table" aria-label="Command reference">
+        <article class="trigger-category category-blue">
+          <div class="category-heading">
+            <h2>Axis Browser diagnostics</h2>
+            <p>Use these for compact state from a real browser.</p>
+          </div>
+          <div class="trigger-row">
+            <div><strong>Open and inspect</strong><p><code>axis-browser open URL</code><br><code>axis-browser snapshot</code></p></div>
+            <div><strong>Routes to</strong><p>Axis Browser bridge and chrome-devtools-mcp.</p></div>
+            <div><strong>Expected output</strong><p>Page title, URL, accessibility snapshot, generation-tagged refs.</p></div>
+          </div>
+          <div class="trigger-row">
+            <div><strong>Runtime debugging</strong><p><code>axis-browser console --type error</code><br><code>axis-browser network --type fetch</code></p></div>
+            <div><strong>Routes to</strong><p>DevTools console and network surfaces.</p></div>
+            <div><strong>Expected output</strong><p>Error list, request list, IDs for `console-get` and `network-get`.</p></div>
+          </div>
+          <div class="trigger-row">
+            <div><strong>Evidence capture</strong><p><code>axis-browser screenshot .tmp/screenshots/page.png --full-page</code></p></div>
+            <div><strong>Routes to</strong><p>Current selected page in the Axis bridge.</p></div>
+            <div><strong>Expected output</strong><p>Screenshot artifact under `.tmp/screenshots/`.</p></div>
+          </div>
+        </article>
+
+        <article class="trigger-category category-blue">
+          <div class="category-heading">
+            <h2>browser-skill scripts</h2>
+            <p>Use these when the browser workflow needs setup, traces, reports, or validation.</p>
+          </div>
+          <div class="trigger-row">
+            <div><strong>Project setup</strong><p><code>bash "$SKILL_DIR/scripts/setup.sh"</code></p></div>
+            <div><strong>Routes to</strong><p>Project-safe setup script.</p></div>
+            <div><strong>Expected output</strong><p>`.tmp/` artifact dirs, `.gitignore` entry, prerequisite check.</p></div>
+          </div>
+          <div class="trigger-row">
+            <div><strong>Tool check</strong><p><code>bash "$SKILL_DIR/scripts/check-prerequisites.sh" --print-install-commands</code></p></div>
+            <div><strong>Routes to</strong><p>Read-only install guidance.</p></div>
+            <div><strong>Expected output</strong><p>Missing tools, auth presence signals, no installs, no secret values.</p></div>
+          </div>
+          <div class="trigger-row">
+            <div><strong>Resolve skill path</strong><p><code>BROWSER_SKILL_DIR=/path/to/browser-skill</code><br><code>AXIS_BROWSER_HOME=/path/to/axis-browser</code></p></div>
+            <div><strong>Routes to</strong><p>`BROWSER_SKILL_DIR`, repo-local `./skills/browser-skill`, `$AXIS_BROWSER_HOME/skills/browser-skill`, then standard skill locations.</p></div>
+            <div><strong>Expected output</strong><p>`SKILL_DIR` points at the browser-skill folder before setup, check, use, or health commands run.</p></div>
+          </div>
+          <div class="trigger-row">
+            <div><strong>Machine setup</strong><p><code>bash "$SKILL_DIR/scripts/check-prerequisites.sh" --install</code><br><code>bash "$SKILL_DIR/scripts/check-prerequisites.sh" --install --dry-run</code></p></div>
+            <div><strong>Routes to</strong><p>Permission-gated machine-level install audit.</p></div>
+            <div><strong>Expected output</strong><p>Core and optional tool actions approved, skipped, or blocked. No credential writes.</p></div>
+          </div>
+          <div class="trigger-row">
+            <div><strong>Health audit</strong><p><code>bash "$SKILL_DIR/scripts/check-prerequisites.sh" --update</code><br><code>bash "$SKILL_DIR/scripts/check-prerequisites.sh" --update --dry-run</code></p></div>
+            <div><strong>Routes to</strong><p>Report-first version audit for shared tools.</p></div>
+            <div><strong>Expected output</strong><p>Current/latest versions, risk notes, pre-update record under `.tmp/axis-browser-health/` when applied.</p></div>
+          </div>
+          <div class="trigger-row">
+            <div><strong>Verified run</strong><p><code>node "$SKILL_DIR/scripts/init-verified-run.mjs" --task "..." --slug run</code><br><code>node "$SKILL_DIR/scripts/validate-verified-run.mjs" --run .tmp/verified-runs/run</code></p></div>
+            <div><strong>Routes to</strong><p>Evidence-backed browser task workflow.</p></div>
+            <div><strong>Expected output</strong><p>Validated STEP markers with exit code 0, 1, or 2.</p></div>
+          </div>
+        </article>
+
+        <article class="trigger-category category-blue">
+          <div class="category-heading">
+            <h2>Prompt shortcodes and agent entry phrases</h2>
+            <p>Use shortcodes for repeatable entry points and plain phrases for task-specific routing.</p>
+          </div>
+          <div class="trigger-row">
+            <div><strong>;absetup</strong><p>Machine setup and install audit.</p></div>
+            <div><strong>Routes to</strong><p>`prompts/absetup.md`, portable skill resolution, and `check-prerequisites.sh --install`.</p></div>
+            <div><strong>Expected output</strong><p>Tool status, approved/skipped installs, and credential gaps with values hidden.</p></div>
+          </div>
+          <div class="trigger-row">
+            <div><strong>;abcheck</strong><p>Target-project readiness.</p></div>
+            <div><strong>Routes to</strong><p>`prompts/abcheck.md`, portable skill resolution, `setup.sh`, and `check-prerequisites.sh`.</p></div>
+            <div><strong>Expected output</strong><p>`.tmp/` readiness, available browser tools, and project-local Playwright recommendation.</p></div>
+          </div>
+          <div class="trigger-row">
+            <div><strong>;abuse</strong><p>Browser task launcher.</p></div>
+            <div><strong>Routes to</strong><p>`prompts/abuse.md` and `SKILL.md`.</p></div>
+            <div><strong>Expected output</strong><p>Selected skill reference, selected tool, and evidence paths.</p></div>
+          </div>
+          <div class="trigger-row">
+            <div><strong>;abhealth</strong><p>Monthly or biweekly health audit.</p></div>
+            <div><strong>Routes to</strong><p>`prompts/abhealth.md` and `check-prerequisites.sh --update`.</p></div>
+            <div><strong>Expected output</strong><p>Version audit, changelog impact, stale-doc findings, and proposed follow-up edits.</p></div>
+          </div>
+          <div class="trigger-row">
+            <div><strong>Debug</strong><p>"Use browser-skill to debug why signup fails."</p></div>
+            <div><strong>Routes to</strong><p>Feature debugging, runtime debugging, Axis Browser or Browser Harness.</p></div>
+            <div><strong>Expected output</strong><p>Observed browser state, console/network evidence, root cause candidate.</p></div>
+          </div>
+          <div class="trigger-row">
+            <div><strong>Verify</strong><p>"Use browser-skill to create a verified run proving checkout works."</p></div>
+            <div><strong>Routes to</strong><p>`references/verified-run.md`.</p></div>
+            <div><strong>Expected output</strong><p>`.tmp/verified-runs/&lt;slug&gt;/` with plan, findings, screenshots, validation JSON.</p></div>
+          </div>
+          <div class="trigger-row">
+            <div><strong>Craft</strong><p>"Use browser-skill to craft a reusable local workflow for this browser task."</p></div>
+            <div><strong>Routes to</strong><p>`references/reusable-workflow.md`.</p></div>
+            <div><strong>Expected output</strong><p>Rerunnable `script.mjs` plus evidence and validation.</p></div>
+          </div>
+          <div class="trigger-row">
+            <div><strong>Maintain</strong><p>"Update Axis Browser from upstream safely."</p><p>"Follow the private maintenance playbook."</p><p>"Sync this fork with upstream."</p></div>
+            <div><strong>Routes to</strong><p>Maintenance page and private local playbook.</p></div>
+            <div><strong>Expected output</strong><p>Upstream-state report, preserved fork deltas, validation results, and PR status when a PR is opened.</p></div>
+          </div>
+        </article>
+      </section>
+
+      <footer class="site-footer">
+        <span>Axis Browser Workflow Guide</span>
+        <a href="./safety.html">Safety &rarr;</a>
+      </footer>
+    </main>
+  </body>
+</html>

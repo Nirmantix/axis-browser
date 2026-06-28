@@ -4,6 +4,11 @@ dist/
 
 # Agent instruction files (private, repo-scoped)
 AGENTS.md
+.codex/
+.claude/
+.opencode/
+.agents/
+.pi/
 
 # Internal-only local maintenance and automation files
 maintainance.md
@@ -39,3 +44,25 @@ coverage/
 
 # Browser skill artifacts
 .tmp/
+
+# Local imported Browserbase skill bundle / archive
+browserbase-skills/
+skills-main.zip
+
+# Logs and crash dumps
+*.log
+*.dump
+npm-debug.log
+yarn-error.log
+
+# Scratchpads
+temp_*
+scratch_*
+debug_*
+wip_*
+
+# Common build and test caches
+build/
+.next/
+__pycache__/
+.pytest_cache/

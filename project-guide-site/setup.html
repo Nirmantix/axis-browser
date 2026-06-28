@@ -1,0 +1,261 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Setup — Axis Browser</title>
+    <meta name="description" content="Install Axis Browser, initialize browser-skill artifacts, and verify browser tooling for any project.">
+    <meta property="og:title" content="Setup — Axis Browser">
+    <meta property="og:description" content="Install Axis Browser, initialize browser-skill artifacts, and verify browser tooling for any project.">
+    <meta property="og:image" content="./og-image.png">
+    <meta property="og:type" content="website">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="Setup — Axis Browser">
+    <meta name="twitter:description" content="Install Axis Browser, initialize browser-skill artifacts, and verify browser tooling for any project.">
+    <meta name="twitter:image" content="./og-image.png">
+    <link rel="icon" type="image/svg+xml" href="./favicon.svg">
+    <link rel="icon" sizes="any" href="./favicon.ico">
+    <link rel="apple-touch-icon" href="./apple-touch-icon.png">
+    <script>!function(){var r=document.documentElement,t,i=0,s=[0,2,4,0,-2,-4];try{t=localStorage.getItem("theme");i=parseInt(localStorage.getItem("font-step-idx"),10)}catch(e){}if(!Number.isInteger(i)||i<0||i>=s.length)i=0;if(t)r.setAttribute("data-theme",t);r.style.setProperty("--font-step",s[i]+"px")}();</script>
+    <link rel="stylesheet" href="./styles.css">
+  </head>
+  <body>
+    <main class="site-shell">
+      <header class="top-bar" aria-label="Site navigation">
+        <a class="brand-link" href="./index.html">Axis Browser</a>
+        <nav class="site-nav">
+          <a class="nav-link" href="./index.html">Home</a>
+          <a class="nav-link" href="./workflow.html">Workflow</a>
+          <a class="nav-link active" href="./setup.html">Setup</a>
+          <a class="nav-link" href="./tools.html">Tools</a>
+          <a class="nav-link" href="./reference.html">Commands</a>
+          <a class="nav-link" href="./safety.html">Safety</a>
+          <a class="nav-link" href="./maintenance.html">Maintenance</a>
+          <a class="nav-link" href="./sources.html">Sources</a>
+          <button class="theme-toggle" id="theme-toggle" aria-label="Toggle dark mode"><svg class="icon-moon" viewBox="0 0 24 24"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg><svg class="icon-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg></button>
+          <button class="font-toggle" id="font-toggle" aria-label="Adjust font size"><span class="font-label">A</span></button>
+          <script>document.getElementById("theme-toggle").addEventListener("click",function(){var d=document.documentElement,t=d.getAttribute("data-theme")==="dark"?"light":"dark";d.setAttribute("data-theme",t);try{localStorage.setItem("theme",t)}catch(e){ } });!function(){var s=[0,2,4,0,-2,-4],l=["A","A+","A++","A","A-","A--"],b=document.getElementById("font-toggle"),n=b.querySelector(".font-label"),i=0;try{i=parseInt(localStorage.getItem("font-step-idx"),10)}catch(e){}if(!Number.isInteger(i)||i<0||i>=s.length)i=0;function u(){document.documentElement.style.setProperty("--font-step",s[i]+"px");n.textContent=l[i];b.title="Font size: "+(s[i]===0?"Default":(s[i]>0?"+":"")+s[i]+"px")}u();b.addEventListener("click",function(){i=(i+1)%s.length;u();try{localStorage.setItem("font-step-idx",i)}catch(e){ } })}();</script>
+        </nav>
+      </header>
+
+      <section class="intro" aria-labelledby="page-title">
+        <h1 id="page-title">Two setup routes: current workstation or fresh machine.</h1>
+        <p>The browser-skill folder is portable. Installed browser tools are machine-local. Each target project still needs `.tmp/` artifact setup, and Playwright stays project-local for deterministic scripts, traces, or CI.</p>
+      </section>
+
+      <section class="section" aria-labelledby="portability">
+        <h2 id="portability">Portability boundaries</h2>
+        <div class="feature-board">
+          <table class="decision-table">
+            <thead>
+              <tr>
+                <th>Thing</th>
+                <th>Portable by copying or pointing at `skills/browser-skill/`?</th>
+                <th>Still needed per project or machine?</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Workflow brain</td>
+                <td>Yes. The skill router, references, and scripts can be reused from this checkout.</td>
+                <td>The agent must know the path through `BROWSER_SKILL_DIR`, `AXIS_BROWSER_HOME`, or an agent-supported skill location.</td>
+              </tr>
+              <tr>
+                <td>Axis Browser CLI</td>
+                <td>No. The skill can call it only if the CLI is installed on the machine.</td>
+                <td>Install globally once per machine, or run from a local checkout.</td>
+              </tr>
+              <tr>
+                <td>Browser Harness, optional CLIs, Playwright browsers</td>
+                <td>No. These are machine/project dependencies, not bundled inside the skill.</td>
+                <td>Use `check-prerequisites.sh` to see what is available; install Playwright inside target projects only when needed.</td>
+              </tr>
+              <tr>
+                <td>Project artifacts</td>
+                <td>No. `.tmp/` belongs to the target project.</td>
+                <td>Run `setup.sh` once inside every project where browser evidence will be saved.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="section" aria-labelledby="current-mac">
+        <h2 id="current-mac">Route A: current macOS workstation</h2>
+        <div class="setup-callout">
+          <pre><span class="comment"># Run from any target project on this workstation.</span>
+export AXIS_BROWSER_HOME="/path/to/axis-browser"
+export BROWSER_SKILL_DIR="$AXIS_BROWSER_HOME/skills/browser-skill"
+export SKILL_DIR="$BROWSER_SKILL_DIR"
+
+<span class="comment"># Preview the only project-local writes.</span>
+bash "$SKILL_DIR/scripts/setup.sh" --dry-run
+
+<span class="comment"># Create .tmp/ artifact folders and .gitignore hygiene in that project.</span>
+bash "$SKILL_DIR/scripts/setup.sh"
+
+<span class="comment"># Confirm which browser powers are actually available in that project.</span>
+bash "$SKILL_DIR/scripts/check-prerequisites.sh"
+bash "$SKILL_DIR/scripts/check-prerequisites.sh" --print-install-commands</pre>
+          <p class="muted-lead">For local projects on this workstation, a central skill path is usually cleaner than copying the skill into every repository. Project-local copies are better when a repository must pin and carry its own workflow version.</p>
+        </div>
+        <div class="workflow-chain">
+          <article class="phase-card">
+            <strong>Best for personal projects</strong>
+            <p>Use the central checkout path above. Updating this one skill updates the workflow available to all local projects.</p>
+          </article>
+          <article class="phase-card">
+            <strong>Best for team repos</strong>
+            <p>Copy the skill to `.agents/skills/browser-skill/` or the host-specific project path when the repo should carry the workflow with it.</p>
+          </article>
+          <article class="phase-card">
+            <strong>Still project-local</strong>
+            <p>Install Playwright in the app repo when the task needs reusable scripts, traces, network interception, visual regression, or CI.</p>
+          </article>
+        </div>
+      </section>
+
+      <section class="section" aria-labelledby="fresh-machine">
+        <h2 id="fresh-machine">Route B: fresh machine</h2>
+        <div class="setup-callout">
+          <pre><span class="comment"># 1. Install global runtime prerequisites.</span>
+node --version
+npm --version
+
+<span class="comment"># 2. Install Axis Browser globally from this fork when missing.</span>
+npm install -g github:Nirmantix/axis-browser
+
+<span class="comment"># Or with Bun when Bun is the selected global package manager.</span>
+bun add -g github:Nirmantix/axis-browser
+
+axis-browser --version
+axib --version
+chrome-devtools-axi --version
+
+<span class="comment"># 3. Install browser-skill itself somewhere the agent can find it.</span>
+mkdir -p "$HOME/.config/agents/skills"
+
+<span class="comment"># Copy browser-skill from a trusted checkout, shared archive, or internal repo.</span>
+cp -R /path/to/browser-skill "$HOME/.config/agents/skills/browser-skill"
+
+export BROWSER_SKILL_DIR="$HOME/.config/agents/skills/browser-skill"
+export SKILL_DIR="$BROWSER_SKILL_DIR"
+
+<span class="comment"># 4. Review and install machine-level browser workflow tools.</span>
+bash "$SKILL_DIR/scripts/check-prerequisites.sh" --install
+
+<span class="comment"># 5. In each target project, initialize artifacts and verify tools.</span>
+cd /path/to/target-project
+bash "$SKILL_DIR/scripts/setup.sh"
+bash "$SKILL_DIR/scripts/check-prerequisites.sh" --print-install-commands</pre>
+          <p class="muted-lead">`npx -y chrome-devtools-axi` resolves the upstream npm package, not the Axis Browser GitHub fork. Use the GitHub install path for this fork.</p>
+        </div>
+        <div class="feature-board">
+          <p class="muted-lead">Skill resolution order for prompt-driven setup: existing `BROWSER_SKILL_DIR`, repository-local `./skills/browser-skill`, `$AXIS_BROWSER_HOME/skills/browser-skill`, then standard agent skill locations.</p>
+          <div class="workflow-chain">
+            <article class="phase-card">
+              <strong>macOS</strong>
+              <p>Use Homebrew or standard installers for Node.js, `uv`, `jq`, ImageMagick, and optional CLIs. Axis Browser itself is a Node global install.</p>
+            </article>
+            <article class="phase-card">
+              <strong>Linux</strong>
+              <p>The core CLI and browser-skill work. Use the distro package manager for Node.js 20+, Chromium/Chrome, `uv`, and optional utilities.</p>
+            </article>
+            <article class="phase-card">
+              <strong>Windows</strong>
+              <p>Core CLI support is partial today. Prefer WSL2 or macOS/Linux for the documented shared-Chrome shell workflow until Windows helpers mature.</p>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section class="section" aria-labelledby="minimum-tools">
+        <h2 id="minimum-tools">Minimum useful stack</h2>
+        <table class="decision-table">
+          <thead>
+            <tr>
+              <th>Need</th>
+              <th>Command</th>
+              <th>Why</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Node runtime</td>
+              <td><code>Node.js 20+</code></td>
+              <td>Axis Browser and Playwright require a modern Node runtime.</td>
+            </tr>
+            <tr>
+              <td>Repeatable scripts</td>
+              <td><code>npm install -D playwright</code><br><code>npx playwright install chromium</code></td>
+              <td>Project-local Playwright is the deterministic backend for traces, CI, reusable scripts, visual regression, and cross-browser checks.</td>
+            </tr>
+            <tr>
+              <td>Interactive browser work</td>
+              <td><code>uv --version</code><br><code>git clone https://github.com/browser-use/browser-harness "$HOME/Developer/browser-harness"</code><br><code>(cd "$HOME/Developer/browser-harness" &amp;&amp; uv tool install -e .)</code></td>
+              <td>Browser Harness is the default high-capability browser control path in the skill router.</td>
+            </tr>
+            <tr>
+              <td>Fast diagnostics</td>
+              <td><code>npm install -g github:Nirmantix/axis-browser</code></td>
+              <td>Axis Browser gives compact snapshots, console, network, Lighthouse, perf, and heap commands.</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section class="section" aria-labelledby="verify">
+        <h2 id="verify">Verify instead of guessing</h2>
+        <div class="feature-board">
+          <pre>bash "$SKILL_DIR/scripts/check-prerequisites.sh"
+bash "$SKILL_DIR/scripts/check-prerequisites.sh" --print-install-commands
+bash "$SKILL_DIR/scripts/check-prerequisites.sh" --install --dry-run
+bash "$SKILL_DIR/scripts/check-prerequisites.sh" --update --dry-run
+axis-browser open https://example.com
+axis-browser snapshot</pre>
+          <p class="muted-lead">Default and print modes are read-only. Install and update modes are permission-gated, keep credentials out of files, and never install project-local libraries globally.</p>
+        </div>
+      </section>
+
+      <section class="section" aria-labelledby="shortcodes">
+        <h2 id="shortcodes">Shortcut prompts</h2>
+        <table class="decision-table">
+          <thead>
+            <tr>
+              <th>Shortcode</th>
+              <th>Scope</th>
+              <th>Underlying route</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>;absetup</code></td>
+              <td>Machine setup audit</td>
+              <td><code>check-prerequisites.sh --install</code></td>
+            </tr>
+            <tr>
+              <td><code>;abcheck</code></td>
+              <td>Target-project readiness</td>
+              <td><code>setup.sh</code> and <code>check-prerequisites.sh</code></td>
+            </tr>
+            <tr>
+              <td><code>;abuse</code></td>
+              <td>Browser task launch</td>
+              <td>Load <code>SKILL.md</code>; routing happens there.</td>
+            </tr>
+            <tr>
+              <td><code>;abhealth</code></td>
+              <td>Health audit</td>
+              <td><code>check-prerequisites.sh --update</code> plus read-only content review.</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <footer class="site-footer">
+        <span>Axis Browser Workflow Guide</span>
+        <a href="./tools.html">Tools &rarr;</a>
+      </footer>
+    </main>
+  </body>
+</html>

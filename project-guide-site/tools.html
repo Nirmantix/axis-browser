@@ -1,0 +1,214 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Tools — Axis Browser</title>
+    <meta name="description" content="Official links and practical boundaries for every browser tool in the Axis Browser workflow.">
+    <meta property="og:title" content="Tools — Axis Browser">
+    <meta property="og:description" content="Official links and practical boundaries for every browser tool in the Axis Browser workflow.">
+    <meta property="og:image" content="./og-image.png">
+    <meta property="og:type" content="website">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="Tools — Axis Browser">
+    <meta name="twitter:description" content="Official links and practical boundaries for every browser tool in the Axis Browser workflow.">
+    <meta name="twitter:image" content="./og-image.png">
+    <link rel="icon" type="image/svg+xml" href="./favicon.svg">
+    <link rel="icon" sizes="any" href="./favicon.ico">
+    <link rel="apple-touch-icon" href="./apple-touch-icon.png">
+    <script>!function(){var r=document.documentElement,t,i=0,s=[0,2,4,0,-2,-4];try{t=localStorage.getItem("theme");i=parseInt(localStorage.getItem("font-step-idx"),10)}catch(e){}if(!Number.isInteger(i)||i<0||i>=s.length)i=0;if(t)r.setAttribute("data-theme",t);r.style.setProperty("--font-step",s[i]+"px")}();</script>
+    <link rel="stylesheet" href="./styles.css">
+  </head>
+  <body>
+    <main class="site-shell">
+      <header class="top-bar" aria-label="Site navigation">
+        <a class="brand-link" href="./index.html">Axis Browser</a>
+        <nav class="site-nav">
+          <a class="nav-link" href="./index.html">Home</a>
+          <a class="nav-link" href="./workflow.html">Workflow</a>
+          <a class="nav-link" href="./setup.html">Setup</a>
+          <a class="nav-link active" href="./tools.html">Tools</a>
+          <a class="nav-link" href="./reference.html">Commands</a>
+          <a class="nav-link" href="./safety.html">Safety</a>
+          <a class="nav-link" href="./maintenance.html">Maintenance</a>
+          <a class="nav-link" href="./sources.html">Sources</a>
+          <button class="theme-toggle" id="theme-toggle" aria-label="Toggle dark mode"><svg class="icon-moon" viewBox="0 0 24 24"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg><svg class="icon-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg></button>
+          <button class="font-toggle" id="font-toggle" aria-label="Adjust font size"><span class="font-label">A</span></button>
+          <script>document.getElementById("theme-toggle").addEventListener("click",function(){var d=document.documentElement,t=d.getAttribute("data-theme")==="dark"?"light":"dark";d.setAttribute("data-theme",t);try{localStorage.setItem("theme",t)}catch(e){ } });!function(){var s=[0,2,4,0,-2,-4],l=["A","A+","A++","A","A-","A--"],b=document.getElementById("font-toggle"),n=b.querySelector(".font-label"),i=0;try{i=parseInt(localStorage.getItem("font-step-idx"),10)}catch(e){}if(!Number.isInteger(i)||i<0||i>=s.length)i=0;function u(){document.documentElement.style.setProperty("--font-step",s[i]+"px");n.textContent=l[i];b.title="Font size: "+(s[i]===0?"Default":(s[i]>0?"+":"")+s[i]+"px")}u();b.addEventListener("click",function(){i=(i+1)%s.length;u();try{localStorage.setItem("font-step-idx",i)}catch(e){ } })}();</script>
+        </nav>
+      </header>
+
+      <section class="intro" aria-labelledby="page-title">
+        <h1 id="page-title">Pick tools by job, not by novelty.</h1>
+        <p>The Axis Browser workflow is tool-routed. Axis Browser is the compact diagnostic path, Browser Harness handles interactive browser work, and Playwright is added project-local for deterministic automation.</p>
+      </section>
+
+      <section class="section" aria-labelledby="core-tools">
+        <h2 id="core-tools">Core and common tools</h2>
+        <div class="tool-grid">
+          <article class="tool-card">
+            <strong>Axis Browser</strong>
+            <p>Fast shell-level diagnostics for shared Chrome and CDP workflows.</p>
+            <a href="https://github.com/Nirmantix/axis-browser" target="_blank" rel="noopener">GitHub</a>
+            <ul>
+              <li>Use for snapshots, refs, console, network, Lighthouse, perf, and heap.</li>
+              <li>Does not own an LLM loop. Host agents compose commands.</li>
+            </ul>
+          </article>
+          <article class="tool-card">
+            <strong>Browser Harness</strong>
+            <p>Primary high-capability interactive browser tool in browser-skill.</p>
+            <a href="https://github.com/browser-use/browser-harness" target="_blank" rel="noopener">GitHub</a>
+            <ul>
+              <li>Use for visual control, iframes, odd widgets, and flexible browser operation.</li>
+              <li>Install from a durable editable checkout such as `$HOME/Developer/browser-harness`.</li>
+            </ul>
+          </article>
+          <article class="tool-card">
+            <strong>Playwright library</strong>
+            <p>Deterministic browser automation library and test backend.</p>
+            <a href="https://playwright.dev" target="_blank" rel="noopener">Official docs</a>
+            <ul>
+              <li>Use for repeatable scripts, traces, API mocking, CI, visual regression, and cross-browser checks.</li>
+              <li>Install project-local when the target project needs those capabilities.</li>
+            </ul>
+          </article>
+          <article class="tool-card">
+            <strong>Microsoft Playwright CLI</strong>
+            <p>Agent-oriented Playwright CLI, separate from project-local Playwright.</p>
+            <a href="https://playwright.dev/agent-cli/installation" target="_blank" rel="noopener">Official docs</a>
+            <ul>
+              <li>Use when its CLI command surface or installed skills are useful.</li>
+              <li>Optional. It overlaps with Axis Browser and agent-browser.</li>
+            </ul>
+          </article>
+        </div>
+      </section>
+
+      <section class="section" aria-labelledby="service-tools">
+        <h2 id="service-tools">Optional services and runtimes</h2>
+        <div class="tool-grid">
+          <article class="tool-card">
+            <strong>Firecrawl CLI/MCP</strong>
+            <p>Clean public-page markdown, crawl/search, structured extraction, and browser tools.</p>
+            <a href="https://docs.firecrawl.dev/quickstarts/codex-cli" target="_blank" rel="noopener">Codex MCP docs</a>
+            <a href="https://github.com/firecrawl/cli" target="_blank" rel="noopener">CLI GitHub</a>
+            <ul>
+              <li>Use when a browser is overkill for public content.</li>
+              <li>Keep API keys in user-local env or MCP config.</li>
+            </ul>
+          </article>
+          <article class="tool-card">
+            <strong>BrowserAct</strong>
+            <p>Authorized protected-site workflows, screenshots, bulk extraction, and Skill Forge.</p>
+            <a href="https://github.com/browser-act/skills" target="_blank" rel="noopener">Skills GitHub</a>
+            <a href="https://www.browseract.com/skill-forge" target="_blank" rel="noopener">Skill Forge</a>
+            <ul>
+              <li>Use only on systems owned, administered, or explicitly authorized for testing.</li>
+              <li>A prebuilt site skill is not authorization.</li>
+            </ul>
+          </article>
+          <article class="tool-card">
+            <strong>Notte</strong>
+            <p>Cloud browser sessions, live viewer, workflow-code export, Functions, vaults, and personas.</p>
+            <a href="https://www.notte.cc/" target="_blank" rel="noopener">Website</a>
+            <a href="https://docs.notte.cc/" target="_blank" rel="noopener">Docs</a>
+            <ul>
+              <li>Use when production browser workflows or cloud replay matter.</li>
+              <li>Credentials stay in Notte or user-local config.</li>
+            </ul>
+          </article>
+          <article class="tool-card">
+            <strong>CloakBrowser</strong>
+            <p>Playwright/Puppeteer-compatible Chromium runtime for authorized anti-detection tests.</p>
+            <a href="https://cloakbrowser.dev/" target="_blank" rel="noopener">Website</a>
+            <a href="https://github.com/CloakHQ/CloakBrowser" target="_blank" rel="noopener">GitHub</a>
+            <ul>
+              <li>Use as a narrow runtime, not a default browser automation strategy.</li>
+              <li>It is not a CAPTCHA solver or hosted proxy service.</li>
+            </ul>
+          </article>
+          <article class="tool-card">
+            <strong>agent-browser</strong>
+            <p>Optional fallback CLI with browser control, install flow, and skills.</p>
+            <a href="https://agent-browser.dev/skills" target="_blank" rel="noopener">Skills docs</a>
+            <ul>
+              <li>Use when it is the quickest available native route.</li>
+              <li>Run `agent-browser doctor` when an install looks stale.</li>
+            </ul>
+          </article>
+          <article class="tool-card">
+            <strong>Webwright</strong>
+            <p>Microsoft research harness above Playwright where an LLM writes and verifies scripts.</p>
+            <a href="https://github.com/microsoft/Webwright" target="_blank" rel="noopener">GitHub</a>
+            <a href="https://microsoft.github.io/Webwright/" target="_blank" rel="noopener">Project site</a>
+            <ul>
+              <li>Do not add it as an Axis Browser dependency.</li>
+              <li>Borrow verified-run and reusable-script discipline through browser-skill.</li>
+            </ul>
+          </article>
+          <article class="tool-card">
+            <strong>Browserbase skills</strong>
+            <p>Separate Browserbase cloud/session ecosystem with its own CLI, API key, and platform workflows.</p>
+            <a href="https://github.com/browserbase/skills" target="_blank" rel="noopener">Skills GitHub</a>
+            <a href="https://www.browserbase.com/" target="_blank" rel="noopener">Website</a>
+            <ul>
+              <li>Use only when the task intentionally targets Browserbase cloud sessions or platform features.</li>
+              <li>Do not route normal Axis Browser work through Browserbase skills by default.</li>
+            </ul>
+          </article>
+        </div>
+      </section>
+
+      <section class="section" aria-labelledby="decision-table">
+        <h2 id="decision-table">Fast picker</h2>
+        <table class="decision-table">
+          <thead>
+            <tr>
+              <th>Task</th>
+              <th>Use</th>
+              <th>Why</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Debug a local UI fast</td>
+              <td>Axis Browser or Browser Harness</td>
+              <td>Lowest overhead and direct browser state.</td>
+            </tr>
+            <tr>
+              <td>Write CI-grade automation</td>
+              <td>Project-local Playwright</td>
+              <td>Deterministic waits, traces, network interception, cross-browser.</td>
+            </tr>
+            <tr>
+              <td>Extract public documentation</td>
+              <td>Firecrawl</td>
+              <td>Clean content without browser overhead.</td>
+            </tr>
+            <tr>
+              <td>Work on protected targets</td>
+              <td>BrowserAct, Notte, or CloakBrowser</td>
+              <td>Only with explicit authorization and credential hygiene.</td>
+            </tr>
+            <tr>
+              <td>Use Browserbase cloud sessions</td>
+              <td>Browserbase skills</td>
+              <td>Separate ecosystem; only when Browserbase infrastructure is explicitly required.</td>
+            </tr>
+            <tr>
+              <td>Need reusable proof</td>
+              <td>browser-skill verified run or craft workflow</td>
+              <td>Structured evidence, STEP markers, and rerunnable scripts.</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <footer class="site-footer">
+        <span>Axis Browser Workflow Guide</span>
+        <a href="./reference.html">Commands &rarr;</a>
+      </footer>
+    </main>
+  </body>
+</html>

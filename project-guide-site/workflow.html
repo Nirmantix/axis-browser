@@ -1,0 +1,280 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Workflow — Axis Browser</title>
+    <meta name="description" content="Step-by-step Axis Browser workflows for debugging, verified runs, reusable scripts, and browser evidence.">
+    <meta property="og:title" content="Workflow — Axis Browser">
+    <meta property="og:description" content="Step-by-step Axis Browser workflows for debugging, verified runs, reusable scripts, and browser evidence.">
+    <meta property="og:image" content="./og-image.png">
+    <meta property="og:type" content="website">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="Workflow — Axis Browser">
+    <meta name="twitter:description" content="Step-by-step Axis Browser workflows for debugging, verified runs, reusable scripts, and browser evidence.">
+    <meta name="twitter:image" content="./og-image.png">
+    <link rel="icon" type="image/svg+xml" href="./favicon.svg">
+    <link rel="icon" sizes="any" href="./favicon.ico">
+    <link rel="apple-touch-icon" href="./apple-touch-icon.png">
+    <script>!function(){var r=document.documentElement,t,i=0,s=[0,2,4,0,-2,-4];try{t=localStorage.getItem("theme");i=parseInt(localStorage.getItem("font-step-idx"),10)}catch(e){}if(!Number.isInteger(i)||i<0||i>=s.length)i=0;if(t)r.setAttribute("data-theme",t);r.style.setProperty("--font-step",s[i]+"px")}();</script>
+    <link rel="stylesheet" href="./styles.css">
+  </head>
+  <body>
+    <main class="site-shell">
+      <header class="top-bar" aria-label="Site navigation">
+        <a class="brand-link" href="./index.html">Axis Browser</a>
+        <nav class="site-nav">
+          <a class="nav-link" href="./index.html">Home</a>
+          <a class="nav-link active" href="./workflow.html">Workflow</a>
+          <a class="nav-link" href="./setup.html">Setup</a>
+          <a class="nav-link" href="./tools.html">Tools</a>
+          <a class="nav-link" href="./reference.html">Commands</a>
+          <a class="nav-link" href="./safety.html">Safety</a>
+          <a class="nav-link" href="./maintenance.html">Maintenance</a>
+          <a class="nav-link" href="./sources.html">Sources</a>
+          <button class="theme-toggle" id="theme-toggle" aria-label="Toggle dark mode"><svg class="icon-moon" viewBox="0 0 24 24"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg><svg class="icon-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg></button>
+          <button class="font-toggle" id="font-toggle" aria-label="Adjust font size"><span class="font-label">A</span></button>
+          <script>document.getElementById("theme-toggle").addEventListener("click",function(){var d=document.documentElement,t=d.getAttribute("data-theme")==="dark"?"light":"dark";d.setAttribute("data-theme",t);try{localStorage.setItem("theme",t)}catch(e){ } });!function(){var s=[0,2,4,0,-2,-4],l=["A","A+","A++","A","A-","A--"],b=document.getElementById("font-toggle"),n=b.querySelector(".font-label"),i=0;try{i=parseInt(localStorage.getItem("font-step-idx"),10)}catch(e){}if(!Number.isInteger(i)||i<0||i>=s.length)i=0;function u(){document.documentElement.style.setProperty("--font-step",s[i]+"px");n.textContent=l[i];b.title="Font size: "+(s[i]===0?"Default":(s[i]>0?"+":"")+s[i]+"px")}u();b.addEventListener("click",function(){i=(i+1)%s.length;u();try{localStorage.setItem("font-step-idx",i)}catch(e){ } })}();</script>
+        </nav>
+      </header>
+
+      <section class="intro" aria-labelledby="page-title">
+        <h1 id="page-title">The workflow: observe, act, prove.</h1>
+        <p>Start with the rendered browser. Decide shared or isolated mode, capture real state, then choose whether the task needs quick diagnostics, audited evidence, or a rerunnable script.</p>
+      </section>
+
+      <section class="section" aria-labelledby="debug-flow">
+        <h2 id="debug-flow">Shared Chrome debugging</h2>
+        <p class="muted-lead">Use this for web apps, desktop apps with webviews, SaaS dashboards, internal tools, auth flows, and anything where real browser state matters.</p>
+        <div class="feature-board">
+          <pre><span class="comment"># Point Axis Browser at the shared Chrome CDP endpoint.</span>
+export CHROME_DEVTOOLS_AXI_BROWSER_URL=http://127.0.0.1:9222
+axis-browser stop
+axis-browser pages
+axis-browser open http://localhost:3000
+axis-browser snapshot
+axis-browser console --type error
+axis-browser network --type fetch</pre>
+          <div class="workflow-chain">
+            <article class="phase-card">
+              <strong>Reproduce</strong>
+              <p>Open the exact route or tab where the issue exists. Use the same login state if auth matters.</p>
+            </article>
+            <article class="phase-card">
+              <strong>Inspect</strong>
+              <p>Snapshot shows accessible structure and `@gN:N` refs. Console and network show runtime causes.</p>
+            </article>
+            <article class="phase-card">
+              <strong>Interact</strong>
+              <p>Click or fill refs exactly as printed. If stale, re-snapshot and retry.</p>
+            </article>
+            <article class="phase-card">
+              <strong>Decide</strong>
+              <p>Edit app code only after the browser evidence identifies a failing request, exception, or state mismatch.</p>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section class="section" aria-labelledby="shared-baseline">
+        <h2 id="shared-baseline">Shared Chrome baseline</h2>
+        <p class="muted-lead">The standard shared-browser pattern is a dedicated Chrome profile exposing Chrome DevTools Protocol on port `9222`, with Axis Browser running its local bridge on port `9224`.</p>
+        <div class="feature-board">
+          <pre>"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" \
+  --remote-debugging-port=9222 \
+  --user-data-dir="$HOME/.axis-browser-data" \
+  --no-first-run \
+  --no-default-browser-check
+
+export CHROME_DEVTOOLS_AXI_BROWSER_URL=http://127.0.0.1:9222
+axis-browser stop
+axis-browser pages
+axis-browser snapshot</pre>
+          <div class="workflow-chain">
+            <article class="phase-card">
+              <strong>Dedicated profile</strong>
+              <p>`~/.axis-browser-data` keeps automation login state separate from the everyday browser profile.</p>
+            </article>
+            <article class="phase-card">
+              <strong>Bridge reset</strong>
+              <p>`axis-browser stop` clears the persistent bridge so the next command uses the current environment and target.</p>
+            </article>
+            <article class="phase-card">
+              <strong>Generation-tagged refs</strong>
+              <p>Refs such as `@g1:3` must be passed back exactly as printed. `STALE_REF` means the page changed and a new snapshot is required.</p>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section class="section" aria-labelledby="stop-guessing">
+        <h2 id="stop-guessing">Stop-guessing debug protocol</h2>
+        <div class="feature-board">
+          <ol class="step-list">
+            <li><span>1</span><div><strong>Reproduce in the browser</strong><p>Open the target route or tab in the controlled shared browser session.</p></div></li>
+            <li><span>2</span><div><strong>Capture structure</strong><p>Run `axis-browser snapshot` and inspect the visible accessible state.</p></div></li>
+            <li><span>3</span><div><strong>Inspect runtime failures</strong><p>Run `axis-browser console` and `axis-browser network` before editing application code.</p></div></li>
+            <li><span>4</span><div><strong>Identify the concrete failure</strong><p>Look for the failing request, exception, disabled control, missing DOM state, or auth/session mismatch.</p></div></li>
+            <li><span>5</span><div><strong>Change code only after evidence</strong><p>Use browser observations to drive the implementation fix or the verified-run report.</p></div></li>
+          </ol>
+        </div>
+      </section>
+
+      <section class="section" aria-labelledby="auth-tabs">
+        <h2 id="auth-tabs">Auth, tabs, and ports</h2>
+        <table class="decision-table">
+          <thead>
+            <tr>
+              <th>Situation</th>
+              <th>Operational pattern</th>
+              <th>Command or note</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Normal login state</td>
+              <td>Launch the dedicated profile, log in manually once, then keep reusing the same `--user-data-dir`.</td>
+              <td><code>~/.axis-browser-data</code></td>
+            </tr>
+            <tr>
+              <td>SSO, MFA, or sensitive providers</td>
+              <td>Log in without remote debugging, quit Chrome fully, then relaunch the same profile with `--remote-debugging-port=9222`.</td>
+              <td>Use the same profile directory across both launches.</td>
+            </tr>
+            <tr>
+              <td>Tab source of truth</td>
+              <td>Raw Chrome CDP is authoritative when tab selection looks wrong.</td>
+              <td><code>curl -s http://127.0.0.1:9222/json/list</code></td>
+            </tr>
+            <tr>
+              <td>Chrome CDP port</td>
+              <td>Default convention is `9222`. Change only when that port is already in use.</td>
+              <td><code>CHROME_DEVTOOLS_AXI_BROWSER_URL=http://127.0.0.1:9333</code></td>
+            </tr>
+            <tr>
+              <td>Axis bridge port</td>
+              <td>Default is `9224`. Change only when the local Axis bridge port conflicts.</td>
+              <td><code>CHROME_DEVTOOLS_AXI_PORT=9225</code></td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section class="section" aria-labelledby="troubleshooting">
+        <h2 id="troubleshooting">Shared-browser troubleshooting</h2>
+        <div class="route-grid">
+          <article class="route-card">
+            <div class="route-head"><h3>Bridge feels stale</h3></div>
+            <ul>
+              <li><span>reset</span> `axis-browser stop`</li>
+              <li><span>check</span> `axis-browser pages`</li>
+              <li><span>note</span> Deep health checks recycle most stale bridge states automatically.</li>
+            </ul>
+          </article>
+          <article class="route-card">
+            <div class="route-head"><h3>Bridge startup is slow</h3></div>
+            <ul>
+              <li><span>fast</span> `npm install -g chrome-devtools-mcp`</li>
+              <li><span>timeout</span> `CHROME_DEVTOOLS_AXI_BRIDGE_TIMEOUT_MS=60000`</li>
+            </ul>
+          </article>
+          <article class="route-card">
+            <div class="route-head"><h3>Chrome CDP is unreachable</h3></div>
+            <ul>
+              <li><span>probe</span> `curl -s http://127.0.0.1:9222/json/version`</li>
+              <li><span>cause</span> Chrome was not launched with the expected debugging port or profile.</li>
+            </ul>
+          </article>
+          <article class="route-card">
+            <div class="route-head"><h3>Login state is missing</h3></div>
+            <ul>
+              <li><span>profile</span> Confirm the same `--user-data-dir` was reused.</li>
+              <li><span>sso</span> For strict providers, log in without debugging first, then relaunch with debugging.</li>
+            </ul>
+          </article>
+        </div>
+      </section>
+
+      <section class="section" aria-labelledby="verified-flow">
+        <h2 id="verified-flow">Verified run workflow</h2>
+        <p class="muted-lead">Use this when an operator, reviewer, or future agent needs checkable proof instead of a verbal claim.</p>
+        <div class="feature-board">
+          <pre><span class="comment"># Scaffold a single-pass evidence bundle.</span>
+node "$SKILL_DIR/scripts/init-verified-run.mjs" \
+  --task "Verify checkout renders an order confirmation" \
+  --slug checkout-confirmation
+
+<span class="comment"># After filling plan.md and findings.md, validate it.</span>
+node "$SKILL_DIR/scripts/validate-verified-run.mjs" \
+  --run .tmp/verified-runs/checkout-confirmation</pre>
+          <table class="decision-table">
+            <thead>
+              <tr>
+                <th>Exit</th>
+                <th>Status</th>
+                <th>Operator action</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>0</code></td>
+                <td><code>pass</code></td>
+                <td>All checks have valid PASS markers. Report the run and evidence.</td>
+              </tr>
+              <tr>
+                <td><code>1</code></td>
+                <td><code>fail:structure</code></td>
+                <td>Fix malformed artifacts, missing markers, invalid IDs, or unsafe screenshot paths.</td>
+              </tr>
+              <tr>
+                <td><code>2</code></td>
+                <td><code>fail:checks</code></td>
+                <td>Checks are structurally valid but failed or skipped. Report honestly or iterate.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="section" aria-labelledby="craft-flow">
+        <h2 id="craft-flow">Reusable workflow craft path</h2>
+        <p class="muted-lead">Use this when the deliverable is a browser workflow someone can rerun with different inputs.</p>
+        <div class="feature-board">
+          <div class="command-rail">
+            <article class="command-card">
+              <strong>Start craft mode</strong>
+              <p>Craft mode changes the scaffold instructions. It does not magically generate automation.</p>
+            </article>
+            <pre>node "$SKILL_DIR/scripts/init-verified-run.mjs" \
+  --task "Search flights from SEA to JFK for supplied dates" \
+  --slug flight-search \
+  --mode craft</pre>
+          </div>
+          <div class="workflow-chain">
+            <article class="phase-card">
+              <strong>Prove once</strong>
+              <p>Use Axis Browser, Browser Harness, or Playwright to complete the flow and collect evidence.</p>
+            </article>
+            <article class="phase-card">
+              <strong>Refactor</strong>
+              <p>Turn the working flow into `script.mjs` with explicit flags and defaults from `task.md`.</p>
+            </article>
+            <article class="phase-card">
+              <strong>Prefer Playwright</strong>
+              <p>For deterministic multi-page scripts, Playwright is the safer default backend.</p>
+            </article>
+            <article class="phase-card">
+              <strong>Validate</strong>
+              <p>Run the verified-run validator and report PASS, FAIL, or SKIP markers.</p>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <footer class="site-footer">
+        <span>Axis Browser Workflow Guide</span>
+        <a href="./tools.html">Tools &rarr;</a>
+      </footer>
+    </main>
+  </body>
+</html>

@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Safety — Axis Browser</title>
+    <meta name="description" content="Safety rules for Axis Browser workflows, shared Chrome, browser artifacts, credentials, and protected sites.">
+    <meta property="og:title" content="Safety — Axis Browser">
+    <meta property="og:description" content="Safety rules for Axis Browser workflows, shared Chrome, browser artifacts, credentials, and protected sites.">
+    <meta property="og:image" content="./og-image.png">
+    <meta property="og:type" content="website">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="Safety — Axis Browser">
+    <meta name="twitter:description" content="Safety rules for Axis Browser workflows, shared Chrome, browser artifacts, credentials, and protected sites.">
+    <meta name="twitter:image" content="./og-image.png">
+    <link rel="icon" type="image/svg+xml" href="./favicon.svg">
+    <link rel="icon" sizes="any" href="./favicon.ico">
+    <link rel="apple-touch-icon" href="./apple-touch-icon.png">
+    <script>!function(){var r=document.documentElement,t,i=0,s=[0,2,4,0,-2,-4];try{t=localStorage.getItem("theme");i=parseInt(localStorage.getItem("font-step-idx"),10)}catch(e){}if(!Number.isInteger(i)||i<0||i>=s.length)i=0;if(t)r.setAttribute("data-theme",t);r.style.setProperty("--font-step",s[i]+"px")}();</script>
+    <link rel="stylesheet" href="./styles.css">
+  </head>
+  <body>
+    <main class="site-shell">
+      <header class="top-bar" aria-label="Site navigation">
+        <a class="brand-link" href="./index.html">Axis Browser</a>
+        <nav class="site-nav">
+          <a class="nav-link" href="./index.html">Home</a>
+          <a class="nav-link" href="./workflow.html">Workflow</a>
+          <a class="nav-link" href="./setup.html">Setup</a>
+          <a class="nav-link" href="./tools.html">Tools</a>
+          <a class="nav-link" href="./reference.html">Commands</a>
+          <a class="nav-link active" href="./safety.html">Safety</a>
+          <a class="nav-link" href="./maintenance.html">Maintenance</a>
+          <a class="nav-link" href="./sources.html">Sources</a>
+          <button class="theme-toggle" id="theme-toggle" aria-label="Toggle dark mode"><svg class="icon-moon" viewBox="0 0 24 24"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg><svg class="icon-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg></button>
+          <button class="font-toggle" id="font-toggle" aria-label="Adjust font size"><span class="font-label">A</span></button>
+          <script>document.getElementById("theme-toggle").addEventListener("click",function(){var d=document.documentElement,t=d.getAttribute("data-theme")==="dark"?"light":"dark";d.setAttribute("data-theme",t);try{localStorage.setItem("theme",t)}catch(e){ } });!function(){var s=[0,2,4,0,-2,-4],l=["A","A+","A++","A","A-","A--"],b=document.getElementById("font-toggle"),n=b.querySelector(".font-label"),i=0;try{i=parseInt(localStorage.getItem("font-step-idx"),10)}catch(e){}if(!Number.isInteger(i)||i<0||i>=s.length)i=0;function u(){document.documentElement.style.setProperty("--font-step",s[i]+"px");n.textContent=l[i];b.title="Font size: "+(s[i]===0?"Default":(s[i]>0?"+":"")+s[i]+"px")}u();b.addEventListener("click",function(){i=(i+1)%s.length;u();try{localStorage.setItem("font-step-idx",i)}catch(e){ } })}();</script>
+        </nav>
+      </header>
+
+      <section class="intro" aria-labelledby="page-title">
+        <h1 id="page-title">Browser automation has sharp edges.</h1>
+        <p>Keep secrets out of artifacts, treat protected sites as permission-gated, and choose shared or isolated browsers deliberately.</p>
+      </section>
+
+      <section class="section" aria-labelledby="rules">
+        <h2 id="rules">Hard rules</h2>
+        <div class="feature-board">
+          <div class="safety-band">
+            <div>
+              <strong>Artifacts stay under `.tmp/`</strong>
+              <p>Screenshots, traces, scrapes, reports, verified runs, cookies, and generated credentials must not be committed.</p>
+            </div>
+            <div>
+              <strong>Secrets stay user-local</strong>
+              <p>Do not write API keys into repo files, `.env`, `.tmp/`, generated scripts, MCP snippets, or screenshots.</p>
+            </div>
+            <div>
+              <strong>Protected sites need permission</strong>
+              <p>Use BrowserAct, Notte, CloakBrowser, or Firecrawl on protected targets only when explicitly authorized.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="section" aria-labelledby="mode-safety">
+        <h2 id="mode-safety">Shared versus isolated browser mode</h2>
+        <table class="decision-table">
+          <thead>
+            <tr>
+              <th>Mode</th>
+              <th>Use when</th>
+              <th>Risks</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Shared Chrome on `9222`</td>
+              <td>Real login, SSO, cookies, manual continuity, or cross-tool state matters.</td>
+              <td>Can see real account data. Do not close user tabs from Playwright; use `disconnect()`.</td>
+            </tr>
+            <tr>
+              <td>Isolated Playwright</td>
+              <td>Clean reproducibility, CI, destructive tests, or parallel agents matter.</td>
+              <td>May not include real login state. Use test accounts and explicit test data.</td>
+            </tr>
+            <tr>
+              <td>Cloud/service browser</td>
+              <td>Replay, live viewer, managed identity, or production browser workflows matter.</td>
+              <td>Paid/API-backed. Credential setup must stay user-local and provider-specific.</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section class="section" aria-labelledby="evidence-rules">
+        <h2 id="evidence-rules">Evidence rules</h2>
+        <div class="feature-board">
+          <div class="workflow-chain">
+            <article class="phase-card">
+              <strong>STEP_PASS</strong>
+              <p>Use only when the check actually passed. Optional evidence paths are validated when present.</p>
+            </article>
+            <article class="phase-card">
+              <strong>STEP_FAIL</strong>
+              <p>Use when expected behavior did not happen. Include a screenshot path when useful.</p>
+            </article>
+            <article class="phase-card">
+              <strong>STEP_SKIP</strong>
+              <p>Use when a prerequisite is missing. Skipped work is honest, but it is not a pass.</p>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section class="section" aria-labelledby="no-go">
+        <h2 id="no-go">No-go list</h2>
+        <div class="command-rail">
+          <article class="command-card">
+            <strong>Do not invent credentials</strong>
+            <p>If login blocks the task, ask the operator to log in or provide a test account through an approved local channel.</p>
+          </article>
+          <article class="command-card">
+            <strong>Do not hide failed checks</strong>
+            <p>Report `STEP_FAIL` or `STEP_SKIP`. Do not remove plan checks to force a green validator.</p>
+          </article>
+          <article class="command-card">
+            <strong>Do not use stealth tools casually</strong>
+            <p>CloakBrowser and protected-site flows are narrow, authorized-use paths, not defaults.</p>
+          </article>
+          <article class="command-card">
+            <strong>Do not nest LLM loops</strong>
+            <p>Webwright is not part of the runtime stack. Host agents drive Axis Browser and browser-skill directly.</p>
+          </article>
+        </div>
+      </section>
+
+      <footer class="site-footer">
+        <span>Axis Browser Workflow Guide</span>
+        <a href="./sources.html">Sources &rarr;</a>
+      </footer>
+    </main>
+  </body>
+</html>

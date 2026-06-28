@@ -1,0 +1,231 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Axis Browser Workflow Guide</title>
+    <meta name="description" content="A practical guide for setting up Axis Browser and using the browser-skill workflow in any project.">
+    <meta property="og:title" content="Axis Browser Workflow Guide">
+    <meta property="og:description" content="A practical guide for setting up Axis Browser and using the browser-skill workflow in any project.">
+    <meta property="og:image" content="./og-image.png">
+    <meta property="og:type" content="website">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="Axis Browser Workflow Guide">
+    <meta name="twitter:description" content="A practical guide for setting up Axis Browser and using the browser-skill workflow in any project.">
+    <meta name="twitter:image" content="./og-image.png">
+    <link rel="icon" type="image/svg+xml" href="./favicon.svg">
+    <link rel="icon" sizes="any" href="./favicon.ico">
+    <link rel="apple-touch-icon" href="./apple-touch-icon.png">
+    <script>!function(){var r=document.documentElement,t,i=0,s=[0,2,4,0,-2,-4];try{t=localStorage.getItem("theme");i=parseInt(localStorage.getItem("font-step-idx"),10)}catch(e){}if(!Number.isInteger(i)||i<0||i>=s.length)i=0;if(t)r.setAttribute("data-theme",t);r.style.setProperty("--font-step",s[i]+"px")}();</script>
+    <link rel="stylesheet" href="./styles.css">
+  </head>
+  <body>
+    <main class="site-shell">
+      <header class="top-bar" aria-label="Site navigation">
+        <a class="brand-link" href="./index.html">Axis Browser</a>
+        <nav class="site-nav">
+          <a class="nav-link active" href="./index.html">Home</a>
+          <a class="nav-link" href="./workflow.html">Workflow</a>
+          <a class="nav-link" href="./setup.html">Setup</a>
+          <a class="nav-link" href="./tools.html">Tools</a>
+          <a class="nav-link" href="./reference.html">Commands</a>
+          <a class="nav-link" href="./safety.html">Safety</a>
+          <a class="nav-link" href="./maintenance.html">Maintenance</a>
+          <a class="nav-link" href="./sources.html">Sources</a>
+          <button class="theme-toggle" id="theme-toggle" aria-label="Toggle dark mode"><svg class="icon-moon" viewBox="0 0 24 24"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg><svg class="icon-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg></button>
+          <button class="font-toggle" id="font-toggle" aria-label="Adjust font size"><span class="font-label">A</span></button>
+          <script>document.getElementById("theme-toggle").addEventListener("click",function(){var d=document.documentElement,t=d.getAttribute("data-theme")==="dark"?"light":"dark";d.setAttribute("data-theme",t);try{localStorage.setItem("theme",t)}catch(e){ } });!function(){var s=[0,2,4,0,-2,-4],l=["A","A+","A++","A","A-","A--"],b=document.getElementById("font-toggle"),n=b.querySelector(".font-label"),i=0;try{i=parseInt(localStorage.getItem("font-step-idx"),10)}catch(e){}if(!Number.isInteger(i)||i<0||i>=s.length)i=0;function u(){document.documentElement.style.setProperty("--font-step",s[i]+"px");n.textContent=l[i];b.title="Font size: "+(s[i]===0?"Default":(s[i]>0?"+":"")+s[i]+"px")}u();b.addEventListener("click",function(){i=(i+1)%s.length;u();try{localStorage.setItem("font-step-idx",i)}catch(e){ } })}();</script>
+        </nav>
+      </header>
+
+      <section class="intro" aria-labelledby="page-title">
+        <h1 id="page-title">Browser work without guessing.</h1>
+        <p>Use Axis Browser for compact shared-Chrome diagnostics, then route bigger browser tasks through the browser-skill workflow for screenshots, traces, verified runs, reusable scripts, and safe tool selection.</p>
+      </section>
+
+      <section class="quick-routes" aria-label="Core routes">
+        <article>
+          <h2>Current workstation route</h2>
+          <p>Set `BROWSER_SKILL_DIR` to the skill path or `AXIS_BROWSER_HOME` to the workflow checkout, run setup in the target repo, then verify installed tools.</p>
+        </article>
+        <article>
+          <h2>Fresh machine route</h2>
+          <p>Run the setup audit, install machine-level tools, then add project-local Playwright only where deterministic automation is needed.</p>
+        </article>
+        <article>
+          <h2>Prompt shortcodes</h2>
+          <p>`;absetup`, `;abcheck`, `;abuse`, and `;abhealth` are thin wrappers around browser-skill and its scripts.</p>
+        </article>
+        <article>
+          <h2>Need to debug a live app?</h2>
+          <p>Attach to shared Chrome, inspect snapshots, console, and network before changing code.</p>
+        </article>
+        <article>
+          <h2>Need evidence?</h2>
+          <p>Use verified runs with STEP markers, screenshots, and validator exit codes.</p>
+        </article>
+        <article>
+          <h2>Need the right tool?</h2>
+          <p>Use the tool stack page to choose Axis Browser, Browser Harness, Playwright, Firecrawl, BrowserAct, Notte, or CloakBrowser.</p>
+        </article>
+      </section>
+
+      <section class="section" aria-labelledby="operating-model">
+        <h2 id="operating-model">Operating model</h2>
+        <p class="muted-lead">Axis Browser is a CLI. It does not own an LLM loop. Human operators and coding agents compose its commands inside a broader browser workflow.</p>
+        <div class="feature-board">
+          <div class="workflow-chain">
+            <article class="phase-card">
+              <strong>1. Choose mode</strong>
+              <p>Shared Chrome for real login state. Isolated browser for reproducible or destructive checks.</p>
+            </article>
+            <article class="phase-card">
+              <strong>2. Observe first</strong>
+              <p>Run snapshot, console, and network. Do not edit application code from a guess.</p>
+            </article>
+            <article class="phase-card">
+              <strong>3. Drive the flow</strong>
+              <p>Click and fill by generation-tagged refs, or switch to Playwright for deterministic multi-page scripts.</p>
+            </article>
+            <article class="phase-card">
+              <strong>4. Save proof</strong>
+              <p>Store screenshots, traces, reports, and verified-run artifacts under `.tmp/`.</p>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section class="section" aria-labelledby="routes-title">
+        <h2 id="routes-title">What to do next</h2>
+        <div class="feature-board">
+          <div class="route-grid">
+            <article class="route-card">
+              <div class="route-head"><h3>Set up a project</h3></div>
+              <ul>
+                <li><span>local</span> Export `BROWSER_SKILL_DIR=/path/to/browser-skill` or `AXIS_BROWSER_HOME=/path/to/axis-browser`, run setup, verify tools.</li>
+                <li><span>fresh</span> Install machine tools first, then install or copy browser-skill and run per-project setup.</li>
+                <li><span>output</span> A project with `.tmp/` artifacts ignored and required browser tools checked.</li>
+              </ul>
+            </article>
+            <article class="route-card">
+              <div class="route-head"><h3>Debug a feature</h3></div>
+              <ul>
+                <li><span>debug</span> Open the app, snapshot, inspect console/network, reproduce the failure.</li>
+                <li><span>output</span> A concrete failing request, exception, DOM state, or confirmed pass.</li>
+              </ul>
+            </article>
+            <article class="route-card">
+              <div class="route-head"><h3>Verify a browser task</h3></div>
+              <ul>
+                <li><span>verify</span> Scaffold a verified run, define checks, drive the browser, validate findings.</li>
+                <li><span>output</span> STEP_PASS, STEP_FAIL, or STEP_SKIP with evidence.</li>
+              </ul>
+            </article>
+            <article class="route-card">
+              <div class="route-head"><h3>Craft a reusable workflow</h3></div>
+              <ul>
+                <li><span>craft</span> Prove the flow once, then refactor it into a parameterized script.</li>
+                <li><span>output</span> A rerunnable local `script.mjs` plus evidence.</li>
+              </ul>
+            </article>
+            <article class="route-card">
+              <div class="route-head"><h3>Maintain the fork</h3></div>
+              <ul>
+                <li><span>sync</span> Check upstream, preserve fork deltas, validate, and merge through the protected PR flow.</li>
+                <li><span>output</span> Upstream-change summary, validation results, and PR status.</li>
+              </ul>
+            </article>
+          </div>
+          <div class="safety-band">
+            <div>
+              <strong>No secret storage</strong>
+              <p>Keep `.codex/`, MCP config, cookies, API keys, traces, and screenshots out of git.</p>
+            </div>
+            <div>
+              <strong>No fake authorization</strong>
+              <p>Protected-site work requires systems owned, administered, or explicitly authorized for testing.</p>
+            </div>
+            <div>
+              <strong>No Webwright replacement</strong>
+              <p>Borrow verified-run and reusable-script ideas. Do not replace Playwright or Axis Browser with Webwright.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="section" aria-labelledby="prompts-title">
+        <h2 id="prompts-title">Prompt entry points</h2>
+        <p class="muted-lead">The shortcodes are convenience entry points. They do not replace `SKILL.md`, and they do not create another routing system.</p>
+        <div class="feature-board">
+          <div class="route-grid">
+            <article class="route-card">
+              <div class="route-head"><h3>;absetup</h3></div>
+              <ul>
+                <li><span>scope</span> Machine setup and install audit.</li>
+                <li><span>runs</span> `check-prerequisites.sh --install`.</li>
+              </ul>
+            </article>
+            <article class="route-card">
+              <div class="route-head"><h3>;abcheck</h3></div>
+              <ul>
+                <li><span>scope</span> Target-project readiness.</li>
+                <li><span>runs</span> `setup.sh`, then `check-prerequisites.sh`.</li>
+              </ul>
+            </article>
+            <article class="route-card">
+              <div class="route-head"><h3>;abuse</h3></div>
+              <ul>
+                <li><span>scope</span> Browser task launcher.</li>
+                <li><span>runs</span> Loads `SKILL.md`; all routing stays there.</li>
+              </ul>
+            </article>
+            <article class="route-card">
+              <div class="route-head"><h3>;abhealth</h3></div>
+              <ul>
+                <li><span>scope</span> Monthly or biweekly health audit.</li>
+                <li><span>runs</span> `check-prerequisites.sh --update` plus read-only content review.</li>
+              </ul>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section class="section" aria-labelledby="stats-title">
+        <h2 id="stats-title">At a glance</h2>
+        <div class="stat-grid">
+          <div class="stat-item">
+            <span class="stat-number">3</span>
+            <span class="stat-label">Axis commands</span>
+            <p>`axis-browser`, `axib`, and upstream-compatible `chrome-devtools-axi`.</p>
+          </div>
+          <div class="stat-item">
+            <span class="stat-number">26</span>
+            <span class="stat-label">Skill references</span>
+            <p>Task routes for screenshots, debugging, traces, accessibility, performance, scraping, and verification.</p>
+          </div>
+          <div class="stat-item">
+            <span class="stat-number">4</span>
+            <span class="stat-label">Prompt shortcodes</span>
+            <p>`absetup`, `abcheck`, `abuse`, and `abhealth` map operators to the skill workflow.</p>
+          </div>
+        </div>
+      </section>
+
+      <section class="reference-strip" aria-label="Source files">
+        <h2>Single sources of truth</h2>
+        <div class="reference-list">
+          <a href="../README.md">Axis Browser README</a>
+          <a href="../docs/vibe-coding-browser-workflow.md">Shared Chrome workflow</a>
+          <span>Optional local browser-skill router</span>
+          <span>Optional local tool stack guide</span>
+          <span>Optional local verified run reference</span>
+        </div>
+      </section>
+
+      <footer class="site-footer">
+        <span>Axis Browser Workflow Guide</span>
+          <a href="./workflow.html">Workflow &rarr;</a>
+      </footer>
+    </main>
+  </body>
+</html>

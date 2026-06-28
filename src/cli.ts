@@ -17,6 +17,12 @@ import {
   runScript,
   wrapJsExpression,
 } from "./run.js";
+import {
+  formatSetupReport,
+  parseSetupArgs,
+  runSetupWorkflow,
+  type ParsedSetupArgs,
+} from "./setup.js";
 
 export { wrapJsExpression };
 import {
@@ -29,9 +35,10 @@ import {
   truncateText,
 } from "./snapshot.js";
 import { getSuggestions } from "./suggestions.js";
+import { installHooksOrThrow } from "./hooks.js";
 
 const HOME_DESCRIPTION =
-  'Axis Browser is a fast, agent-first CLI for Chrome automation and shared CDP workflows. Compatible with `axib` and `chrome-devtools-axi`.';
+  "Axis Browser is a fast, agent-first CLI for Chrome automation and shared CDP workflows. Compatible with `axib` and `chrome-devtools-axi`.";
 
 const VERSION = readPackageVersion();
 const RAW_STDOUT_MARKER = "__CHROME_DEVTOOLS_AXI_RAW__";
@@ -50,7 +57,7 @@ export type MainOptions = {
 };
 
 export const TOP_HELP = `usage: chrome-devtools-axi [command] [args] [flags]
-commands[34]:
+commands[36]:
   open <url>, snapshot, screenshot <path>, click @<uid>, fill @<uid> <text>,
   type <text>, press <key>, scroll <dir>, back, wait <ms|text>, eval <js>,
   run,
@@ -58,7 +65,7 @@ commands[34]:
   upload @<uid> <path>, pages, newpage <url>, selectpage <id>, closepage <id>,
   resize <w> <h>, emulate, console, console-get <id>, network,
   network-get [id], lighthouse, perf-start, perf-stop,
-  perf-insight <set> <name>, heap <path>, start, stop
+  perf-insight <set> <name>, heap <path>, start, stop, setup, setup hooks, update
 
 flags[2]:
   --help, -v/-V/--version
@@ -88,7 +95,6 @@ environment:
                                       export CHROME_DEVTOOLS_AXI_MCP_PATH="\$(npm prefix -g)/lib/node_modules/chrome-devtools-mcp/build/src/bin/chrome-devtools-mcp.js"
   CHROME_DEVTOOLS_AXI_BRIDGE_TIMEOUT_MS
                                     Bridge readiness deadline in ms (default: 30000, min: 1000)
-  CHROME_DEVTOOLS_AXI_DISABLE_HOOKS Set to 1 to skip auto-installing session hooks
 
 gpu:
   Headless Chrome cannot access hardware GPU on most Linux systems.
@@ -555,6 +561,43 @@ args:
 
 examples:
   chrome-devtools-axi heap ./snapshot.heapsnapshot`,
+
+  setup: `usage: chrome-devtools-axi setup [--install] [--project <path>] [--json] [--yes]
+       chrome-devtools-axi setup hooks
+
+Report Axis Browser workflow readiness, detect the optional browser-skill
+router, and optionally run permission-gated project setup.
+
+Default setup is read-only. In non-interactive contexts, --install previews
+commands unless --yes is passed. The command never writes secrets, .env files,
+shell rc files, MCP credential files, or user credential stores.
+
+flags:
+  --install         Run or preview setup actions
+  --project <path>  Target project directory (default: current directory)
+  --json            Emit stable machine-readable status
+  --yes, -y         Allow non-interactive project setup after review
+
+actions:
+  hooks             Install or repair Claude Code and Codex SessionStart hooks
+
+examples:
+  chrome-devtools-axi setup
+  chrome-devtools-axi setup --json
+  chrome-devtools-axi setup --install --project .
+  chrome-devtools-axi setup hooks`,
+
+  update: `usage: chrome-devtools-axi update [--check]
+Axis Browser is distributed from GitHub, not the upstream npm package.
+
+This fork disables the SDK npm self-updater because npm package
+\`chrome-devtools-axi\` resolves to upstream, not Nirmantix/axis-browser.
+
+Update with:
+  npm install -g github:Nirmantix/axis-browser
+
+Or with Bun:
+  bun add -g github:Nirmantix/axis-browser`,
 };
 
 export function getCommandHelp(command: string): string | null {
@@ -1044,8 +1087,7 @@ async function markPageSnapshotGeneration(generation: number): Promise<void> {
   return state.generation;
 }`,
     });
-  } catch {
-  }
+  } catch {}
 }
 
 async function getPageRefGeneration(caller: ToolCaller): Promise<number> {
@@ -1075,7 +1117,9 @@ export async function parseUidFresh(
 ): Promise<string> {
   const { generation } = parseStampedUid(arg);
   const current =
-    generation === null ? getCurrentGeneration() : await getPageRefGeneration(caller);
+    generation === null
+      ? getCurrentGeneration()
+      : await getPageRefGeneration(caller);
   const check = checkUidGeneration(arg, current);
   if (check.stale) {
     throwStaleRef(arg, check.refGeneration, current);
@@ -1131,12 +1175,16 @@ async function handleOpen(args: string[], full: boolean): Promise<string> {
     }
     await callTool("new_page", { url });
   }
-  const snapshot = await stampFresh(stripSnapshotHeader(await callTool("take_snapshot")));
+  const snapshot = await stampFresh(
+    stripSnapshotHeader(await callTool("take_snapshot")),
+  );
   return formatPageOutput(snapshot, "open", url, full);
 }
 
 async function handleSnapshot(full: boolean): Promise<string> {
-  const snapshot = await stampFresh(stripSnapshotHeader(await callTool("take_snapshot")));
+  const snapshot = await stampFresh(
+    stripSnapshotHeader(await callTool("take_snapshot")),
+  );
   return formatPageOutput(snapshot, "snapshot", undefined, full);
 }
 
@@ -1165,7 +1213,9 @@ async function handleClick(args: string[], full: boolean): Promise<string> {
     ]);
   }
 
-  const snapshot = await callWithSnapshot("click", { uid: await parseUidFresh(uid) });
+  const snapshot = await callWithSnapshot("click", {
+    uid: await parseUidFresh(uid),
+  });
   return formatPageOutput(snapshot, "click", undefined, full);
 }
 
@@ -1211,7 +1261,9 @@ async function handleType(args: string[], full: boolean): Promise<string> {
   }
 
   await callTool("type_text", { text });
-  const snapshot = await stampFresh(stripSnapshotHeader(await callTool("take_snapshot")));
+  const snapshot = await stampFresh(
+    stripSnapshotHeader(await callTool("take_snapshot")),
+  );
   return formatPageOutput(snapshot, "type", undefined, full);
 }
 
@@ -1225,13 +1277,17 @@ async function handleScroll(args: string[], full: boolean): Promise<string> {
   }
 
   await callTool("evaluate_script", { function: fn });
-  const snapshot = await stampFresh(stripSnapshotHeader(await callTool("take_snapshot")));
+  const snapshot = await stampFresh(
+    stripSnapshotHeader(await callTool("take_snapshot")),
+  );
   return formatPageOutput(snapshot, "scroll", undefined, full);
 }
 
 async function handleBack(full: boolean): Promise<string> {
   await callTool("navigate_page", { type: "back" });
-  const snapshot = await stampFresh(stripSnapshotHeader(await callTool("take_snapshot")));
+  const snapshot = await stampFresh(
+    stripSnapshotHeader(await callTool("take_snapshot")),
+  );
   return formatPageOutput(snapshot, "back", undefined, full);
 }
 
@@ -1350,7 +1406,9 @@ async function handleNewPage(args: string[], full: boolean): Promise<string> {
   const toolArgs: Record<string, unknown> = { url };
   if (background) toolArgs.background = true;
   await callTool("new_page", toolArgs);
-  const snapshot = await stampFresh(stripSnapshotHeader(await callTool("take_snapshot")));
+  const snapshot = await stampFresh(
+    stripSnapshotHeader(await callTool("take_snapshot")),
+  );
   return formatPageOutput(snapshot, "newpage", url, full);
 }
 
@@ -1371,7 +1429,9 @@ async function handleSelectPage(
     ]);
   }
   await callTool("select_page", { pageId });
-  const snapshot = await stampFresh(stripSnapshotHeader(await callTool("take_snapshot")));
+  const snapshot = await stampFresh(
+    stripSnapshotHeader(await callTool("take_snapshot")),
+  );
   return formatPageOutput(snapshot, "selectpage", undefined, full);
 }
 
@@ -1434,7 +1494,9 @@ async function handleHover(args: string[], full: boolean): Promise<string> {
       "Run `chrome-devtools-axi hover @<uid>` — get uid from snapshot",
     ]);
   }
-  const snapshot = await callWithSnapshot("hover", { uid: await parseUidFresh(uid) });
+  const snapshot = await callWithSnapshot("hover", {
+    uid: await parseUidFresh(uid),
+  });
   return formatPageOutput(snapshot, "hover", undefined, full);
 }
 
@@ -1461,7 +1523,10 @@ async function handleFillForm(args: string[], full: boolean): Promise<string> {
     ]);
   }
   const validated = await Promise.all(
-    entries.map(async (e) => ({ uid: await parseUidFresh(e.uid), value: e.value })),
+    entries.map(async (e) => ({
+      uid: await parseUidFresh(e.uid),
+      value: e.value,
+    })),
   );
   const snapshot = await callWithSnapshot("fill_form", { elements: validated });
   return formatPageOutput(snapshot, "fillform", undefined, full);
@@ -1620,6 +1685,62 @@ async function handleRun(): Promise<string> {
   return RAW_STDOUT_MARKER + trimSingleTrailingNewline(result.stdout);
 }
 
+async function handleSetup(args: string[]): Promise<string> {
+  let parsed: ParsedSetupArgs;
+  try {
+    parsed = parseSetupArgs(args);
+  } catch (error) {
+    throw new CdpError(
+      error instanceof Error ? error.message : "Unknown setup option",
+      "VALIDATION_ERROR",
+      [
+        "Run `chrome-devtools-axi setup` for a read-only report",
+        "Run `chrome-devtools-axi setup hooks` to install agent hooks",
+      ],
+    );
+  }
+
+  if (parsed.action === "hooks") {
+    installHooksOrThrow();
+
+    return renderOutput([
+      "hooks:\n  status: installed\n  integrations: Claude Code, Codex",
+      renderHelp([
+        "Restart your agent session to receive chrome-devtools-axi ambient context",
+      ]),
+    ]);
+  }
+
+  const report = runSetupWorkflow(parsed);
+  if (parsed.json) {
+    return JSON.stringify(report, null, 2);
+  }
+  return formatSetupReport(report);
+}
+
+async function handleUpdate(args: string[]): Promise<string> {
+  const valid =
+    args.length === 0 ||
+    (args.length === 1 && (args[0] === "--check" || args[0] === "--help"));
+  if (!valid) {
+    throw new CdpError("Unknown update option", "VALIDATION_ERROR", [
+      "Run `chrome-devtools-axi update --help`",
+    ]);
+  }
+
+  return renderOutput([
+    encode({
+      update: "disabled",
+      reason: "Axis Browser is distributed from GitHub, not upstream npm",
+    }),
+    renderHelp([
+      "Run `npm install -g github:Nirmantix/axis-browser` to update with npm",
+      "Run `bun add -g github:Nirmantix/axis-browser` to update with Bun",
+      "`bun add -g chrome-devtools-axi` and `npx -y chrome-devtools-axi` resolve to upstream, not this fork",
+    ]),
+  ]);
+}
+
 async function handleHome(_full: boolean): Promise<string> {
   const result = await getSessionSnapshotIfRunning();
   if (!result) {
@@ -1694,6 +1815,8 @@ const COMMANDS: Record<string, CommandFn> = {
   heap: withoutFullFlag(handleHeap),
   start: async () => handleStart(),
   stop: async () => handleStop(),
+  setup: withoutFullFlag(handleSetup),
+  update: withoutFullFlag(handleUpdate),
 };
 
 export async function main(
@@ -1711,9 +1834,6 @@ export async function main(
     description: HOME_DESCRIPTION,
     version: VERSION,
     topLevelHelp: TOP_HELP,
-    ...(process.env.CHROME_DEVTOOLS_AXI_DISABLE_HOOKS === "1"
-      ? { hooks: false }
-      : {}),
     home: async (args) => handleHome(homeFull || splitFullFlag(args).full),
     commands: COMMANDS,
     getCommandHelp,
