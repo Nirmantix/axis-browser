@@ -110,7 +110,9 @@ body {
 .site-nav {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 0;
+  min-width: 0;
 }
 
 .nav-link {
@@ -497,7 +499,8 @@ h1 {
   margin-top: 16px;
 }
 
-.reference-list a {
+.reference-list a,
+.reference-list span {
   padding: 7px 14px;
   border: 1px solid var(--line);
   border-radius: var(--radius-full);
@@ -807,6 +810,7 @@ pre .cmd     { color: #a6e3a1; }
     order: 3;
     width: 100%;
     justify-content: center;
+    row-gap: 4px;
     padding-top: 6px;
   }
 
@@ -817,6 +821,10 @@ pre .cmd     { color: #a6e3a1; }
   .theme-toggle {
     order: 2;
     margin-left: auto;
+  }
+
+  .font-toggle {
+    order: 2;
   }
 
   .intro {
@@ -934,7 +942,8 @@ pre .cmd     { color: #a6e3a1; }
     padding: 16px;
   }
 
-  .reference-list a {
+  .reference-list a,
+  .reference-list span {
     font-size: calc(12px + var(--font-step));
     padding: 6px 10px;
   }

@@ -54,7 +54,7 @@ describe("getCommandHelp", () => {
     expect(getCommandHelp("stop")).not.toContain("--full");
   });
 
-  it("has help for all 13 commands", () => {
+  it("has help for all commands", () => {
     const commands = [
       "open",
       "snapshot",
@@ -69,6 +69,8 @@ describe("getCommandHelp", () => {
       "eval",
       "start",
       "stop",
+      "setup",
+      "update",
     ];
     for (const cmd of commands) {
       expect(getCommandHelp(cmd)).not.toBeNull();

@@ -75,6 +75,11 @@ interface MutableSetupRuntime extends Required<SetupRuntime> {
   packageRoot: string;
 }
 
+interface RouterScriptContext {
+  env: Env;
+  report: SetupReport;
+}
+
 const STANDARD_AGENT_SKILL_PATHS = [
   [".codex", "skills", "browser-skill"],
   [".config", "agents", "skills", "browser-skill"],
@@ -247,7 +252,12 @@ export function runSetupWorkflow(
     report.router.runs.every((run) => run.exitCode === 0);
 
   if (report.mode === "report") {
-    report.router.runs.push(runRouterScript(checkScript, [], report));
+    report.router.runs.push(
+      runRouterScript(checkScript, [], {
+        env: resolved.env,
+        report,
+      }),
+    );
     report.router.status = runsOk() ? "checked" : "error";
     return report;
   }
@@ -255,24 +265,37 @@ export function runSetupWorkflow(
   if (report.mode === "preview") {
     if (existsSync(setupScript)) {
       report.router.runs.push(
-        runRouterScript(setupScript, ["--dry-run"], report),
+        runRouterScript(setupScript, ["--dry-run"], {
+          env: resolved.env,
+          report,
+        }),
       );
     }
     report.router.runs.push(
-      runRouterScript(checkScript, ["--print-install-commands"], report),
+      runRouterScript(checkScript, ["--print-install-commands"], {
+        env: resolved.env,
+        report,
+      }),
     );
     report.router.status = runsOk() ? "previewed" : "error";
     return report;
   }
 
   if (existsSync(setupScript)) {
-    report.router.runs.push(runRouterScript(setupScript, [], report));
+    report.router.runs.push(
+      runRouterScript(setupScript, [], {
+        env: resolved.env,
+        report,
+      }),
+    );
   }
 
-  const installArgs = resolved.isTTY
-    ? ["--install"]
-    : ["--print-install-commands"];
-  report.router.runs.push(runRouterScript(checkScript, installArgs, report));
+  report.router.runs.push(
+    runRouterScript(checkScript, ["--install"], {
+      env: resolved.env,
+      report,
+    }),
+  );
   report.router.status = runsOk() ? "installed" : "error";
   return report;
 }
@@ -431,16 +454,16 @@ function builtCliCheck(packageRoot: string): SetupCheck {
 function runRouterScript(
   scriptPath: string,
   args: string[],
-  report: SetupReport,
+  context: RouterScriptContext,
 ): RouterRun {
   const command = ["bash", scriptPath, ...args];
   const result = spawnSync(command[0], command.slice(1), {
-    cwd: report.projectPath,
+    cwd: context.report.projectPath,
     encoding: "utf8",
     env: {
-      ...process.env,
-      BROWSER_SKILL_DIR: report.browserSkill.path,
-      SKILL_DIR: report.browserSkill.path,
+      ...context.env,
+      BROWSER_SKILL_DIR: context.report.browserSkill.path,
+      SKILL_DIR: context.report.browserSkill.path,
     },
     maxBuffer: 1024 * 1024,
     timeout: 120000,
@@ -448,7 +471,7 @@ function runRouterScript(
 
   return {
     command,
-    cwd: report.projectPath,
+    cwd: context.report.projectPath,
     exitCode: result.status,
     stdout: result.stdout ?? "",
     stderr: result.error?.message ?? result.stderr ?? "",

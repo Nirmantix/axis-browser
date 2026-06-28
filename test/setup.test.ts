@@ -41,6 +41,7 @@ function makeBrowserSkill(root: string): string {
     [
       "#!/usr/bin/env bash",
       'printf \'check:%s:%s\\n\' "$PWD" "$*"',
+      'printf \'env:%s\\n\' "${AXIS_TEST_ENV:-}"',
       "exit 0",
       "",
     ].join("\n"),
@@ -50,6 +51,7 @@ function makeBrowserSkill(root: string): string {
     [
       "#!/usr/bin/env bash",
       'printf \'setup:%s:%s\\n\' "$PWD" "$*"',
+      'printf \'env:%s\\n\' "${AXIS_TEST_ENV:-}"',
       "exit 0",
       "",
     ].join("\n"),
@@ -179,7 +181,7 @@ describe("resolveBrowserSkillDir", () => {
 describe("runSetupWorkflow", () => {
   it("returns a read-only report when browser-skill is absent", () => {
     const root = tempDir();
-    const report = createSetupReport(workflowArgs([]), {
+    const report = runSetupWorkflow(workflowArgs([]), {
       cwd: root,
       env: {},
       home: join(root, "home"),
@@ -200,7 +202,7 @@ describe("runSetupWorkflow", () => {
     const skillDir = makeBrowserSkill(join(root, "skill"));
     const report = runSetupWorkflow(workflowArgs([]), {
       cwd: root,
-      env: { BROWSER_SKILL_DIR: skillDir },
+      env: { AXIS_TEST_ENV: "from-runtime", BROWSER_SKILL_DIR: skillDir },
       home: join(root, "home"),
       isTTY: false,
     });
@@ -211,6 +213,7 @@ describe("runSetupWorkflow", () => {
       "bash",
       join(skillDir, "scripts", "check-prerequisites.sh"),
     ]);
+    expect(report.router.runs[0].stdout).toContain("env:from-runtime");
   });
 
   it("previews install actions in non-interactive mode without --yes", () => {
@@ -227,6 +230,24 @@ describe("runSetupWorkflow", () => {
     expect(report.router.status).toBe("previewed");
     expect(report.router.runs[0].command).toContain("--dry-run");
     expect(report.router.runs[1].command).toContain("--print-install-commands");
+  });
+
+  it("runs install checks with --install when non-interactive --yes is present", () => {
+    const root = tempDir();
+    const skillDir = makeBrowserSkill(join(root, "skill"));
+    const report = runSetupWorkflow(workflowArgs(["--install", "--yes"]), {
+      cwd: root,
+      env: { BROWSER_SKILL_DIR: skillDir },
+      home: join(root, "home"),
+      isTTY: false,
+    });
+
+    expect(report.mode).toBe("install");
+    expect(report.router.status).toBe("installed");
+    expect(report.router.runs.at(-1)?.command).toContain("--install");
+    expect(report.router.runs.at(-1)?.command).not.toContain(
+      "--print-install-commands",
+    );
   });
 
   it("scopes router setup to --project", () => {

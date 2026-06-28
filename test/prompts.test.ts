@@ -1,12 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { readFile } from "node:fs/promises";
-import path from "node:path";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 
-const root = process.cwd();
+const repoRoot = fileURLToPath(new URL("..", import.meta.url));
 const prompts = ["absetup", "abcheck", "abuse", "abhealth"] as const;
 
 async function promptBody(name: (typeof prompts)[number]) {
-  return readFile(path.join(root, "prompts", `${name}.md`), "utf8");
+  return readFile(join(repoRoot, "prompts", `${name}.md`), "utf8");
 }
 
 describe("Axis Browser workflow prompts", () => {

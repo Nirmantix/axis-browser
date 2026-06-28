@@ -129,7 +129,8 @@ ownership.
   contract tests.
 - Nested `skills/browser-skill/` repo: `node --test test/*.node.mjs` covers
   verified-run and prerequisite script behavior.
-- Microsite: `python3 skills/project-guide-microsite/scripts/validate_static_site.py project-guide-site`.
+- Microsite: open `project-guide-site/index.html` locally and check navigation
+  links before publishing changed pages.
 
 Do not claim the parent Vitest suite validates shell scripts or nested skill
 behavior. Use the targeted tests above.
