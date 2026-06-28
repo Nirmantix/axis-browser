@@ -11,6 +11,7 @@ import { fileURLToPath } from "node:url";
 import { join, resolve } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import {
+  chromeCheck,
   createSetupReport,
   parseSetupArgs,
   resolveBrowserSkillDir,
@@ -270,6 +271,44 @@ describe("runSetupWorkflow", () => {
     expect(report.router.runs[0].stdout).toContain("setup:");
     expect(report.router.runs[0].stdout).toContain("target-project");
   });
+});
+
+describe("chromeCheck", () => {
+  it("detects Windows Chrome install locations", () => {
+    const chrome =
+      "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe";
+    const result = chromeCheck("win32", (path) => path === chrome);
+    expect(result).toEqual({ status: "ok", path: chrome });
+  });
+
+  it("detects Windows Edge install locations", () => {
+    const edge =
+      "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe";
+    const result = chromeCheck("win32", (path) => path === edge);
+    expect(result).toEqual({ status: "ok", path: edge });
+  });
+
+  it("reports missing when no Windows browser is installed", () => {
+    const result = chromeCheck("win32", () => false);
+    expect(result.status).toBe("missing");
+  });
+  it("detects per-user Windows installs via LOCALAPPDATA", () => {
+    const previous = process.env.LOCALAPPDATA;
+    process.env.LOCALAPPDATA = "C:\\Users\\test\\AppData\\Local";
+    try {
+      const chrome =
+        "C:\\Users\\test\\AppData\\Local\\Google\\Chrome\\Application\\chrome.exe";
+      const result = chromeCheck("win32", (path) => path === chrome);
+      expect(result).toEqual({ status: "ok", path: chrome });
+    } finally {
+      if (previous === undefined) {
+        delete process.env.LOCALAPPDATA;
+      } else {
+        process.env.LOCALAPPDATA = previous;
+      }
+    }
+  });
+
 });
 
 describe("setup docs and source portability", () => {

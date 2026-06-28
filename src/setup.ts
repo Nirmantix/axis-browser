@@ -394,9 +394,12 @@ function commandCheck(command: string, args: string[] = []): SetupCheck {
   };
 }
 
-function commandPath(command: string): string | undefined {
+function commandPath(
+  command: string,
+  platform: NodeJS.Platform = process.platform,
+): string | undefined {
   const lookup =
-    process.platform === "win32"
+    platform === "win32"
       ? `where ${command}`
       : `command -v ${shellQuote(command)}`;
   const result = spawnSync(lookup, {
@@ -410,7 +413,10 @@ function commandPath(command: string): string | undefined {
   return result.stdout.trim().split("\n")[0];
 }
 
-function chromeCheck(platform: NodeJS.Platform): SetupCheck {
+export function chromeCheck(
+  platform: NodeJS.Platform,
+  exists: (path: string) => boolean = existsSync,
+): SetupCheck {
   const commandNames = [
     "google-chrome",
     "chromium",
@@ -419,25 +425,49 @@ function chromeCheck(platform: NodeJS.Platform): SetupCheck {
     "msedge",
   ];
   for (const command of commandNames) {
-    const path = commandPath(command);
+    const path = commandPath(command, platform);
     if (path) {
       return { status: "ok", path };
     }
   }
 
-  if (platform === "darwin") {
-    for (const appPath of [
-      "/Applications/Google Chrome.app",
-      "/Applications/Chromium.app",
-      "/Applications/Microsoft Edge.app",
-    ]) {
-      if (existsSync(appPath)) {
-        return { status: "ok", path: appPath };
-      }
+  for (const appPath of platformAppPaths(platform)) {
+    if (exists(appPath)) {
+      return { status: "ok", path: appPath };
     }
   }
 
   return { status: "missing" };
+}
+
+function platformAppPaths(platform: NodeJS.Platform): string[] {
+  if (platform === "darwin") {
+    return [
+      "/Applications/Google Chrome.app",
+      "/Applications/Chromium.app",
+      "/Applications/Microsoft Edge.app",
+    ];
+  }
+  if (platform === "win32") {
+    const programFiles = process.env.ProgramFiles ?? "C:\\Program Files";
+    const programFilesX86 =
+      process.env["ProgramFiles(x86)"] ?? "C:\\Program Files (x86)";
+    const localAppData = process.env.LOCALAPPDATA;
+    return [
+      `${programFiles}\\Google\\Chrome\\Application\\chrome.exe`,
+      `${programFilesX86}\\Google\\Chrome\\Application\\chrome.exe`,
+      `${programFilesX86}\\Chromium\\Application\\chrome.exe`,
+      `${programFilesX86}\\Microsoft\\Edge\\Application\\msedge.exe`,
+      `${programFiles}\\Microsoft\\Edge\\Application\\msedge.exe`,
+      ...(localAppData
+        ? [
+            `${localAppData}\\Google\\Chrome\\Application\\chrome.exe`,
+            `${localAppData}\\Microsoft\\Edge\\Application\\msedge.exe`,
+          ]
+        : []),
+    ];
+  }
+  return [];
 }
 
 function builtCliCheck(packageRoot: string): SetupCheck {
