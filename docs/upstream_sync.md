@@ -77,6 +77,40 @@ Hook installation is now explicit:
 Do not restore automatic hook installation on normal CLI startup. Development
 entrypoints must not mutate user agent config.
 
+## Fork-Owned Setup Command
+
+`setup` is fork-owned Axis workflow bootstrap behavior, not an upstream hook-only
+command. Preserve:
+
+- `src/setup.ts` as the setup engine for parsing, detection, router resolution,
+  report formatting, and safe router script delegation.
+- `src/cli.ts`: `handleSetup` must route `setup hooks` to
+  `installHooksOrThrow()` and all other setup modes to `runSetupWorkflow`.
+- `test/setup.test.ts` coverage for parser behavior, resolver precedence,
+  absent-router reporting, non-interactive install preview, and project scoping.
+- `axis-browser setup` as a read-only bootstrap report.
+- `axis-browser setup --install` as opt-in, permission-gated setup behavior.
+- `axis-browser setup --project <path>` for target project scoping.
+- `axis-browser setup --json` as stable machine-readable status.
+- `axis-browser setup hooks` as the existing Claude Code and Codex hook
+  installer.
+
+Required setup behavior:
+
+- Default setup must not mutate files.
+- Non-interactive `--install` must not hang on prompts; it previews commands
+  unless the operator explicitly passes `--yes`.
+- Setup must never write secrets, `.env` files, shell rc files, MCP credential
+  files, or user credential stores.
+- Resolve `browser-skill` in this order:
+  `BROWSER_SKILL_DIR`, `AXIS_BROWSER_HOME/skills/browser-skill`,
+  `AXIS_PORTABLE_SKILLS_DIR/browser-skill`, then standard agent skill
+  locations.
+- Do not hardcode personal workstation paths.
+- If the router is absent, report core Axis status and say the router source is
+  not configured unless `BROWSER_SKILL_SOURCE_URL` is set.
+- Do not assume a public `browser-skill` repository URL until one exists.
+
 ## Rejected Upstream Skill And Infra
 
 Do not accept these upstream paths into the fork:
@@ -86,11 +120,13 @@ Do not accept these upstream paths into the fork:
 - `scripts/build-skill.ts`
 - `test/skill.test.ts`
 - `AGENTS.md`
-- `CLAUDE.md`
 - `.airlock/`
 - `.agents/`
 - `.no-mistakes/`
 - `.github/workflows/release-please.yml`
+
+`CLAUDE.md` is allowed only as optional fork-owned public onboarding if added
+intentionally. Do not accept an upstream-generated Claude file by default.
 
 If upstream reintroduces any of them, remove them from the merge result. Do not
 rely on `.gitignore` to evict tracked files; use `git rm` for tracked upstream

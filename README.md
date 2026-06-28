@@ -16,6 +16,7 @@ It is optimized for:
 - low-token page inspection
 - repeatable debugging with console, network, and snapshots
 - practical shared-Chrome debugging with `axis-browser`
+- read-only setup reports for Axis workflow readiness
 
 ## Documentation Map
 
@@ -241,6 +242,57 @@ help[1]:
 
 Refs in snapshot output carry a `g<N>:` generation prefix that bumps every time a new accessibility tree is captured. Pass refs back exactly as printed — if the page re-rendered between snapshot and action, the action fails loudly with `STALE_REF` instead of silently no-op'ing, so the agent re-snapshots and retries.
 After a state-changing action, confirm the outcome with a fresh `snapshot`, `eval`, or `screenshot` before reporting success. A current ref can still produce no visible page change; `STALE_REF` only catches stale refs.
+
+## Setup Axis Workflow
+
+Run the bootstrap report from any project:
+
+```bash
+axis-browser setup
+```
+
+The default command is read-only. It checks Node, pnpm/Corepack,
+Chrome/Chromium, the local build, global Axis aliases, and whether the optional
+`browser-skill` workflow router is available. For machine-readable status:
+
+```bash
+axis-browser setup --json
+```
+
+Target a project explicitly:
+
+```bash
+axis-browser setup --project /path/to/project
+```
+
+Permission-gated setup is opt-in:
+
+```bash
+axis-browser setup --install --project /path/to/project
+```
+
+In non-interactive agent runs, `--install` previews commands and does not hang
+on prompts. Add `--yes` only after reviewing the printed actions. Setup never
+writes secrets, `.env` files, shell rc files, MCP credential files, or user
+credential stores.
+
+Router discovery order:
+
+- `BROWSER_SKILL_DIR`
+- `AXIS_BROWSER_HOME/skills/browser-skill`
+- `AXIS_PORTABLE_SKILLS_DIR/browser-skill`
+- standard agent skill locations
+
+If no router is configured, `axis-browser setup` still succeeds with core Axis
+status and reports that the router source is not configured. Set
+`BROWSER_SKILL_SOURCE_URL` if your environment has an approved source URL for
+the router.
+
+Agent hook setup remains explicit:
+
+```bash
+axis-browser setup hooks
+```
 
 ## Shared Chrome Quick Start
 
@@ -488,6 +540,10 @@ Axis Browser uses these connection modes in order:
 | `CHROME_DEVTOOLS_AXI_PORT` | Override the bridge port (default: `9224`) |
 | `CHROME_DEVTOOLS_AXI_MCP_PATH` | Absolute path to a local `chrome-devtools-mcp` binary (skips npx) |
 | `CHROME_DEVTOOLS_AXI_BRIDGE_TIMEOUT_MS` | Bridge readiness deadline in ms (default: `30000`; useful for slow npx bootstrap) |
+| `BROWSER_SKILL_DIR` | Absolute path to a local `browser-skill` checkout. Highest setup resolver priority |
+| `AXIS_BROWSER_HOME` | Axis Browser checkout root; setup looks for `skills/browser-skill` below it |
+| `AXIS_PORTABLE_SKILLS_DIR` | Directory containing portable skills; setup looks for `browser-skill` below it |
+| `BROWSER_SKILL_SOURCE_URL` | Approved source URL shown when no local router is configured; no public router URL is assumed |
 
 Examples:
 

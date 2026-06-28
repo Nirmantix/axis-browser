@@ -10,9 +10,16 @@ release history.
 ### Added
 
 * sync upstream `0.1.23`-`0.1.25` runtime and test updates
+* add `axis-browser setup` as a read-only Axis workflow bootstrap report with
+  `--json`, `--project`, and non-interactive-safe `--install` modes
+* add optional `browser-skill` router detection through `BROWSER_SKILL_DIR`,
+  `AXIS_BROWSER_HOME`, `AXIS_PORTABLE_SKILLS_DIR`, and standard agent skill
+  locations
 * add explicit `setup hooks` command for repairing agent `SessionStart` hooks
 * add a fork-safe `update` command that prints GitHub update guidance instead of
   invoking the upstream npm self-updater
+* add root `SKILL.md` discovery guidance that points agents to
+  `axis-browser setup`
 * add lifecycle documentation in `docs/setup_and_dev.md`
 * add fork override documentation in `docs/upstream_sync.md`
 

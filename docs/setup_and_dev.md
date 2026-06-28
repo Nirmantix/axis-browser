@@ -31,6 +31,15 @@ Keep this lifecycle table in sync with the canonical environment reference in
 | `CHROME_DEVTOOLS_AXI_MCP_PATH` | No | Absolute path to a local `chrome-devtools-mcp` script. |
 | `CHROME_DEVTOOLS_AXI_BRIDGE_TIMEOUT_MS` | No | Bridge readiness timeout. Default: `30000`; minimum accepted value: `1000`. |
 
+Workflow setup uses these optional environment variables:
+
+| Variable | Required | Purpose |
+| --- | --- | --- |
+| `BROWSER_SKILL_DIR` | No | Absolute path to a local `browser-skill` checkout. Highest setup resolver priority. |
+| `AXIS_BROWSER_HOME` | No | Axis Browser checkout root; setup looks for `skills/browser-skill` below it. |
+| `AXIS_PORTABLE_SKILLS_DIR` | No | Directory containing portable skills; setup looks for `browser-skill` below it. |
+| `BROWSER_SKILL_SOURCE_URL` | No | Approved source URL to show when no local router is configured. The CLI does not assume a public router URL. |
+
 ## Setup And Build
 
 Install dependencies:
@@ -69,6 +78,35 @@ Run the compiled CLI after building:
 node dist/bin/chrome-devtools-axi.js --help
 node dist/bin/chrome-devtools-axi.js --version
 ```
+
+Check Axis workflow readiness from the current project:
+
+```bash
+axis-browser setup
+```
+
+Get machine-readable setup status:
+
+```bash
+axis-browser setup --json
+```
+
+Target a different project:
+
+```bash
+axis-browser setup --project /path/to/project
+```
+
+Preview or run permission-gated project setup:
+
+```bash
+axis-browser setup --install --project /path/to/project
+```
+
+In non-interactive shells, `--install` previews router commands and does not
+prompt unless `--yes` is explicitly passed. The CLI itself never writes
+secrets, `.env` files, shell rc files, MCP credential files, or user credential
+stores.
 
 Expose the local checkout globally:
 
@@ -125,6 +163,13 @@ Install or repair agent session hooks:
 
 ```bash
 axis-browser setup hooks
+```
+
+Inspect workflow readiness without changing the project:
+
+```bash
+axis-browser setup
+axis-browser setup --json
 ```
 
 Check the installed version through all supported aliases:
@@ -184,6 +229,25 @@ axis-browser snapshot
 
 Then retry with the newly printed `@g<N>:<uid>` ref.
 
+If `axis-browser setup` reports `browserSkill.status: missing` and
+`source: not configured`, point the CLI at a local router checkout:
+
+```bash
+export BROWSER_SKILL_DIR=/path/to/browser-skill
+axis-browser setup
+```
+
+Or set an approved source URL for human guidance:
+
+```bash
+export BROWSER_SKILL_SOURCE_URL=https://example.invalid/browser-skill.git
+axis-browser setup
+```
+
+If `axis-browser setup --install` runs in a non-interactive agent session, read
+the printed preview commands. Re-run from a terminal, or add `--yes` only after
+reviewing the project-local actions.
+
 For large network bodies, write data to disk instead of the terminal:
 
 ```bash
@@ -215,6 +279,22 @@ Remove local checkout build artifacts:
 
 ```bash
 rm -rf dist coverage
+```
+
+Remove project-local browser workflow artifacts created by the optional
+`browser-skill` router only when they are no longer needed:
+
+```bash
+rm -rf .tmp/screenshots .tmp/scrapes .tmp/traces .tmp/reports .tmp/verified-runs
+```
+
+If `axis-browser setup hooks` installed SessionStart hooks, remove the
+`chrome-devtools-axi` hook entries from these files manually:
+
+```text
+~/.claude/settings.json
+~/.codex/hooks.json
+~/.codex/config.toml
 ```
 
 Remove local runtime state only when no Axis Browser bridge is running:

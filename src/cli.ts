@@ -17,6 +17,12 @@ import {
   runScript,
   wrapJsExpression,
 } from "./run.js";
+import {
+  formatSetupReport,
+  parseSetupArgs,
+  runSetupWorkflow,
+  type ParsedSetupArgs,
+} from "./setup.js";
 
 export { wrapJsExpression };
 import {
@@ -32,7 +38,7 @@ import { getSuggestions } from "./suggestions.js";
 import { installHooksOrThrow } from "./hooks.js";
 
 const HOME_DESCRIPTION =
-  'Axis Browser is a fast, agent-first CLI for Chrome automation and shared CDP workflows. Compatible with `axib` and `chrome-devtools-axi`.';
+  "Axis Browser is a fast, agent-first CLI for Chrome automation and shared CDP workflows. Compatible with `axib` and `chrome-devtools-axi`.";
 
 const VERSION = readPackageVersion();
 const RAW_STDOUT_MARKER = "__CHROME_DEVTOOLS_AXI_RAW__";
@@ -59,7 +65,7 @@ commands[36]:
   upload @<uid> <path>, pages, newpage <url>, selectpage <id>, closepage <id>,
   resize <w> <h>, emulate, console, console-get <id>, network,
   network-get [id], lighthouse, perf-start, perf-stop,
-  perf-insight <set> <name>, heap <path>, start, stop, setup hooks, update
+  perf-insight <set> <name>, heap <path>, start, stop, setup, setup hooks, update
 
 flags[2]:
   --help, -v/-V/--version
@@ -556,10 +562,29 @@ args:
 examples:
   chrome-devtools-axi heap ./snapshot.heapsnapshot`,
 
-  setup: `usage: chrome-devtools-axi setup hooks
-Install or repair agent SessionStart hooks for chrome-devtools-axi ambient context.
+  setup: `usage: chrome-devtools-axi setup [--install] [--project <path>] [--json] [--yes]
+       chrome-devtools-axi setup hooks
+
+Report Axis Browser workflow readiness, detect the optional browser-skill
+router, and optionally run permission-gated project setup.
+
+Default setup is read-only. In non-interactive contexts, --install previews
+commands unless --yes is passed. The command never writes secrets, .env files,
+shell rc files, MCP credential files, or user credential stores.
+
+flags:
+  --install         Run or preview setup actions
+  --project <path>  Target project directory (default: current directory)
+  --json            Emit stable machine-readable status
+  --yes, -y         Allow non-interactive project setup after review
+
+actions:
+  hooks             Install or repair Claude Code and Codex SessionStart hooks
 
 examples:
+  chrome-devtools-axi setup
+  chrome-devtools-axi setup --json
+  chrome-devtools-axi setup --install --project .
   chrome-devtools-axi setup hooks`,
 
   update: `usage: chrome-devtools-axi update [--check]
@@ -1661,20 +1686,36 @@ async function handleRun(): Promise<string> {
 }
 
 async function handleSetup(args: string[]): Promise<string> {
-  if (args.length !== 1 || args[0] !== "hooks") {
-    throw new CdpError("Unknown setup action", "VALIDATION_ERROR", [
-      "Run `chrome-devtools-axi setup hooks`",
+  let parsed: ParsedSetupArgs;
+  try {
+    parsed = parseSetupArgs(args);
+  } catch (error) {
+    throw new CdpError(
+      error instanceof Error ? error.message : "Unknown setup option",
+      "VALIDATION_ERROR",
+      [
+        "Run `chrome-devtools-axi setup` for a read-only report",
+        "Run `chrome-devtools-axi setup hooks` to install agent hooks",
+      ],
+    );
+  }
+
+  if (parsed.action === "hooks") {
+    installHooksOrThrow();
+
+    return renderOutput([
+      "hooks:\n  status: installed\n  integrations: Claude Code, Codex",
+      renderHelp([
+        "Restart your agent session to receive chrome-devtools-axi ambient context",
+      ]),
     ]);
   }
 
-  installHooksOrThrow();
-
-  return renderOutput([
-    "hooks:\n  status: installed\n  integrations: Claude Code, Codex",
-    renderHelp([
-      "Restart your agent session to receive chrome-devtools-axi ambient context",
-    ]),
-  ]);
+  const report = runSetupWorkflow(parsed);
+  if (parsed.json) {
+    return JSON.stringify(report, null, 2);
+  }
+  return formatSetupReport(report);
 }
 
 async function handleUpdate(args: string[]): Promise<string> {
