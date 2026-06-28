@@ -22,8 +22,10 @@ It is optimized for:
 This repo keeps a small set of public docs with distinct roles:
 
 - `README.md` — source of truth for install, commands, environment variables, runtime behavior, and development
+- `docs/setup_and_dev.md` — setup, build, usage, troubleshooting, and teardown lifecycle for the CLI
 - `docs/vibe-coding-browser-workflow.md` — source of truth for the Axis Browser shared-`9222` workflow and troubleshooting habits
 - `docs/better-workflow-lifecycle-design.md` — source of truth for the broader Axis Browser workflow lifecycle: machine setup, skill availability, project readiness, task use, and health audits
+- `docs/upstream_sync.md` — fork override shield for future upstream merges
 
 The optional `skills/browser-skill/` folder is intentionally ignored by the
 parent Axis Browser repo and is maintained as its own standalone nested Git
@@ -198,6 +200,25 @@ Expose the commands globally from the checkout:
 npm link
 ```
 
+## Benchmarks
+
+Agent ergonomics is measurable.
+The [axi benchmark](https://axi.md) runs the same 14 real-world browsing tasks (Wikipedia research, GitHub navigation, multi-site comparison, and more) through 7 browser automation setups - 5 repeats each, with `claude-sonnet-4-6` as the agent and an LLM judge scoring task success.
+
+Axis Browser's upstream-compatible `chrome-devtools-axi` command posts the lowest input tokens, cost, duration, and turn count of all 7 conditions, with 100% task success:
+
+| Condition                            | Avg Input Tokens | Avg Cost/Task | Avg Duration | Avg Turns | Success  |
+| ------------------------------------ | ---------------- | ------------- | ------------ | --------- | -------- |
+| **Axis Browser / chrome-devtools-axi** | **79,141**       | **$0.074**    | **21.5s**    | **4.5**   | **100%** |
+| dev-browser                          | 82,532           | $0.078        | 28.6s        | 4.9       | 99%      |
+| agent-browser (Vercel)               | 93,074           | $0.088        | 24.6s        | 4.8       | 99%      |
+| chrome-devtools-mcp + compressor CLI | 130,779          | $0.091        | 29.7s        | 7.6       | 100%     |
+| chrome-devtools-mcp + ToolSearch     | 133,712          | $0.096        | 29.4s        | 7.5       | 99%      |
+| chrome-devtools-mcp (raw MCP)        | 184,711          | $0.101        | 26.0s        | 6.2       | 99%      |
+| chrome-devtools-mcp code execution   | 129,606          | $0.120        | 36.2s        | 6.4       | 100%     |
+
+Against raw chrome-devtools-mcp - the very server this CLI wraps - that is 57% fewer input tokens, 26% lower cost, and 27% fewer agent turns.
+
 ## Quick Start
 
 ```bash
@@ -219,6 +240,7 @@ help[1]:
 ```
 
 Refs in snapshot output carry a `g<N>:` generation prefix that bumps every time a new accessibility tree is captured. Pass refs back exactly as printed — if the page re-rendered between snapshot and action, the action fails loudly with `STALE_REF` instead of silently no-op'ing, so the agent re-snapshots and retries.
+After a state-changing action, confirm the outcome with a fresh `snapshot`, `eval`, or `screenshot` before reporting success. A current ref can still produce no visible page change; `STALE_REF` only catches stale refs.
 
 ## Shared Chrome Quick Start
 
@@ -246,6 +268,40 @@ axis-browser pages
 
 For the full public shared-browser operating model, read:
 - [docs/vibe-coding-browser-workflow.md](docs/vibe-coding-browser-workflow.md)
+
+## Session Hook Setup
+
+To install or repair ambient `SessionStart` hooks for supported agents:
+
+```bash
+axis-browser setup hooks
+```
+
+This installs guidance for Claude Code and Codex so a new agent
+session can see current Axis Browser session context. Restart the agent session
+after running it. Development entrypoints such as `pnpm run dev` and
+`bin/chrome-devtools-axi.ts` are guarded from accidental hook installation.
+
+## Updating Axis Browser
+
+Axis Browser is distributed from GitHub. The upstream npm package named
+`chrome-devtools-axi` is not this fork, so the SDK npm self-updater is disabled
+in this project.
+
+Update with npm:
+
+```bash
+npm install -g github:Nirmantix/axis-browser
+```
+
+Update with Bun:
+
+```bash
+bun add -g github:Nirmantix/axis-browser
+```
+
+Running `axis-browser update` or `axis-browser update --check` prints this
+GitHub update guidance instead of installing from npm.
 
 ## Evidence-Backed Agent Workflows
 
@@ -347,6 +403,8 @@ axis-browser eval "() => { const rows = [...document.querySelectorAll('tr')]; re
 | `network`          | List network requests          |
 | `network-get [id]` | Get a specific network request |
 
+For large request or response bodies, prefer `network-get <id> --response-file <path>` or `--request-file <path>` so the body goes to disk instead of flooding agent context.
+
 ### Performance
 
 | Command                     | Description                   |
@@ -359,10 +417,18 @@ axis-browser eval "() => { const rows = [...document.querySelectorAll('tr')]; re
 
 ### Bridge
 
-| Command | Description             |
-| ------- | ----------------------- |
-| `start` | Start the bridge server |
-| `stop`  | Stop the bridge server  |
+| Command       | Description                   |
+| ------------- | ----------------------------- |
+| `start`       | Start the bridge server       |
+| `stop`        | Stop the bridge server        |
+| `setup hooks` | Install or repair agent hooks |
+
+### Maintenance
+
+| Command          | Description                                            |
+| ---------------- | ------------------------------------------------------ |
+| `update`         | Show GitHub update guidance for this fork              |
+| `update --check` | Show GitHub update guidance without contacting npm     |
 
 Running with no command shows the CLI home view. It prepends `bin` and `description` metadata, then includes the current snapshot when a browser session is active or the no-session status/help block when one is not.
 
@@ -372,6 +438,7 @@ Running with no command shows the CLI home view. It prepends `bin` and `descript
 | --------------------------- | ------------------------------------------- |
 | `--help`                    | Show usage information                      |
 | `-v`, `-V`, `--version`     | Show the installed CLI version              |
+| `--check`                   | Show GitHub update guidance (update)        |
 | `--full`                    | Show complete output without truncation     |
 | `--background`              | Open new page in background (newpage)       |
 | `--uid @<uid>`              | Target a specific element (screenshot)      |
@@ -421,7 +488,6 @@ Axis Browser uses these connection modes in order:
 | `CHROME_DEVTOOLS_AXI_PORT` | Override the bridge port (default: `9224`) |
 | `CHROME_DEVTOOLS_AXI_MCP_PATH` | Absolute path to a local `chrome-devtools-mcp` binary (skips npx) |
 | `CHROME_DEVTOOLS_AXI_BRIDGE_TIMEOUT_MS` | Bridge readiness deadline in ms (default: `30000`; useful for slow npx bootstrap) |
-| `CHROME_DEVTOOLS_AXI_DISABLE_HOOKS` | Set to `1` to skip packaged session-hook installation |
 
 Examples:
 
@@ -462,14 +528,12 @@ State is stored in `~/.axis-browser/`:
 
 ### Session Hooks
 
-On supported agents, the packaged CLI also installs a `SessionStart` hook in:
+Run `axis-browser setup hooks` to install or repair a `SessionStart` hook in:
 - `~/.claude/settings.json`
 - `~/.codex/hooks.json`
 
 It also enables `hooks` in:
 - `~/.codex/config.toml`
-
-Set `CHROME_DEVTOOLS_AXI_DISABLE_HOOKS=1` to skip that behavior.
 
 Development entrypoints such as `pnpm run dev` and `bin/chrome-devtools-axi.ts` do not modify those hook files.
 
@@ -487,3 +551,8 @@ pnpm run dev
 pnpm test
 pnpm run test:watch
 ```
+
+For the full setup, troubleshooting, and teardown lifecycle, read
+[docs/setup_and_dev.md](docs/setup_and_dev.md). For future upstream merges,
+protect the fork-specific overrides listed in
+[docs/upstream_sync.md](docs/upstream_sync.md).

@@ -5,6 +5,38 @@ This changelog tracks public changes for Axis Browser.
 Versions `0.1.18` and below are inherited from the upstream `chrome-devtools-axi`
 release history.
 
+## 0.1.25 (2026-06-27)
+
+### Added
+
+* sync upstream `0.1.23`-`0.1.25` runtime and test updates
+* add explicit `setup hooks` command for repairing agent `SessionStart` hooks
+* add a fork-safe `update` command that prints GitHub update guidance instead of
+  invoking the upstream npm self-updater
+* add lifecycle documentation in `docs/setup_and_dev.md`
+* add fork override documentation in `docs/upstream_sync.md`
+
+### Changed
+
+* update runtime dependencies, including `axi-sdk-js` `0.1.8`
+
+### Removed
+
+* remove the upstream generated Agent Skill package from the shipped fork
+
+### Fixed
+
+* prevent the SDK npm self-updater from routing Axis Browser users to upstream
+  `chrome-devtools-axi`
+
+### Preserved Fork Delta
+
+* package name remains `chrome-devtools-axi` for compatibility
+* install guidance remains GitHub-first for `Nirmantix/axis-browser`
+* runtime state directory remains `~/.axis-browser`
+* bin aliases remain `axis-browser`, `axib`, and `chrome-devtools-axi`
+* release-please and upstream-only agent infrastructure remain disabled
+
 ## 0.1.22 (2026-05-15)
 
 ### Features

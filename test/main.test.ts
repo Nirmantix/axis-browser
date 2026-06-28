@@ -89,6 +89,53 @@ describe("main", () => {
     expect(process.exitCode).toBe(2);
   });
 
+  it.each([["update"], ["update", "--check"]])(
+    "shadows the SDK npm updater for %s",
+    async (...argv) => {
+      const write = vi
+        .spyOn(process.stdout, "write")
+        .mockImplementation(() => true);
+
+      await main(argv);
+
+      const output = String(write.mock.calls[0]?.[0]);
+      expect(output).toContain("update: disabled");
+      expect(output).toContain("github:Nirmantix/axis-browser");
+      expect(output).toContain("upstream, not this fork");
+      expect(output).not.toContain("latest published npm version");
+      expect(callTool).not.toHaveBeenCalled();
+      expect(process.exitCode).toBeUndefined();
+    },
+  );
+
+  it("shows Axis update help instead of SDK npm update help", async () => {
+    const write = vi
+      .spyOn(process.stdout, "write")
+      .mockImplementation(() => true);
+
+    await main(["update", "--help"]);
+
+    const output = String(write.mock.calls[0]?.[0]);
+    expect(output).toContain("github:Nirmantix/axis-browser");
+    expect(output).toContain("upstream, not Nirmantix/axis-browser");
+    expect(output).not.toContain("latest published npm version");
+    expect(callTool).not.toHaveBeenCalled();
+    expect(process.exitCode).toBeUndefined();
+  });
+
+  it("does not advertise the SDK npm updater in top-level help", async () => {
+    const write = vi
+      .spyOn(process.stdout, "write")
+      .mockImplementation(() => true);
+
+    await main(["--help"]);
+
+    const output = String(write.mock.calls.map((call) => call[0]).join(""));
+    expect(output).toContain("setup hooks");
+    expect(output).not.toContain("latest published version");
+    expect(output).not.toContain("latest published npm version");
+  });
+
   it("recovers open by creating a page when the browser is not yet connected", async () => {
     const write = vi
       .spyOn(process.stdout, "write")
@@ -107,7 +154,11 @@ describe("main", () => {
       ["take_snapshot"],
       [
         "evaluate_script",
-        { function: expect.stringContaining("__chromeDevtoolsAxiSnapshotGeneration") },
+        {
+          function: expect.stringContaining(
+            "__chromeDevtoolsAxiSnapshotGeneration",
+          ),
+        },
       ],
     ]);
     expect(String(write.mock.calls[0]?.[0])).toContain("title: Airlock");

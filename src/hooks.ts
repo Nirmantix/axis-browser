@@ -86,12 +86,23 @@ export function computeCodexConfigUpdate(content: string): [string, boolean] {
  */
 export function installHooks(): void {
   try {
-    installSessionStartHooks({
-      marker: HOOK_MARKER,
-      timeoutSeconds: 10,
-      shouldInstall: shouldInstallHooksForExecPath,
-    });
+    installHooksOrThrow();
   } catch {
     // Best-effort — never fail the CLI over hook installation
+  }
+}
+
+export function installHooksOrThrow(): void {
+  const errors: string[] = [];
+  installSessionStartHooks({
+    marker: HOOK_MARKER,
+    timeoutSeconds: 10,
+    shouldInstall: shouldInstallHooksForExecPath,
+    onError: (message) => {
+      errors.push(message);
+    },
+  });
+  if (errors.length > 0) {
+    throw new Error(errors.join("\n"));
   }
 }
