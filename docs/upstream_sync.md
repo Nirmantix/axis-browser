@@ -8,7 +8,7 @@ logic is not overwritten by upstream defaults.
 
 - Fork repository: `Nirmantix/axis-browser`
 - Upstream repository: `kunchenguid/chrome-devtools-axi`
-- Current synced upstream version: `0.1.25`
+- Current synced upstream version: `0.1.26`
 - Integration strategy: merge upstream into the fork branch; do not rebase
   public fork history.
 
@@ -17,7 +17,7 @@ logic is not overwritten by upstream defaults.
 `package.json` must keep:
 
 - `"name": "chrome-devtools-axi"`
-- `"version": "0.1.25"` for this sync
+- `"version": "0.1.26"` for this sync
 - `bin.chrome-devtools-axi`
 - `bin.axis-browser`
 - `bin.axib`
@@ -39,6 +39,10 @@ Keep the Axis state directory:
 - `src/generation.ts`: `STATE_DIR = join(homedir(), ".axis-browser")`
 
 Do not restore upstream `~/.chrome-devtools-axi` paths.
+
+Named sessions (`CHROME_DEVTOOLS_AXI_SESSION`) live under
+`~/.axis-browser/sessions/<name>/` via `src/sessions.ts` — keep
+`STATE_DIR_NAME = ".axis-browser"` there.
 
 ## Fork-Owned Update Command
 
@@ -183,5 +187,5 @@ node dist/bin/chrome-devtools-axi.js update --help
 Expected version output for this sync:
 
 ```text
-0.1.25
+0.1.26
 ```

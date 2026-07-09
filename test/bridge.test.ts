@@ -1,15 +1,21 @@
 import { describe, expect, it, beforeEach, afterEach } from "vitest";
 import { IncomingMessage, ServerResponse } from "node:http";
 import { Socket } from "node:net";
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import {
+  BRIDGE_PORT_IN_USE_EXIT_CODE,
   buildTransportArgs,
   detectGlobalMcpPath,
   extractToolText,
   getErrorMessage,
   handleBridgeRequest,
+  handleBridgeServerError,
   isBridgeClientConnected,
   isBridgeTargetReachable,
   parseBridgeCallPayload,
+  removePidFile,
   resolveBridgeScript,
   resolveTransportSpec,
   type BridgeClient,
@@ -81,12 +87,15 @@ describe("buildTransportArgs", () => {
       process.env.CHROME_DEVTOOLS_AXI_AUTO_CONNECT;
     savedEnv.CHROME_DEVTOOLS_AXI_WS_HEADERS =
       process.env.CHROME_DEVTOOLS_AXI_WS_HEADERS;
+    savedEnv.CHROME_DEVTOOLS_AXI_CHANNEL =
+      process.env.CHROME_DEVTOOLS_AXI_CHANNEL;
     delete process.env.CHROME_DEVTOOLS_AXI_HEADED;
     delete process.env.CHROME_DEVTOOLS_AXI_CHROME_ARGS;
     delete process.env.CHROME_DEVTOOLS_AXI_BROWSER_URL;
     delete process.env.CHROME_DEVTOOLS_AXI_USER_DATA_DIR;
     delete process.env.CHROME_DEVTOOLS_AXI_AUTO_CONNECT;
     delete process.env.CHROME_DEVTOOLS_AXI_WS_HEADERS;
+    delete process.env.CHROME_DEVTOOLS_AXI_CHANNEL;
   });
 
   afterEach(() => {
@@ -102,6 +111,8 @@ describe("buildTransportArgs", () => {
       savedEnv.CHROME_DEVTOOLS_AXI_AUTO_CONNECT;
     process.env.CHROME_DEVTOOLS_AXI_WS_HEADERS =
       savedEnv.CHROME_DEVTOOLS_AXI_WS_HEADERS;
+    process.env.CHROME_DEVTOOLS_AXI_CHANNEL =
+      savedEnv.CHROME_DEVTOOLS_AXI_CHANNEL;
   });
 
   it("defaults to headless and isolated", () => {
@@ -209,6 +220,55 @@ describe("buildTransportArgs", () => {
     const args = buildTransportArgs();
     expect(args).not.toContain("--autoConnect");
     expect(args).toContain("--isolated");
+  });
+
+  it("omits --channel by default", () => {
+    const args = buildTransportArgs();
+    expect(args.some((a) => a.startsWith("--channel"))).toBe(false);
+  });
+
+  it("appends --channel to --autoConnect", () => {
+    process.env.CHROME_DEVTOOLS_AXI_AUTO_CONNECT = "1";
+    process.env.CHROME_DEVTOOLS_AXI_CHANNEL = "beta";
+    const args = buildTransportArgs();
+    expect(args).toContain("--autoConnect");
+    expect(args).toContain("--channel=beta");
+  });
+
+  it("appends --channel in the default launch mode", () => {
+    process.env.CHROME_DEVTOOLS_AXI_CHANNEL = "beta";
+    const args = buildTransportArgs();
+    expect(args).toContain("--channel=beta");
+    expect(args).toContain("--isolated");
+    expect(args).toContain("--headless");
+  });
+
+  it("appends --channel alongside --userDataDir", () => {
+    process.env.CHROME_DEVTOOLS_AXI_USER_DATA_DIR = "/path/to/.chrome-profile";
+    process.env.CHROME_DEVTOOLS_AXI_CHANNEL = "canary";
+    const args = buildTransportArgs();
+    expect(args).toContain("--userDataDir=/path/to/.chrome-profile");
+    expect(args).toContain("--channel=canary");
+  });
+
+  it("ignores --channel when connecting via --browserUrl", () => {
+    process.env.CHROME_DEVTOOLS_AXI_BROWSER_URL = "http://127.0.0.1:9222";
+    process.env.CHROME_DEVTOOLS_AXI_CHANNEL = "beta";
+    const args = buildTransportArgs();
+    expect(args).toContain("--browserUrl=http://127.0.0.1:9222");
+    expect(args.some((a) => a.startsWith("--channel"))).toBe(false);
+  });
+
+  it("trims surrounding whitespace from the channel", () => {
+    process.env.CHROME_DEVTOOLS_AXI_CHANNEL = "  beta  ";
+    const args = buildTransportArgs();
+    expect(args).toContain("--channel=beta");
+  });
+
+  it("ignores a blank channel", () => {
+    process.env.CHROME_DEVTOOLS_AXI_CHANNEL = "   ";
+    const args = buildTransportArgs();
+    expect(args.some((a) => a.startsWith("--channel"))).toBe(false);
   });
 
   it("routes ws:// BROWSER_URL to --wsEndpoint", () => {
@@ -543,6 +603,28 @@ describe("handleBridgeRequest /health", () => {
     expect(JSON.parse(captured.body)).toEqual({ status: "ok" });
   });
 
+  it("stamps the session name into the /health response when provided", async () => {
+    const client: BridgeClient = {
+      listTools: async () => ({ tools: [] }),
+      callTool: async () => ({ content: [] }),
+      close: async () => {},
+    };
+    const { res, captured } = makeResponse();
+
+    await handleBridgeRequest(
+      client,
+      makeRequest("GET", "/health"),
+      res,
+      "worker-1",
+    );
+
+    expect(captured.statusCode).toBe(200);
+    expect(JSON.parse(captured.body)).toEqual({
+      status: "ok",
+      session: "worker-1",
+    });
+  });
+
   it("returns 503 when MCP server is disconnected", async () => {
     const client: BridgeClient = {
       listTools: async () => {
@@ -623,5 +705,95 @@ describe("handleBridgeRequest /health", () => {
 
     expect(captured.statusCode).toBe(200);
     expect(callToolCalls).toBe(0);
+  });
+});
+
+describe("handleBridgeServerError", () => {
+  function captureStderr<T>(fn: () => T): { result: T; stderr: string } {
+    const original = process.stderr.write.bind(process.stderr);
+    let stderr = "";
+    process.stderr.write = ((chunk: unknown) => {
+      stderr += typeof chunk === "string" ? chunk : String(chunk);
+      return true;
+    }) as typeof process.stderr.write;
+    try {
+      return { result: fn(), stderr };
+    } finally {
+      process.stderr.write = original;
+    }
+  }
+
+  it("exits with the distinct EADDRINUSE code so ensureBridge can attribute a collision", () => {
+    const exitCodes: number[] = [];
+    const { stderr } = captureStderr(() =>
+      handleBridgeServerError(
+        Object.assign(new Error("listen EADDRINUSE"), { code: "EADDRINUSE" }),
+        9225,
+        (code) => exitCodes.push(code),
+      ),
+    );
+
+    expect(exitCodes).toEqual([BRIDGE_PORT_IN_USE_EXIT_CODE]);
+    expect(BRIDGE_PORT_IN_USE_EXIT_CODE).not.toBe(1);
+    expect(stderr).toContain("9225");
+    expect(stderr).toContain("EADDRINUSE");
+    expect(stderr).toContain("CHROME_DEVTOOLS_AXI_PORT");
+  });
+
+  it("exits non-zero for other fatal server errors", () => {
+    const exitCodes: number[] = [];
+    const { stderr } = captureStderr(() =>
+      handleBridgeServerError(
+        Object.assign(new Error("boom"), { code: "EACCES" }),
+        9225,
+        (code) => exitCodes.push(code),
+      ),
+    );
+
+    expect(exitCodes).toEqual([1]);
+    expect(stderr).toContain("boom");
+  });
+});
+
+describe("removePidFile ownership", () => {
+  let dir: string;
+  let pidFile: string;
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), "cda-pid-"));
+    pidFile = join(dir, "bridge.pid");
+  });
+
+  afterEach(() => {
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("leaves the winner's PID file intact when a same-session loser exits", () => {
+    const winnerPid = process.pid + 1;
+    const loserPid = process.pid + 2;
+    writeFileSync(pidFile, JSON.stringify({ pid: winnerPid, port: 9224 }));
+
+    // The EADDRINUSE loser's exit handler must not delete the winner's handle.
+    removePidFile(pidFile, loserPid);
+
+    expect(existsSync(pidFile)).toBe(true);
+  });
+
+  it("removes the PID file when this process owns it", () => {
+    const ownerPid = process.pid + 3;
+    writeFileSync(pidFile, JSON.stringify({ pid: ownerPid, port: 9224 }));
+
+    removePidFile(pidFile, ownerPid);
+
+    expect(existsSync(pidFile)).toBe(false);
+  });
+
+  it("treats a missing or malformed PID file as nothing to remove", () => {
+    expect(() => removePidFile(pidFile, process.pid)).not.toThrow();
+    expect(existsSync(pidFile)).toBe(false);
+
+    writeFileSync(pidFile, "not json");
+    expect(() => removePidFile(pidFile, process.pid)).not.toThrow();
+    expect(existsSync(pidFile)).toBe(true);
   });
 });

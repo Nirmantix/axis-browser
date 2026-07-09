@@ -515,6 +515,9 @@ Running with no command shows the CLI home view. It prepends `bin` and `descript
 | `--response-file <path>`    | Save response body (network-get)            |
 | `--request-file <path>`     | Save request body (network-get)             |
 
+Local output paths for `screenshot`, `heap`, `network-get --response-file`/`--request-file`, `lighthouse --output-dir`, and `perf-start`/`perf-stop --file` resolve against the directory where you invoke the CLI.
+Saved-path output uses the resolved absolute path.
+
 `console --type` accepts `log`, `debug`, `info`, `error`, `warn`, `dir`, `dirxml`, `table`, `trace`, `clear`, `startGroup`, `startGroupCollapsed`, `endGroup`, `assert`, `profile`, `profileEnd`, `count`, `timeEnd`, `verbose`, `issue`, and `all`.
 `network --type` accepts `document`, `stylesheet`, `image`, `media`, `font`, `script`, `texttrack`, `xhr`, `fetch`, `prefetch`, `eventsource`, `websocket`, `manifest`, `signedexchange`, `ping`, `cspviolationreport`, `preflight`, `fedcm`, `other`, and `all`.
 For both commands, `all` or an omitted `--type` returns every item.
@@ -566,13 +569,51 @@ export CHROME_DEVTOOLS_AXI_BROWSER_URL=wss://cluster.example/launch
 export CHROME_DEVTOOLS_AXI_WS_HEADERS='{"Authorization":"Bearer token"}'
 ```
 
+Pick which installed Chrome release channel to target with
+`CHROME_DEVTOOLS_AXI_CHANNEL` — `stable` (the default), `beta`, `canary`, or
+`dev`:
+
+```bash
+export CHROME_DEVTOOLS_AXI_AUTO_CONNECT=1
+export CHROME_DEVTOOLS_AXI_CHANNEL=beta
+```
+
+This selects which Chrome `--autoConnect` attaches to, and which one is launched
+in the default and `CHROME_DEVTOOLS_AXI_USER_DATA_DIR` modes. It is ignored when
+`CHROME_DEVTOOLS_AXI_BROWSER_URL` is set, since that connects to an explicit
+endpoint regardless of channel.
+
 Chrome 144+ auto-connect example:
 
 ```bash
 export CHROME_DEVTOOLS_AXI_AUTO_CONNECT=1
 ```
 
-When auto-connect is enabled, it takes precedence over `CHROME_DEVTOOLS_AXI_BROWSER_URL` and `CHROME_DEVTOOLS_AXI_USER_DATA_DIR`.
+When auto-connect is enabled, it takes precedence over
+`CHROME_DEVTOOLS_AXI_BROWSER_URL` and `CHROME_DEVTOOLS_AXI_USER_DATA_DIR`.
+
+Run multiple isolated bridges at once with `CHROME_DEVTOOLS_AXI_SESSION` — one
+per agent session, worktree, or test worker:
+
+```bash
+CHROME_DEVTOOLS_AXI_SESSION=worker-1 axis-browser open https://example.com
+CHROME_DEVTOOLS_AXI_SESSION=worker-2 axis-browser open https://example.org
+```
+
+Each session name gets its own bridge process, port (auto-derived from the name,
+or pinned with `CHROME_DEVTOOLS_AXI_PORT`), and on-disk state under
+`~/.axis-browser/` (named sessions nest under `sessions/<name>/`).
+
+In the default isolated and `CHROME_DEVTOOLS_AXI_USER_DATA_DIR` launch modes each
+bridge also launches its own Chrome, so concurrent sessions share neither browser
+state nor each other's stale-ref tracking. Sessions that attach to the same
+external browser (shared CDP / auto-connect on one Chrome) are isolated only at
+the bridge level.
+
+Do not export `CHROME_DEVTOOLS_AXI_PORT` globally when running concurrent
+sessions: it overrides the per-session derived port and forces every session onto
+the same port. Rely on per-session default ports, or set
+`CHROME_DEVTOOLS_AXI_PORT` only inline per command.
 
 ### Runtime State
 

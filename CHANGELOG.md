@@ -5,6 +5,22 @@ This changelog tracks public changes for Axis Browser.
 Versions `0.1.18` and below are inherited from the upstream `chrome-devtools-axi`
 release history.
 
+## 0.1.26 (2026-07-09)
+
+### Added
+
+* sync upstream `0.1.26` runtime and test updates
+* `CHROME_DEVTOOLS_AXI_CHANNEL` to select Chrome release channel (`stable` /
+  `beta` / `canary` / `dev`) for auto-connect and launch modes
+* `CHROME_DEVTOOLS_AXI_SESSION` for concurrent bridge isolation (per-session
+  port and `~/.axis-browser/sessions/<name>/` state)
+* resolve screenshot and other output paths from the caller cwd
+
+### Changed
+
+* package version `0.1.26`; runtime state remains under `~/.axis-browser`
+* reject upstream skill package and release-please artifacts from the merge
+
 ## 0.1.25 (2026-06-27)
 
 ### Added
