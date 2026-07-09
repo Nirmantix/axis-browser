@@ -45,6 +45,10 @@ coverage/
 # Browser skill artifacts
 .tmp/
 
+# Project-local MCP configs may hold API keys / server URLs (never commit)
+.mcp.json
+.mcp.*.local.json
+
 # Local imported Browserbase skill bundle / archive
 browserbase-skills/
 skills-main.zip

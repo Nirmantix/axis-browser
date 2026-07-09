@@ -110,14 +110,14 @@ Required setup behavior:
   unless the operator explicitly passes `--yes`.
 - Setup must never write secrets, `.env` files, shell rc files, MCP credential
   files, or user credential stores.
-- Resolve `browser-skill` in this order:
-  `BROWSER_SKILL_DIR`, `AXIS_BROWSER_HOME/skills/browser-skill`,
-  `AXIS_PORTABLE_SKILLS_DIR/browser-skill`, then standard agent skill
+- Resolve `browser-bay` in this order:
+  `BROWSER_BAY_DIR`, `AXIS_BROWSER_HOME/skills/browser-bay`,
+  `AXIS_PORTABLE_SKILLS_DIR/browser-bay`, then standard agent skill
   locations.
 - Do not hardcode personal workstation paths.
 - If the router is absent, report core Axis status and say the router source is
-  not configured unless `BROWSER_SKILL_SOURCE_URL` is set.
-- Do not assume a public `browser-skill` repository URL until one exists.
+  not configured unless `BROWSER_BAY_SOURCE_URL` is set.
+- Do not assume a public `browser-bay` repository URL until one exists.
 
 ## Rejected Upstream Skill And Infra
 

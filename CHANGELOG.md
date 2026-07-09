@@ -15,11 +15,20 @@ release history.
 * `CHROME_DEVTOOLS_AXI_SESSION` for concurrent bridge isolation (per-session
   port and `~/.axis-browser/sessions/<name>/` state)
 * resolve screenshot and other output paths from the caller cwd
+* document project-scoped BrowserAct remote MCP setup
+  (`docs/browseract-mcp-per-project.md`, `.mcp.browseract.example.json`);
+  ignore local `.mcp.json` secrets in `.gitignore`
+* BrowserBay shortcodes/prompts: `ensure-project-ready` gate before browser work
 
 ### Changed
 
 * package version `0.1.26`; runtime state remains under `~/.axis-browser`
 * reject upstream skill package and release-please artifacts from the merge
+* rename the companion Agent Skills router from `browser-skill` to **BrowserBay**
+  (`browser-bay`); setup still accepts legacy `BROWSER_SKILL_DIR`,
+  `BROWSER_SKILL_SOURCE_URL`, and `skills/browser-skill` install paths
+* prefer env `BROWSER_BAY_DIR` / `BROWSER_BAY_SOURCE_URL` for router discovery
+* align `;abcheck` / `;abuse` and parent README with BrowserBay project gate
 
 ## 0.1.25 (2026-06-27)
 
@@ -30,7 +39,7 @@ release history.
   `--json`, `--project`, and non-interactive-safe `--install` modes
 * detect Windows Chrome and Edge installs (machine-wide and per-user) and
   Chromium (machine-wide) in the `axis-browser setup` readiness report
-* add optional `browser-skill` router detection through `BROWSER_SKILL_DIR`,
+* add optional `browser-bay` router detection through `BROWSER_BAY_DIR`,
   `AXIS_BROWSER_HOME`, `AXIS_PORTABLE_SKILLS_DIR`, and standard agent skill
   locations
 * add explicit `setup hooks` command for repairing agent `SessionStart` hooks
@@ -75,7 +84,7 @@ release history.
 * generation-tagged snapshot refs (`g<N>:uid`) with `STALE_REF` error on mismatch
 * deep health checks (`/health?deep=1`) detect stale CDP targets automatically
 * switch build system to pnpm (following upstream)
-* add local `browser-skill` — host-neutral browser automation Agent Skills
+* add local `browser-bay` — host-neutral browser automation Agent Skills
   package maintained in an ignored nested repo when present; install it into
   the appropriate global or project agent skills location (`~/.codex/skills/`,
   `~/.claude/skills/`, `~/.config/opencode/skills/`,

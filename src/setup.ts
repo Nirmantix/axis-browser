@@ -80,12 +80,15 @@ interface RouterScriptContext {
   report: SetupReport;
 }
 
-const STANDARD_AGENT_SKILL_PATHS = [
-  [".codex", "skills", "browser-skill"],
-  [".config", "agents", "skills", "browser-skill"],
-  [".claude", "skills", "browser-skill"],
-  [".config", "opencode", "skills", "browser-skill"],
-  [".pi", "skills", "browser-skill"],
+/** Preferred skill folder name, then legacy browser-skill installs. */
+const SKILL_FOLDER_NAMES = ["browser-bay", "browser-skill"] as const;
+
+const STANDARD_AGENT_SKILL_PARENTS = [
+  [".codex", "skills"],
+  [".config", "agents", "skills"],
+  [".claude", "skills"],
+  [".config", "opencode", "skills"],
+  [".pi", "skills"],
 ] as const;
 
 export function parseSetupArgs(args: string[]): ParsedSetupArgs {
@@ -133,26 +136,46 @@ export function resolveBrowserSkillDir(
   runtime: Pick<MutableSetupRuntime, "env" | "home" | "cwd">,
   exists: (path: string) => boolean = existsSync,
 ): BrowserSkillResolution {
-  const { env, home, cwd } = runtime;
+  const { env, home } = runtime;
+  const envDir = env.BROWSER_BAY_DIR || env.BROWSER_SKILL_DIR;
+  const sourceUrl = env.BROWSER_BAY_SOURCE_URL || env.BROWSER_SKILL_SOURCE_URL;
   const candidates: { source: string; path: string | undefined }[] = [
-    { source: "BROWSER_SKILL_DIR", path: env.BROWSER_SKILL_DIR },
     {
-      source: "AXIS_BROWSER_HOME",
-      path: env.AXIS_BROWSER_HOME
-        ? join(env.AXIS_BROWSER_HOME, "skills", "browser-skill")
-        : undefined,
+      source: env.BROWSER_BAY_DIR
+        ? "BROWSER_BAY_DIR"
+        : env.BROWSER_SKILL_DIR
+          ? "BROWSER_SKILL_DIR"
+          : "BROWSER_BAY_DIR",
+      path: envDir,
     },
-    {
-      source: "AXIS_PORTABLE_SKILLS_DIR",
-      path: env.AXIS_PORTABLE_SKILLS_DIR
-        ? join(env.AXIS_PORTABLE_SKILLS_DIR, "browser-skill")
-        : undefined,
-    },
-    ...STANDARD_AGENT_SKILL_PATHS.map((parts) => ({
-      source: "standard agent skill location",
-      path: join(home, ...parts),
-    })),
   ];
+
+  if (env.AXIS_BROWSER_HOME) {
+    for (const name of SKILL_FOLDER_NAMES) {
+      candidates.push({
+        source: "AXIS_BROWSER_HOME",
+        path: join(env.AXIS_BROWSER_HOME, "skills", name),
+      });
+    }
+  }
+
+  if (env.AXIS_PORTABLE_SKILLS_DIR) {
+    for (const name of SKILL_FOLDER_NAMES) {
+      candidates.push({
+        source: "AXIS_PORTABLE_SKILLS_DIR",
+        path: join(env.AXIS_PORTABLE_SKILLS_DIR, name),
+      });
+    }
+  }
+
+  for (const parent of STANDARD_AGENT_SKILL_PARENTS) {
+    for (const name of SKILL_FOLDER_NAMES) {
+      candidates.push({
+        source: "standard agent skill location",
+        path: join(home, ...parent, name),
+      });
+    }
+  }
 
   for (const candidate of candidates) {
     if (candidate.path && exists(candidate.path)) {
@@ -166,12 +189,12 @@ export function resolveBrowserSkillDir(
 
   return {
     status: "missing",
-    source: env.BROWSER_SKILL_SOURCE_URL
-      ? "BROWSER_SKILL_SOURCE_URL"
+    source: sourceUrl
+      ? env.BROWSER_BAY_SOURCE_URL
+        ? "BROWSER_BAY_SOURCE_URL"
+        : "BROWSER_SKILL_SOURCE_URL"
       : "not configured",
-    ...(env.BROWSER_SKILL_SOURCE_URL
-      ? { sourceUrl: env.BROWSER_SKILL_SOURCE_URL }
-      : {}),
+    ...(sourceUrl ? { sourceUrl } : {}),
   };
 }
 
@@ -492,6 +515,8 @@ function runRouterScript(
     encoding: "utf8",
     env: {
       ...context.env,
+      BROWSER_BAY_DIR: context.report.browserSkill.path,
+      // Legacy alias for older docs/scripts that still read BROWSER_SKILL_DIR.
       BROWSER_SKILL_DIR: context.report.browserSkill.path,
       SKILL_DIR: context.report.browserSkill.path,
     },
@@ -515,8 +540,8 @@ function nextStepsFor(
 ): string[] {
   if (browserSkill.status === "missing") {
     const source = browserSkill.sourceUrl
-      ? `Install browser-skill from ${browserSkill.sourceUrl}, then rerun \`axis-browser setup\``
-      : "Configure BROWSER_SKILL_DIR, AXIS_BROWSER_HOME, AXIS_PORTABLE_SKILLS_DIR, or BROWSER_SKILL_SOURCE_URL for router setup";
+      ? `Install browser-bay from ${browserSkill.sourceUrl}, then rerun \`axis-browser setup\``
+      : "Configure BROWSER_BAY_DIR (or legacy BROWSER_SKILL_DIR), AXIS_BROWSER_HOME, AXIS_PORTABLE_SKILLS_DIR, or BROWSER_BAY_SOURCE_URL for router setup";
     return [
       source,
       "Run `axis-browser setup --json` for machine-readable status",

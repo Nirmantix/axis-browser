@@ -11,17 +11,17 @@ Source of truth split:
 
 This guide is intentionally about Axis Browser and does not document unrelated local tool stacks, shell aliases, or machine-specific helpers.
 
-If this checkout includes `skills/browser-skill/`, use that nested skill for
+If this checkout includes `skills/browser-bay/`, use that nested skill for
 multi-tool browser tasks, verified runs, reusable workflow scripts, protected
 site guidance, or tool comparison. This guide stays focused on the Axis Browser
 shared-Chrome workflow. For skill portability and setup routes, use
-`project-guide-site/setup.html` or `skills/browser-skill/README.md`: a
+`project-guide-site/setup.html` or `skills/browser-bay/README.md`: a
 workstation with this repo checked out can point projects at
-`/path/to/axis-browser/skills/browser-skill`, while a new machine must install
+`/path/to/axis-browser/skills/browser-bay`, while a new machine must install
 the machine-level browser tools first.
 
 If this checkout includes `prompts/`, the `;absetup`, `;abcheck`, `;abuse`, and
-`;abhealth` text-expander prompts are thin wrappers around `skills/browser-skill/`
+`;abhealth` text-expander prompts are thin wrappers around `skills/browser-bay/`
 and its scripts. They do not replace this CLI guide and they do not create a
 second browser-tool router.
 
@@ -147,7 +147,7 @@ This is especially useful for:
 - frontend/backend contract mismatches
 
 For an auditable handoff, capture the same evidence through
-`skills/browser-skill/references/verified-run.md` when that optional skill is
+`skills/browser-bay/references/verified-run.md` when that optional skill is
 available. Axis Browser supplies compact observations; the skill supplies the
 artifact contract and validation.
 
@@ -308,6 +308,6 @@ For public Axis Browser usage:
 - use a dedicated shared Chrome profile when real login state matters
 - reset the bridge when switching targets
 - inspect snapshot, console, and network before changing app code
-- use the optional browser-skill verified-run flow when the task needs a
+- use the optional browser-bay verified-run flow when the task needs a
   checkable evidence bundle
 - keep local aliases and personal tool stacks out of public docs

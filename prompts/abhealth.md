@@ -3,20 +3,20 @@ Task Shortcode: ;abhealth
 Purpose: monthly or biweekly Axis Browser workflow health audit.
 
 Associated skills:
-- ./skills/browser-skill when run from the axis-browser checkout, BROWSER_SKILL_DIR when set, or AXIS_BROWSER_HOME/skills/browser-skill when AXIS_BROWSER_HOME is set
+- ./skills/browser-bay when run from the axis-browser checkout, BROWSER_BAY_DIR when set, or AXIS_BROWSER_HOME/skills/browser-bay when AXIS_BROWSER_HOME is set
 - Use available review/documentation skills when the agent host provides them.
 
 Run from the axis-browser repository root unless auditing another checkout.
 
 Phase 1: tool update audit
-- Load browser-skill/SKILL.md.
+- Load browser-bay/SKILL.md.
 - Run:
-  bash "$BROWSER_SKILL_DIR/scripts/check-prerequisites.sh" --update
+  bash "$BROWSER_BAY_DIR/scripts/check-prerequisites.sh" --update
 - Treat this as report-first and permission-gated.
 - Never update project-local dependencies from this repo-level audit.
 
 Phase 2: content consistency audit
-- Review prompts, SKILL.md, browser-skill references, scripts, README files, workflow docs, and microsite docs.
+- Review prompts, SKILL.md, browser-bay references, scripts, README files, workflow docs, and microsite docs.
 - Use official sources for latest tool behavior, install commands, changelogs, and deprecations.
 - Identify outdated, missing, conflicting, or hallucination-prone instructions.
 

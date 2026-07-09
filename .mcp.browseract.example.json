@@ -1,0 +1,12 @@
+{
+  "$comment": "Copy to .mcp.json (gitignored) and fill Connection Details from BrowserAct dashboard. Do not commit real URL/key.",
+  "mcpServers": {
+    "browseract": {
+      "type": "http",
+      "url": "https://mcp.browseract.com/<YOUR_SERVER_ID>/mcp/",
+      "headers": {
+        "Authorization": "Bearer <YOUR_BROWSERACT_API_KEY>"
+      }
+    }
+  }
+}
