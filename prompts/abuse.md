@@ -3,11 +3,11 @@ Task Shortcode: ;abuse
 Purpose: use the Axis Browser workflow for a browser-related task.
 
 Associated skill:
-- ./skills/browser-skill when run from the axis-browser checkout, BROWSER_SKILL_DIR when set, or AXIS_BROWSER_HOME/skills/browser-skill when AXIS_BROWSER_HOME is set
+- ./skills/browser-bay when run from the axis-browser checkout, BROWSER_BAY_DIR when set, or AXIS_BROWSER_HOME/skills/browser-bay when AXIS_BROWSER_HOME is set
 
 Launcher rules:
-- Resolve BROWSER_SKILL_DIR.
-- Load "$BROWSER_SKILL_DIR/SKILL.md".
+- Resolve BROWSER_BAY_DIR.
+- Load "$BROWSER_BAY_DIR/SKILL.md".
 - Pass the operator's browser task through verbatim.
 - Follow SKILL.md for all routing, tools, references, fallbacks, safety rules, and reporting.
 

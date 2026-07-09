@@ -565,7 +565,7 @@ examples:
   setup: `usage: chrome-devtools-axi setup [--install] [--project <path>] [--json] [--yes]
        chrome-devtools-axi setup hooks
 
-Report Axis Browser workflow readiness, detect the optional browser-skill
+Report Axis Browser workflow readiness, detect the optional browser-bay
 router, and optionally run permission-gated project setup.
 
 Default setup is read-only. In non-interactive contexts, --install previews

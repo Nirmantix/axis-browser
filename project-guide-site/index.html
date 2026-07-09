@@ -4,14 +4,14 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Axis Browser Workflow Guide</title>
-    <meta name="description" content="A practical guide for setting up Axis Browser and using the browser-skill workflow in any project.">
+    <meta name="description" content="A practical guide for setting up Axis Browser and using the browser-bay workflow in any project.">
     <meta property="og:title" content="Axis Browser Workflow Guide">
-    <meta property="og:description" content="A practical guide for setting up Axis Browser and using the browser-skill workflow in any project.">
+    <meta property="og:description" content="A practical guide for setting up Axis Browser and using the browser-bay workflow in any project.">
     <meta property="og:image" content="./og-image.png">
     <meta property="og:type" content="website">
     <meta name="twitter:card" content="summary_large_image">
     <meta name="twitter:title" content="Axis Browser Workflow Guide">
-    <meta name="twitter:description" content="A practical guide for setting up Axis Browser and using the browser-skill workflow in any project.">
+    <meta name="twitter:description" content="A practical guide for setting up Axis Browser and using the browser-bay workflow in any project.">
     <meta name="twitter:image" content="./og-image.png">
     <link rel="icon" type="image/svg+xml" href="./favicon.svg">
     <link rel="icon" sizes="any" href="./favicon.ico">
@@ -40,13 +40,13 @@
 
       <section class="intro" aria-labelledby="page-title">
         <h1 id="page-title">Browser work without guessing.</h1>
-        <p>Use Axis Browser for compact shared-Chrome diagnostics, then route bigger browser tasks through the browser-skill workflow for screenshots, traces, verified runs, reusable scripts, and safe tool selection.</p>
+        <p>Use Axis Browser for compact shared-Chrome diagnostics, then route bigger browser tasks through the browser-bay workflow for screenshots, traces, verified runs, reusable scripts, and safe tool selection.</p>
       </section>
 
       <section class="quick-routes" aria-label="Core routes">
         <article>
           <h2>Current workstation route</h2>
-          <p>Set `BROWSER_SKILL_DIR` to the skill path or `AXIS_BROWSER_HOME` to the workflow checkout, then run `axis-browser setup` in the target repo.</p>
+          <p>Set `BROWSER_BAY_DIR` to the skill path or `AXIS_BROWSER_HOME` to the workflow checkout, then run `axis-browser setup` in the target repo.</p>
         </article>
         <article>
           <h2>Fresh machine route</h2>
@@ -102,8 +102,8 @@
             <article class="route-card">
               <div class="route-head"><h3>Set up a project</h3></div>
               <ul>
-                <li><span>local</span> Export `BROWSER_SKILL_DIR=/path/to/browser-skill` or `AXIS_BROWSER_HOME=/path/to/axis-browser`, then run `axis-browser setup`.</li>
-                <li><span>fresh</span> Run `axis-browser setup`, then install or copy browser-skill only if router-backed workflows are needed.</li>
+                <li><span>local</span> Export `BROWSER_BAY_DIR=/path/to/browser-bay` or `AXIS_BROWSER_HOME=/path/to/axis-browser`, then run `axis-browser setup`.</li>
+                <li><span>fresh</span> Run `axis-browser setup`, then install or copy browser-bay only if router-backed workflows are needed.</li>
                 <li><span>output</span> A project with `.tmp/` artifacts ignored and required browser tools checked.</li>
               </ul>
             </article>
@@ -162,14 +162,14 @@
               <div class="route-head"><h3>;absetup</h3></div>
               <ul>
                 <li><span>scope</span> Machine setup and install audit.</li>
-                <li><span>runs</span> `prompts/absetup.md` (browser-skill machine-setup workflow).</li>
+                <li><span>runs</span> `prompts/absetup.md` (browser-bay machine-setup workflow).</li>
               </ul>
             </article>
             <article class="route-card">
               <div class="route-head"><h3>;abcheck</h3></div>
               <ul>
                 <li><span>scope</span> Target-project readiness.</li>
-                <li><span>runs</span> `prompts/abcheck.md` (browser-skill project-readiness workflow).</li>
+                <li><span>runs</span> `prompts/abcheck.md` (browser-bay project-readiness workflow).</li>
               </ul>
             </article>
             <article class="route-card">
@@ -216,7 +216,7 @@
         <div class="reference-list">
           <a href="../README.md">Axis Browser README</a>
           <a href="../docs/vibe-coding-browser-workflow.md">Shared Chrome workflow</a>
-          <span>Optional local browser-skill router</span>
+          <span>Optional local browser-bay router</span>
           <span>Optional local tool stack guide</span>
           <span>Optional local verified run reference</span>
         </div>

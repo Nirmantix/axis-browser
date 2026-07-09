@@ -18,7 +18,7 @@ describe("Axis Browser workflow prompts", () => {
       expect(body).toContain(`Task Shortcode: ;${name}`);
       expect(body).toContain("Purpose:");
       expect(body).toContain("Associated skill");
-      expect(body.includes("BROWSER_SKILL_DIR") || body.includes("skills/browser-skill")).toBe(true);
+      expect(body.includes("BROWSER_BAY_DIR") || body.includes("skills/browser-bay")).toBe(true);
       expect(body).toContain("NEVER write API keys");
       expect(body).toContain("NEVER modify .env");
       expect(body).toContain("NEVER print credential values");
@@ -29,7 +29,7 @@ describe("Axis Browser workflow prompts", () => {
   it("abuse is only a launcher", async () => {
     const body = await promptBody("abuse");
 
-    expect(body).toContain("Load \"$BROWSER_SKILL_DIR/SKILL.md\"");
+    expect(body).toContain("Load \"$BROWSER_BAY_DIR/SKILL.md\"");
     expect(body).toContain("Follow SKILL.md for all routing");
     expect(body).toContain("No standalone tool routing table");
     expect(body).not.toMatch(/\bnpm\s+install\b/);

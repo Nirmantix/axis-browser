@@ -35,10 +35,10 @@ Workflow setup uses these optional environment variables:
 
 | Variable | Required | Purpose |
 | --- | --- | --- |
-| `BROWSER_SKILL_DIR` | No | Absolute path to a local `browser-skill` checkout. Highest setup resolver priority. |
-| `AXIS_BROWSER_HOME` | No | Axis Browser checkout root; setup looks for `skills/browser-skill` below it. |
-| `AXIS_PORTABLE_SKILLS_DIR` | No | Directory containing portable skills; setup looks for `browser-skill` below it. |
-| `BROWSER_SKILL_SOURCE_URL` | No | Approved source URL to show when no local router is configured. The CLI does not assume a public router URL. |
+| `BROWSER_BAY_DIR` | No | Absolute path to a local `browser-bay` checkout. Highest setup resolver priority. |
+| `AXIS_BROWSER_HOME` | No | Axis Browser checkout root; setup looks for `skills/browser-bay` below it. |
+| `AXIS_PORTABLE_SKILLS_DIR` | No | Directory containing portable skills; setup looks for `browser-bay` below it. |
+| `BROWSER_BAY_SOURCE_URL` | No | Approved source URL to show when no local router is configured. The CLI does not assume a public router URL. |
 
 ## Setup And Build
 
@@ -236,14 +236,14 @@ If `axis-browser setup` reports `browserSkill.status: missing` and
 `source: not configured`, point the CLI at a local router checkout:
 
 ```bash
-export BROWSER_SKILL_DIR=/path/to/browser-skill
+export BROWSER_BAY_DIR=/path/to/browser-bay
 axis-browser setup
 ```
 
 Or set an approved source URL for human guidance:
 
 ```bash
-export BROWSER_SKILL_SOURCE_URL=https://example.invalid/browser-skill.git
+export BROWSER_BAY_SOURCE_URL=https://example.invalid/browser-bay.git
 axis-browser setup
 ```
 
@@ -285,7 +285,7 @@ rm -rf dist coverage
 ```
 
 Remove project-local browser workflow artifacts created by the optional
-`browser-skill` router only when they are no longer needed:
+`browser-bay` router only when they are no longer needed:
 
 ```bash
 rm -rf .tmp/screenshots .tmp/scrapes .tmp/traces .tmp/reports .tmp/verified-runs

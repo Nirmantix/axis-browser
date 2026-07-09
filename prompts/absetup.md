@@ -3,20 +3,20 @@ Task Shortcode: ;absetup
 Purpose: one-off Axis Browser workflow machine setup/audit.
 
 Associated skill:
-- ./skills/browser-skill when run from the axis-browser checkout, BROWSER_SKILL_DIR when set, or AXIS_BROWSER_HOME/skills/browser-skill when AXIS_BROWSER_HOME is set
+- ./skills/browser-bay when run from the axis-browser checkout, BROWSER_BAY_DIR when set, or AXIS_BROWSER_HOME/skills/browser-bay when AXIS_BROWSER_HOME is set
 
 Run this from any shell on the target machine:
 
 1. Resolve the skill path:
-   - Prefer BROWSER_SKILL_DIR when set.
-   - Otherwise use ./skills/browser-skill when running from the axis-browser repository root.
-   - Otherwise use $AXIS_BROWSER_HOME/skills/browser-skill when AXIS_BROWSER_HOME is set.
+   - Prefer BROWSER_BAY_DIR when set.
+   - Otherwise use ./skills/browser-bay when running from the axis-browser repository root.
+   - Otherwise use $AXIS_BROWSER_HOME/skills/browser-bay when AXIS_BROWSER_HOME is set.
    - Otherwise search standard agent skill locations and report if missing.
 
 2. Load SKILL.md from the resolved skill path.
 
 3. Run:
-   bash "$BROWSER_SKILL_DIR/scripts/check-prerequisites.sh" --install
+   bash "$BROWSER_BAY_DIR/scripts/check-prerequisites.sh" --install
 
 4. Treat install groups exactly this way:
    - Core machine tools: Axis Browser CLI, Browser Harness, Microsoft Playwright CLI.

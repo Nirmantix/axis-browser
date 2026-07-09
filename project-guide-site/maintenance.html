@@ -82,7 +82,7 @@
           <div class="workflow-chain">
             <article class="phase-card">
               <strong>1. Version audit</strong>
-              <p>Run `axis-browser setup --json` for the public readiness report. If a trusted browser-skill router is configured, run its update audit separately.</p>
+              <p>Run `axis-browser setup --json` for the public readiness report. If a trusted browser-bay router is configured, run its update audit separately.</p>
             </article>
             <article class="phase-card">
               <strong>2. Content audit</strong>
@@ -124,8 +124,8 @@
             </tr>
             <tr>
               <td>Nested skills</td>
-              <td>`skills/browser-skill/` stays ignored by the parent repo and maintained as a standalone nested repo when present.</td>
-              <td>The browser skill is not shipped through the parent Axis Browser release flow.</td>
+              <td>`skills/browser-bay/` stays ignored by the parent repo and maintained as a standalone nested repo when present.</td>
+              <td>The browser-bay router is not shipped through the parent Axis Browser release flow.</td>
             </tr>
           </tbody>
         </table>
@@ -192,8 +192,8 @@
               <td>Check for private paths, deleted links, local alias assumptions, and stale references.</td>
             </tr>
             <tr>
-              <td>Prompt or browser-skill setup changes</td>
-              <td><code>corepack pnpm test</code><br><code>node --test test/*.node.mjs</code> inside <code>skills/browser-skill</code></td>
+              <td>Prompt or browser-bay setup changes</td>
+              <td><code>corepack pnpm test</code><br><code>node --test test/*.node.mjs</code> inside <code>skills/browser-bay</code></td>
               <td>Verify prompt contracts, install/update modes, verified-run behavior, and reference links.</td>
             </tr>
           </tbody>

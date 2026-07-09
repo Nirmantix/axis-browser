@@ -4,14 +4,14 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Commands — Axis Browser</title>
-    <meta name="description" content="Command reference and agent entry phrases for Axis Browser and browser-skill workflows.">
+    <meta name="description" content="Command reference and agent entry phrases for Axis Browser and browser-bay workflows.">
     <meta property="og:title" content="Commands — Axis Browser">
-    <meta property="og:description" content="Command reference and agent entry phrases for Axis Browser and browser-skill workflows.">
+    <meta property="og:description" content="Command reference and agent entry phrases for Axis Browser and browser-bay workflows.">
     <meta property="og:image" content="./og-image.png">
     <meta property="og:type" content="website">
     <meta name="twitter:card" content="summary_large_image">
     <meta name="twitter:title" content="Commands — Axis Browser">
-    <meta name="twitter:description" content="Command reference and agent entry phrases for Axis Browser and browser-skill workflows.">
+    <meta name="twitter:description" content="Command reference and agent entry phrases for Axis Browser and browser-bay workflows.">
     <meta name="twitter:image" content="./og-image.png">
     <link rel="icon" type="image/svg+xml" href="./favicon.svg">
     <link rel="icon" sizes="any" href="./favicon.ico">
@@ -40,7 +40,7 @@
 
       <section class="intro" aria-labelledby="page-title">
         <h1 id="page-title">Commands and entry phrases.</h1>
-        <p>Use these when operating Axis Browser directly or when asking an agent to route work through browser-skill.</p>
+        <p>Use these when operating Axis Browser directly or when asking an agent to route work through browser-bay.</p>
       </section>
 
       <section class="trigger-table" aria-label="Command reference">
@@ -68,8 +68,8 @@
 
         <article class="trigger-category category-blue">
           <div class="category-heading">
-            <h2>Setup and browser-skill routes</h2>
-            <p>Use the CLI for public setup. Use browser-skill scripts only after a trusted local router is configured.</p>
+            <h2>Setup and browser-bay routes</h2>
+            <p>Use the CLI for public setup. Use browser-bay scripts only after a trusted local router is configured.</p>
           </div>
           <div class="trigger-row">
             <div><strong>Project setup</strong><p><code>axis-browser setup --install --project /path/to/project</code></p></div>
@@ -82,8 +82,8 @@
             <div><strong>Expected output</strong><p>Missing tools, auth presence signals, no installs, no secret values.</p></div>
           </div>
           <div class="trigger-row">
-            <div><strong>Resolve skill path</strong><p><code>BROWSER_SKILL_DIR=/path/to/browser-skill</code><br><code>AXIS_BROWSER_HOME=/path/to/axis-browser</code></p></div>
-            <div><strong>Routes to</strong><p>`BROWSER_SKILL_DIR`, `$AXIS_BROWSER_HOME/skills/browser-skill`, `$AXIS_PORTABLE_SKILLS_DIR/browser-skill`, then standard skill locations.</p></div>
+            <div><strong>Resolve skill path</strong><p><code>BROWSER_BAY_DIR=/path/to/browser-bay</code><br><code>AXIS_BROWSER_HOME=/path/to/axis-browser</code></p></div>
+            <div><strong>Routes to</strong><p>`BROWSER_BAY_DIR`, `$AXIS_BROWSER_HOME/skills/browser-bay`, `$AXIS_PORTABLE_SKILLS_DIR/browser-bay`, then standard skill locations.</p></div>
             <div><strong>Expected output</strong><p>Setup reports which router source was selected, or that the router source is not configured.</p></div>
           </div>
           <div class="trigger-row">
@@ -92,12 +92,12 @@
             <div><strong>Expected output</strong><p>Core and optional tool actions approved, skipped, or blocked. No credential writes.</p></div>
           </div>
           <div class="trigger-row">
-            <div><strong>Health audit</strong><p><code>bash "$BROWSER_SKILL_DIR/scripts/check-prerequisites.sh" --update</code></p></div>
+            <div><strong>Health audit</strong><p><code>bash "$BROWSER_BAY_DIR/scripts/check-prerequisites.sh" --update</code></p></div>
             <div><strong>Routes to</strong><p>Report-first version-drift audit for shared tools.</p></div>
             <div><strong>Expected output</strong><p>Current versions, update recommendations, and permission-gated follow-up actions.</p></div>
           </div>
           <div class="trigger-row">
-            <div><strong>Verified run</strong><p><code>node "$BROWSER_SKILL_DIR/scripts/init-verified-run.mjs" --task "..." --slug run</code><br><code>node "$BROWSER_SKILL_DIR/scripts/validate-verified-run.mjs" --run .tmp/verified-runs/run</code></p></div>
+            <div><strong>Verified run</strong><p><code>node "$BROWSER_BAY_DIR/scripts/init-verified-run.mjs" --task "..." --slug run</code><br><code>node "$BROWSER_BAY_DIR/scripts/validate-verified-run.mjs" --run .tmp/verified-runs/run</code></p></div>
             <div><strong>Routes to</strong><p>Evidence-backed browser task workflow.</p></div>
             <div><strong>Expected output</strong><p>Validated STEP markers with exit code 0, 1, or 2.</p></div>
           </div>
@@ -129,17 +129,17 @@
             <div><strong>Expected output</strong><p>Version audit, changelog impact, stale-doc findings, and proposed follow-up edits.</p></div>
           </div>
           <div class="trigger-row">
-            <div><strong>Debug</strong><p>"Use browser-skill to debug why signup fails."</p></div>
+            <div><strong>Debug</strong><p>"Use browser-bay to debug why signup fails."</p></div>
             <div><strong>Routes to</strong><p>Feature debugging, runtime debugging, Axis Browser or Browser Harness.</p></div>
             <div><strong>Expected output</strong><p>Observed browser state, console/network evidence, root cause candidate.</p></div>
           </div>
           <div class="trigger-row">
-            <div><strong>Verify</strong><p>"Use browser-skill to create a verified run proving checkout works."</p></div>
+            <div><strong>Verify</strong><p>"Use browser-bay to create a verified run proving checkout works."</p></div>
             <div><strong>Routes to</strong><p>`references/verified-run.md`.</p></div>
             <div><strong>Expected output</strong><p>`.tmp/verified-runs/&lt;slug&gt;/` with plan, findings, screenshots, validation JSON.</p></div>
           </div>
           <div class="trigger-row">
-            <div><strong>Craft</strong><p>"Use browser-skill to craft a reusable local workflow for this browser task."</p></div>
+            <div><strong>Craft</strong><p>"Use browser-bay to craft a reusable local workflow for this browser task."</p></div>
             <div><strong>Routes to</strong><p>`references/reusable-workflow.md`.</p></div>
             <div><strong>Expected output</strong><p>Rerunnable `script.mjs` plus evidence and validation.</p></div>
           </div>

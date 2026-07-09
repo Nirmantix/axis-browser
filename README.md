@@ -28,7 +28,7 @@ This repo keeps a small set of public docs with distinct roles:
 - `docs/better-workflow-lifecycle-design.md` — source of truth for the broader Axis Browser workflow lifecycle: machine setup, skill availability, project readiness, task use, and health audits
 - `docs/upstream_sync.md` — fork override shield for future upstream merges
 
-The optional `skills/browser-skill/` folder is intentionally ignored by the
+The optional `skills/browser-bay/` folder is intentionally ignored by the
 parent Axis Browser repo and is maintained as its own standalone nested Git
 repo when present. Its own `README.md` and `SKILL.md` are the source of truth
 for the host-neutral browser automation skill; this README remains the source
@@ -36,9 +36,9 @@ of truth for the Axis Browser CLI itself.
 
 If you see old notes that mention different paths, aliases, or helper scripts, prefer this README and the workflow guide.
 
-## Browser Skill Companion
+## BrowserBay Companion
 
-This checkout may include `skills/browser-skill/`, a companion Agent Skills
+This checkout may include `skills/browser-bay/`, a companion Agent Skills
 package for browser-driven work across Claude Code, Codex, OpenCode, Pi, Kiro,
 and AGENTS.md hosts. It routes tasks across Browser Harness, Playwright, Axis
 Browser, Notte, CloakBrowser, BrowserAct, Firecrawl, and related tools.
@@ -59,25 +59,27 @@ Key boundaries:
   audits:
 
 ```bash
-cd skills/browser-skill
+cd skills/browser-bay
 bash scripts/check-prerequisites.sh --print-install-commands
 ```
 
 Portability note:
 - On a workstation with this repo checked out, other local projects can point at
-  the checkout's skill with `BROWSER_SKILL_DIR=/path/to/axis-browser/skills/browser-skill`
-  or point at the workflow checkout with `AXIS_BROWSER_HOME=/path/to/axis-browser`.
+  the checkout's skill with `BROWSER_BAY_DIR=/path/to/axis-browser/skills/browser-bay`
+  or set `AXIS_BROWSER_HOME=/path/to/axis-browser` so setup can resolve
+  `$AXIS_BROWSER_HOME/skills/browser-bay`.
 - That gives the agent the workflow router and scripts, not a bundled runtime.
   Global tools such as `axis-browser` and `browser-harness` must already be
   installed on the machine, and Playwright should still be installed
   project-local when reusable scripts, traces, network interception, visual
   regression, or CI are needed.
-- Run `bash "$BROWSER_SKILL_DIR/scripts/setup.sh"` once inside each target
+- For direct script calls, set `BROWSER_BAY_DIR` (or legacy `BROWSER_SKILL_DIR`)
+  and run `bash "$BROWSER_BAY_DIR/scripts/setup.sh"` once inside each target
   project so `.tmp/` evidence folders and `.gitignore` hygiene are created in
   the right repository.
 - Text-expander prompts live under `prompts/` when present:
   `;absetup` for machine setup/audit, `;abcheck` for target-project readiness,
-  `;abuse` for loading the browser-skill router, and `;abhealth` for periodic
+  `;abuse` for loading the browser-bay router, and `;abhealth` for periodic
   maintenance audits. These prompts are wrappers around the skill and scripts;
   they are not a second browser routing system.
 
@@ -254,7 +256,7 @@ axis-browser setup
 
 The default command is read-only. It checks Node, pnpm/Corepack,
 Chrome/Chromium, the local build, global Axis aliases, and whether the optional
-`browser-skill` workflow router is available. For machine-readable status:
+`browser-bay` workflow router is available. For machine-readable status:
 
 ```bash
 axis-browser setup --json
@@ -279,15 +281,15 @@ credential stores.
 
 Router discovery order:
 
-- `BROWSER_SKILL_DIR`
-- `AXIS_BROWSER_HOME/skills/browser-skill`
-- `AXIS_PORTABLE_SKILLS_DIR/browser-skill`
-- standard agent skill locations
+- `BROWSER_BAY_DIR` (legacy alias: `BROWSER_SKILL_DIR`)
+- `AXIS_BROWSER_HOME/skills/browser-bay` (legacy folder: `skills/browser-skill`)
+- `AXIS_PORTABLE_SKILLS_DIR/browser-bay` (legacy folder name also accepted)
+- standard agent skill locations (`browser-bay`, then legacy `browser-skill`)
 
 If no router is configured, `axis-browser setup` still succeeds with core Axis
 status and reports that the router source is not configured. Set
-`BROWSER_SKILL_SOURCE_URL` if your environment has an approved source URL for
-the router.
+`BROWSER_BAY_SOURCE_URL` (legacy: `BROWSER_SKILL_SOURCE_URL`) if your
+environment has an approved source URL for the router.
 
 Agent hook setup remains explicit:
 
@@ -362,7 +364,7 @@ Axis Browser itself is a CLI, not an LLM loop. Host agents compose commands such
 as `snapshot`, `console`, `network`, and `eval` into their own workflow.
 
 For browser tasks that need auditable evidence, use the optional
-`skills/browser-skill/` companion when present:
+`skills/browser-bay/` companion when present:
 
 - `references/verified-run.md` defines a single-pass evidence workflow with
   `STEP_PASS`, `STEP_FAIL`, and `STEP_SKIP` validation.
@@ -541,10 +543,10 @@ Axis Browser uses these connection modes in order:
 | `CHROME_DEVTOOLS_AXI_PORT` | Override the bridge port (default: `9224`) |
 | `CHROME_DEVTOOLS_AXI_MCP_PATH` | Absolute path to a local `chrome-devtools-mcp` binary (skips npx) |
 | `CHROME_DEVTOOLS_AXI_BRIDGE_TIMEOUT_MS` | Bridge readiness deadline in ms (default: `30000`; useful for slow npx bootstrap) |
-| `BROWSER_SKILL_DIR` | Absolute path to a local `browser-skill` checkout. Highest setup resolver priority |
-| `AXIS_BROWSER_HOME` | Axis Browser checkout root; setup looks for `skills/browser-skill` below it |
-| `AXIS_PORTABLE_SKILLS_DIR` | Directory containing portable skills; setup looks for `browser-skill` below it |
-| `BROWSER_SKILL_SOURCE_URL` | Approved source URL shown when no local router is configured; no public router URL is assumed |
+| `BROWSER_BAY_DIR` | Absolute path to a local `browser-bay` checkout. Highest setup resolver priority |
+| `AXIS_BROWSER_HOME` | Axis Browser checkout root; setup looks for `skills/browser-bay` below it |
+| `AXIS_PORTABLE_SKILLS_DIR` | Directory containing portable skills; setup looks for `browser-bay` below it |
+| `BROWSER_BAY_SOURCE_URL` | Approved source URL shown when no local router is configured; no public router URL is assumed |
 
 Examples:
 
