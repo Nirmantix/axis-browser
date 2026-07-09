@@ -15,9 +15,13 @@ Run this from the target project where browser work will happen:
 
 2. Load SKILL.md from the resolved skill path.
 
-3. Preview and apply project-local artifact setup:
-   bash "$BROWSER_BAY_DIR/scripts/setup.sh" --dry-run
-   bash "$BROWSER_BAY_DIR/scripts/setup.sh"
+3. Project readiness gate (required; must run in the target project CWD, not $HOME):
+   bash "$BROWSER_BAY_DIR/scripts/ensure-project-ready.sh"
+   - Exit 0: project already ready — continue.
+   - Exit 2: one-time setup needed — tell the operator, then with approval:
+     bash "$BROWSER_BAY_DIR/scripts/setup.sh" --dry-run
+     bash "$BROWSER_BAY_DIR/scripts/setup.sh"
+     Re-run ensure-project-ready.sh until exit 0.
 
 4. Verify available browser powers:
    bash "$BROWSER_BAY_DIR/scripts/check-prerequisites.sh"

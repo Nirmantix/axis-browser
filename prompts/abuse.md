@@ -8,6 +8,9 @@ Associated skill:
 Launcher rules:
 - Resolve BROWSER_BAY_DIR.
 - Load "$BROWSER_BAY_DIR/SKILL.md".
+- Ensure cwd is the target product project (not $HOME).
+- Run bash "$BROWSER_BAY_DIR/scripts/ensure-project-ready.sh" before browser work.
+  If exit 2, stop and ask the operator to approve setup.sh in that project first.
 - Pass the operator's browser task through verbatim.
 - Follow SKILL.md for all routing, tools, references, fallbacks, safety rules, and reporting.
 

@@ -7,12 +7,20 @@ release history.
 
 ## Unreleased
 
+### Added
+
+* document project-scoped BrowserAct remote MCP setup
+  (`docs/browseract-mcp-per-project.md`, `.mcp.browseract.example.json`);
+  ignore local `.mcp.json` secrets in `.gitignore`
+* BrowserBay shortcodes/prompts: `ensure-project-ready` gate before browser work
+
 ### Changed
 
 * rename the companion Agent Skills router from `browser-skill` to **BrowserBay**
   (`browser-bay`); setup still accepts legacy `BROWSER_SKILL_DIR`,
   `BROWSER_SKILL_SOURCE_URL`, and `skills/browser-skill` install paths
 * prefer env `BROWSER_BAY_DIR` / `BROWSER_BAY_SOURCE_URL` for router discovery
+* align `;abcheck` / `;abuse` and parent README with BrowserBay project gate
 
 ## 0.1.25 (2026-06-27)
 

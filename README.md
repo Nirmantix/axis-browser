@@ -74,14 +74,19 @@ Portability note:
   project-local when reusable scripts, traces, network interception, visual
   regression, or CI are needed.
 - For direct script calls, set `BROWSER_BAY_DIR` (or legacy `BROWSER_SKILL_DIR`)
-  and run `bash "$BROWSER_BAY_DIR/scripts/setup.sh"` once inside each target
-  project so `.tmp/` evidence folders and `.gitignore` hygiene are created in
-  the right repository.
+  and run the project gate inside each target app (not `$HOME`):
+  `bash "$BROWSER_BAY_DIR/scripts/ensure-project-ready.sh"` then
+  `bash "$BROWSER_BAY_DIR/scripts/setup.sh"` if the gate exits `2`.
+- **BrowserAct**: machine CLI auth is separate from optional **project-scoped**
+  remote MCP (published workflows). See
+  [docs/browseract-mcp-per-project.md](docs/browseract-mcp-per-project.md) and
+  the skill's [credentials-setup.md](skills/browser-bay/references/credentials-setup.md)
+  when the nested skill is present.
 - Text-expander prompts live under `prompts/` when present:
-  `;absetup` for machine setup/audit, `;abcheck` for target-project readiness,
-  `;abuse` for loading the browser-bay router, and `;abhealth` for periodic
-  maintenance audits. These prompts are wrappers around the skill and scripts;
-  they are not a second browser routing system.
+  `;absetup` for machine setup/audit, `;abcheck` for target-project readiness
+  (gate + setup), `;abuse` for the browser-bay router (includes project gate),
+  and `;abhealth` for periodic maintenance audits. These prompts are wrappers
+  around the skill and scripts; they are not a second browser routing system.
 
 ## Command Names
 

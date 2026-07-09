@@ -20,9 +20,16 @@ Run this from any shell on the target machine:
 
 4. Treat install groups exactly this way:
    - Core machine tools: Axis Browser CLI, Browser Harness, Microsoft Playwright CLI.
-   - Optional tools: Firecrawl CLI/MCP, BrowserAct, Notte, CloakBrowser, agent-browser.
+   - Optional tools: Firecrawl CLI/MCP, BrowserAct CLI (+ skill handshake via
+     `browser-act get-skills main` / `get-skills core --skill-version`), Notte,
+     CloakBrowser, agent-browser.
+   - BrowserAct **remote MCP** is optional and should be **project-scoped**
+     (`claude mcp add --scope project`), not a global install — see
+     docs/browseract-mcp-per-project.md when present.
    - Project-local libraries: Playwright and CloakBrowser must be installed inside target projects, not globally.
    - Webwright is an external pattern/plugin reference, not an Axis Browser workflow install target.
+   - Remind: project `.tmp/` hygiene is **not** machine setup — each app needs
+     `ensure-project-ready.sh` / `setup.sh` in its own CWD.
 
 Hard credential rules:
 - NEVER write API keys, tokens, credential values, or shell exports to any file.
