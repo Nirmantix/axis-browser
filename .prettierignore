@@ -1,0 +1,15 @@
+# Generated / installed
+node_modules/
+dist/
+coverage/
+pnpm-lock.yaml
+
+# Local-only trees (gitignored; several are separate repos or vendored bundles)
+.tmp/
+skills/
+browserbase-skills/
+.local-docs/
+
+# Hand-maintained static site: formatted for readability by hand, and
+# reflowing it would churn every page for no reviewable gain.
+project-guide-site/

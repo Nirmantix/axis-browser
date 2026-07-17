@@ -5,7 +5,6 @@ minimumReleaseAge: 10080
 minimumReleaseAgeStrict: true
 minimumReleaseAgeExclude:
   - axi-sdk-js
-  - chrome-devtools-axi
 onlyBuiltDependencies:
   - esbuild
 allowBuilds:

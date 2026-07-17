@@ -7,8 +7,8 @@
  * worktree, or test worker - without sharing a single bridge or stepping on
  * each other's stale-ref tracking.
  *
- *   CHROME_DEVTOOLS_AXI_SESSION=worker-1 chrome-devtools-axi open ...
- *   CHROME_DEVTOOLS_AXI_SESSION=worker-2 chrome-devtools-axi open ...
+ *   CHROME_DEVTOOLS_AXI_SESSION=worker-1 axis-browser open ...
+ *   CHROME_DEVTOOLS_AXI_SESSION=worker-2 axis-browser open ...
  *
  * A session only isolates the bridge itself; the connection mode and profile
  * (AUTO_CONNECT / BROWSER_URL / USER_DATA_DIR / --isolated) are unchanged. For
@@ -31,7 +31,6 @@ export const DEFAULT_BASE_PORT = 9224;
 const SESSION_PORT_RANGE = 1000; // 9225..10224 reserved for named sessions
 /** Fork invariant: Axis runtime state stays under ~/.axis-browser */
 const STATE_DIR_NAME = ".axis-browser";
-
 
 /**
  * Resolve the active session name from `CHROME_DEVTOOLS_AXI_SESSION`. Returns

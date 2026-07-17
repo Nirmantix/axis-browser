@@ -25,16 +25,18 @@ vi.mock("../src/client.js", () => ({
 
 import { main, getCommandHelp } from "../src/cli.js";
 import { CdpError } from "../src/client.js";
-import {
-  createPageHelper,
-  isUidRef,
-  parseEvalOutput,
-  runScript,
-} from "../src/run.js";
+import { createPageHelper, isUidRef, runScript } from "../src/run.js";
+import { parseEvalOutput } from "../src/snapshot.js";
 
 /** Mock response for the evaluate_script call that page.open() makes to read url+status. */
 const OPEN_INFO_RESPONSE =
   'Script ran on page and returned:\n```json\n{"url":"https://example.com","status":200}\n```';
+
+/** Mock response for the generation probe parseUidFresh makes before a uid action. */
+function pageGenerationResponse(n: number): string {
+  return `Script ran on page and returned:\n\`\`\`json\n${n}\n\`\`\``;
+}
+const PAGE_GENERATION_RESPONSE = pageGenerationResponse(7);
 
 afterEach(() => {
   callTool.mockReset();
@@ -57,11 +59,9 @@ describe("no-args output", () => {
     await main([]);
 
     const output = String(write.mock.calls[0]?.[0]);
-    expect(output).toContain(
-      "Run `chrome-devtools-axi open <url>` to start browsing",
-    );
+    expect(output).toContain("Run `axis-browser open <url>` to start browsing");
     expect(output).toContain("help[1]:");
-    expect(output).not.toContain("chrome-devtools-axi run");
+    expect(output).not.toContain("axis-browser run");
   });
 });
 
@@ -245,12 +245,26 @@ describe("createPageHelper", () => {
   });
 
   it("page.click accepts stamped uid refs", async () => {
-    callTool.mockResolvedValueOnce("");
+    callTool
+      .mockResolvedValueOnce(PAGE_GENERATION_RESPONSE)
+      .mockResolvedValueOnce("");
 
     const page = createPageHelper(callTool);
     await page.click("@g7:12_3");
 
     expect(callTool).toHaveBeenCalledWith("click", { uid: "12_3" });
+  });
+
+  it("page.click rejects a stale stamped ref instead of acting on it", async () => {
+    // run scripts validate refs exactly like the CLI handlers do; a stale ref
+    // must fail loudly rather than silently act against a superseded tree.
+    callTool.mockResolvedValueOnce(pageGenerationResponse(9));
+
+    const page = createPageHelper(callTool);
+    await expect(page.click("@g7:12_3")).rejects.toMatchObject({
+      code: "STALE_REF",
+    });
+    expect(callTool).not.toHaveBeenCalledWith("click", expect.anything());
   });
 
   it("page.click with CSS selector uses evaluate_script", async () => {
@@ -287,12 +301,24 @@ describe("createPageHelper", () => {
   });
 
   it("page.fill accepts stamped uid refs", async () => {
-    callTool.mockResolvedValueOnce("");
+    callTool
+      .mockResolvedValueOnce(PAGE_GENERATION_RESPONSE)
+      .mockResolvedValueOnce("");
 
     const page = createPageHelper(callTool);
     await page.fill("@g7:3", "hello");
 
     expect(callTool).toHaveBeenCalledWith("fill", { uid: "3", value: "hello" });
+  });
+
+  it("page.fill rejects a stale stamped ref instead of acting on it", async () => {
+    callTool.mockResolvedValueOnce(pageGenerationResponse(9));
+
+    const page = createPageHelper(callTool);
+    await expect(page.fill("@g7:3", "hello")).rejects.toMatchObject({
+      code: "STALE_REF",
+    });
+    expect(callTool).not.toHaveBeenCalledWith("fill", expect.anything());
   });
 
   it("page.fill with CSS selector uses evaluate_script", async () => {

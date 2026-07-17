@@ -12,7 +12,9 @@ Axis Browser has four layers:
 2. **Skill availability** — make `skills/browser-bay/` available to the agent.
 3. **Project readiness** — create `.tmp/` artifact folders and verify tools in
    the target project.
-4. **Task use** — load `SKILL.md` and let it route the browser task.
+4. **Task use** — load `$BROWSER_BAY_DIR/SKILL.md` and let it route the browser
+   task. (Always path-qualify it: a bare `SKILL.md` at the repo root resolves to
+   the Axis Browser setup skill, which is not the router.)
 
 The text-expander prompts under `prompts/` are thin entry points into those
 layers:
@@ -20,8 +22,8 @@ layers:
 | Prompt | Layer | Action |
 |---|---|---|
 | `;absetup` | Machine setup | Runs `check-prerequisites.sh --install` through browser-bay. |
-| `;abcheck` | Project readiness | Runs `setup.sh`, then `check-prerequisites.sh`. |
-| `;abuse` | Task use | Loads `SKILL.md`; it is not a router. |
+| `;abcheck` | Project readiness | Runs the read-only `ensure-project-ready.sh` gate, then `check-prerequisites.sh`. On gate exit 2, runs `setup.sh` only with operator approval. |
+| `;abuse` | Task use | Loads `$BROWSER_BAY_DIR/SKILL.md` and lets it route the browser task. |
 | `;abhealth` | Maintenance | Runs `check-prerequisites.sh --update` and performs a read-only content audit. |
 
 ## Core Boundaries
@@ -53,7 +55,7 @@ the agent host. Use one of these routes:
 - For hosts without native `SKILL.md` discovery, use the adapters under
   `skills/browser-bay/adapters/`.
 
-Once available, `SKILL.md` remains the router. The prompt table above maps
+Once available, `$BROWSER_BAY_DIR/SKILL.md` remains the router. The prompt table above maps
 shortcodes to setup, readiness, use, and maintenance entry points; it does not
 replace the skill discovery step.
 
@@ -79,15 +81,31 @@ Set `BROWSER_HARNESS_DIR` to override that path.
 
 ## Project Readiness
 
-Project setup is handled inside the target project:
+Project readiness is gated, and the gate is read-only. Run it inside the target
+project (its CWD must be the project, not `$HOME`):
 
 ```bash
-bash "$BROWSER_BAY_DIR/scripts/setup.sh" --dry-run
-bash "$BROWSER_BAY_DIR/scripts/setup.sh"
+bash "$BROWSER_BAY_DIR/scripts/ensure-project-ready.sh"
+```
+
+- **Exit 0** — the project is ready; continue straight to
+  `check-prerequisites.sh`. Nothing is written.
+- **Exit 2** — one-time setup is needed. Tell the operator and, **only with
+  their approval**, run `setup.sh`, then re-run the gate until it exits 0:
+
+  ```bash
+  bash "$BROWSER_BAY_DIR/scripts/setup.sh" --dry-run
+  bash "$BROWSER_BAY_DIR/scripts/setup.sh"
+  bash "$BROWSER_BAY_DIR/scripts/ensure-project-ready.sh"
+  ```
+
+```bash
 bash "$BROWSER_BAY_DIR/scripts/check-prerequisites.sh"
 ```
 
-`setup.sh` writes only project artifact hygiene:
+`setup.sh` is the only writing step here, which is why it sits behind the gate
+and behind operator approval rather than running unconditionally. It writes only
+project artifact hygiene:
 
 - `.tmp/screenshots/`
 - `.tmp/scrapes/`
@@ -142,8 +160,9 @@ The same workflow can be performed manually:
 1. Read `skills/browser-bay/README.md`.
 2. Export `BROWSER_BAY_DIR`, or export `AXIS_BROWSER_HOME` and resolve
    `$AXIS_BROWSER_HOME/skills/browser-bay`.
-3. Run `setup.sh` in the target project.
+3. Run `ensure-project-ready.sh` in the target project. On exit 2, run
+   `setup.sh` (with approval) and re-run the gate until it exits 0.
 4. Run `check-prerequisites.sh`.
-5. Use `SKILL.md` to choose the task reference.
+5. Use `$BROWSER_BAY_DIR/SKILL.md` to choose the task reference.
 
 The prompts are convenience wrappers, not a separate source of truth.

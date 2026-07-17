@@ -42,11 +42,9 @@ describe("main", () => {
     const output = String(write.mock.calls[0]?.[0]);
     expect(output).toContain("bin:");
     expect(output).toContain(
-      'description: "Axis Browser is a fast, agent-first CLI for Chrome automation and shared CDP workflows. Compatible with `axib` and `chrome-devtools-axi`."',
+      'description: "Axis Browser is a fast, agent-first CLI for Chrome automation and shared CDP workflows. Also runs as the `axib` shorthand."',
     );
-    expect(output).toContain(
-      "browser: no active session",
-    );
+    expect(output).toContain("browser: no active session");
   });
 
   it("home view with active session shows metadata but not page content", async () => {
@@ -102,7 +100,7 @@ describe("main", () => {
       const output = String(write.mock.calls[0]?.[0]);
       expect(output).toContain("update: disabled");
       expect(output).toContain("github:Nirmantix/axis-browser");
-      expect(output).toContain("upstream, not this fork");
+      expect(output).toContain("not this fork");
       expect(output).not.toContain("latest published npm version");
       expect(callTool).not.toHaveBeenCalled();
       expect(process.exitCode).toBeUndefined();
@@ -118,7 +116,7 @@ describe("main", () => {
 
     const output = String(write.mock.calls[0]?.[0]);
     expect(output).toContain("github:Nirmantix/axis-browser");
-    expect(output).toContain("upstream, not Nirmantix/axis-browser");
+    expect(output).toContain("upstream base");
     expect(output).not.toContain("latest published npm version");
     expect(callTool).not.toHaveBeenCalled();
     expect(process.exitCode).toBeUndefined();

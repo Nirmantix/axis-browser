@@ -32,17 +32,19 @@ must still point users to `github:Nirmantix/axis-browser`, not npm
 
 ## Fork Runtime State
 
-Keep the Axis state directory:
+Keep the Axis state directory. There is exactly one definition to guard:
 
-- `src/bridge.ts`: `STATE_DIR = join(homedir(), ".axis-browser")`
-- `src/client.ts`: `STATE_DIR = join(homedir(), ".axis-browser")`
-- `src/generation.ts`: `STATE_DIR = join(homedir(), ".axis-browser")`
+- `src/sessions.ts`: `STATE_DIR_NAME = ".axis-browser"`
+
+`src/bridge.ts`, `src/client.ts`, and `src/generation.ts` do **not** define a
+state path of their own — they resolve it through `resolveSessionStateDir()` /
+`resolveSessionPidFile()` in `src/sessions.ts`. Guarding that one constant
+covers all three.
 
 Do not restore upstream `~/.chrome-devtools-axi` paths.
 
 Named sessions (`CHROME_DEVTOOLS_AXI_SESSION`) live under
-`~/.axis-browser/sessions/<name>/` via `src/sessions.ts` — keep
-`STATE_DIR_NAME = ".axis-browser"` there.
+`~/.axis-browser/sessions/<name>/`, also derived from `STATE_DIR_NAME`.
 
 ## Fork-Owned Update Command
 

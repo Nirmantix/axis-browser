@@ -1,5 +1,5 @@
 /**
- * Script runner for `chrome-devtools-axi run`.
+ * Script runner for `axis-browser run`.
  *
  * Reads a script from stdin, provides a minimal `page` global, and executes it.
  * Only the script's own console.log output is visible to the caller.
@@ -9,7 +9,9 @@ import { mkdtempSync, writeFileSync, unlinkSync, rmdirSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { CdpError } from "./client.js";
-import { parseStampedUid } from "./snapshot.js";
+import { isRecoverableOpenError } from "./errors.js";
+import { parseUidFresh } from "./refs.js";
+import { parseEvalOutput, stripSnapshotHeader } from "./snapshot.js";
 
 type CallTool = (
   name: string,
@@ -91,52 +93,6 @@ export function wrapJsExpression(js: string): string {
     return trimmed;
   }
   return `() => (${trimmed})`;
-}
-
-// --- Value parsing ---
-
-/** Extract the actual JS value from MCP evaluate_script response wrapper. */
-export function parseEvalOutput(output: string): unknown {
-  const jsonBlock = output.match(/```json\n([\s\S]*?)\n```/);
-  if (jsonBlock) {
-    try {
-      return JSON.parse(jsonBlock[1].trim());
-    } catch {
-      return jsonBlock[1].trim();
-    }
-  }
-  const preamble = "Script ran on page and returned:";
-  if (output.includes(preamble)) {
-    const raw = output.slice(output.indexOf(preamble) + preamble.length).trim();
-    try {
-      return JSON.parse(raw);
-    } catch {
-      return raw;
-    }
-  }
-  return output.trim();
-}
-
-/** Strip MCP preamble/headers from snapshot text, returning just the accessibility tree. */
-function stripSnapshotHeader(text: string): string {
-  const lines = text.split("\n");
-  const treeStart = lines.findIndex((l) => /\bRootWebArea\b|\buid=/.test(l));
-  if (treeStart > 0) return lines.slice(treeStart).join("\n");
-  return text.replace(/^[\s\S]*?##\s+Latest page snapshot\s*\n/, "");
-}
-
-/** Strip leading @ from uid ref string. */
-function parseUid(ref: string): string {
-  return parseStampedUid(ref).uid;
-}
-
-/** Check if an open error is recoverable by falling back to new_page. */
-function isRecoverableOpenError(error: unknown): boolean {
-  if (!(error instanceof CdpError)) return false;
-  if (error.code !== "BROWSER_ERROR") return false;
-  return /not connected|session (?:closed|not found)|no page/i.test(
-    error.message,
-  );
 }
 
 // --- Selector detection ---
@@ -246,7 +202,9 @@ export function createPageHelper(callTool: CallTool): PageHelper {
 
     async click(refOrSelector: string): Promise<void> {
       if (isUidRef(refOrSelector)) {
-        await callTool("click", { uid: parseUid(refOrSelector) });
+        await callTool("click", {
+          uid: await parseUidFresh(refOrSelector, callTool),
+        });
       } else {
         const sel = JSON.stringify(refOrSelector);
         await callTool("evaluate_script", {
@@ -262,7 +220,10 @@ export function createPageHelper(callTool: CallTool): PageHelper {
 
     async fill(refOrSelector: string, text: string): Promise<void> {
       if (isUidRef(refOrSelector)) {
-        await callTool("fill", { uid: parseUid(refOrSelector), value: text });
+        await callTool("fill", {
+          uid: await parseUidFresh(refOrSelector, callTool),
+          value: text,
+        });
       } else {
         const sel = JSON.stringify(refOrSelector);
         const val = JSON.stringify(text);

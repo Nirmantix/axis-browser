@@ -1,8 +1,9 @@
 /**
  * Snapshot generation persistence. The counter survives across CLI
  * invocations (which are short-lived processes sharing one bridge) by
- * writing to a file in STATE_DIR. Each new snapshot bumps the counter,
- * so refs minted in older snapshots can be detected as stale.
+ * writing to a file in the session state dir (see src/sessions.ts). Each new
+ * snapshot bumps the counter, so refs minted in older snapshots can be
+ * detected as stale.
  */
 
 import {

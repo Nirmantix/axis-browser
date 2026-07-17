@@ -5,6 +5,52 @@ This changelog tracks public changes for Axis Browser.
 Versions `0.1.18` and below are inherited from the upstream `chrome-devtools-axi`
 release history.
 
+## Unreleased
+
+### Fixed
+
+* installing the fork from GitHub produced a broken CLI: `dist/` is not
+  committed and npm builds git installs via `prepare`, but only
+  `prepublishOnly` was defined — so the packed tarball held 3 files and every
+  `bin` alias pointed at a missing `dist/bin/chrome-devtools-axi.js`. Build on
+  `prepare` instead
+* element refs no longer go stale on unrelated DOM activity. The page-reported
+  generation folded in a `MutationObserver` count, so any mutation anywhere in
+  the document invalidated every ref in the snapshot — a spinner tick or
+  re-render between `snapshot` and `click` was enough. The tag now identifies
+  the snapshot a ref came from, and stays per-page
+* `run` scripts validated nothing: `page.click` / `page.fill` stripped the
+  generation tag and acted on a stale tree instead of failing with `STALE_REF`.
+  They now validate exactly like the CLI handlers
+* stopping the bridge before it finished binding raised an unhandled rejection,
+  exiting 1 — which `ensureBridge` reported as a *startup* failure with
+  misleading Chrome guidance. A clean stop now exits 0
+* `engines.node` was `>=20`, but `import.meta.dirname` requires 20.11; users on
+  20.0-20.10 would crash. Corrected to `>=20.11`
+* `console` / `network` truncate at 2000 chars with no full-output option, and
+  `--full` is honored by 15 of 36 commands and silently dropped by the rest.
+  Both are now documented rather than implied to be global
+
+### Changed
+
+* the CLI presents itself as `axis-browser` everywhere — help, usage, examples,
+  suggestions, error hints, and bridge logs. `chrome-devtools-axi` is the
+  upstream base tool, and is named only where that distinction is the point
+  (the `update` guidance warning that the npm package is not this fork). The
+  `chrome-devtools-axi` and `axib` aliases still work
+* blocked publishing (`private: true`): the package name belongs to upstream on
+  npm, and this fork is distributed from GitHub
+* refreshed dependencies, clearing 33 advisories (1 critical, 6 high) — all
+  transitive through `@modelcontextprotocol/sdk` and a stale lockfile, with no
+  SDK bump required
+
+### Added
+
+* `pnpm typecheck` — the build config excludes `test/`, so tests were never
+  typechecked and could reference symbols that no longer exist
+* `pnpm format:check`, plus a CI quality job and a Node 20/22/24 matrix
+  covering the range `engines` actually claims
+
 ## 0.1.26 (2026-07-09)
 
 ### Added

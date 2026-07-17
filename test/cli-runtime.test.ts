@@ -87,7 +87,7 @@ describe("main CLI runtime", () => {
     expect(runAxiCli).toHaveBeenCalledWith(
       expect.objectContaining({
         description:
-          "Axis Browser is a fast, agent-first CLI for Chrome automation and shared CDP workflows. Compatible with `axib` and `chrome-devtools-axi`.",
+          "Axis Browser is a fast, agent-first CLI for Chrome automation and shared CDP workflows. Also runs as the `axib` shorthand.",
         version: packageVersion.version,
         topLevelHelp: TOP_HELP,
       }),

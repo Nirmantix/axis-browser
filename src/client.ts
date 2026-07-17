@@ -333,7 +333,7 @@ export function buildBridgeEarlyExitError(
 
   if (code === BRIDGE_PORT_IN_USE_EXIT_CODE) {
     return new CdpError(message, "BRIDGE_NOT_READY", [
-      `Port ${port} is already in use. It may be held by another chrome-devtools-axi session's bridge (a hashed-port collision, or a globally-exported CHROME_DEVTOOLS_AXI_PORT forcing every session onto one port), by a stale or crashed bridge that could not be reused, or by an unrelated process.`,
+      `Port ${port} is already in use. It may be held by another axis-browser session's bridge (a hashed-port collision, or a globally-exported CHROME_DEVTOOLS_AXI_PORT forcing every session onto one port), by a stale or crashed bridge that could not be reused, or by an unrelated process.`,
       "Set a distinct CHROME_DEVTOOLS_AXI_PORT for this session, unset a global CHROME_DEVTOOLS_AXI_PORT so every session derives its own, or free whatever is holding the port.",
     ]);
   }
@@ -507,7 +507,7 @@ export async function callTool(
 export function mapErrorMessage(message: string): CdpError {
   if (message.includes("ECONNREFUSED") || message.includes("ECONNRESET")) {
     return new CdpError("Bridge is not running", "BRIDGE_NOT_READY", [
-      "Run `chrome-devtools-axi open <url>` — the bridge starts automatically",
+      "Run `axis-browser open <url>` — the bridge starts automatically",
     ]);
   }
   if (
@@ -515,12 +515,12 @@ export function mapErrorMessage(message: string): CdpError {
     (message.includes("not found") || message.includes("invalid"))
   ) {
     return new CdpError(message, "REF_NOT_FOUND", [
-      "Run `chrome-devtools-axi snapshot` to see available elements and their @uid refs",
+      "Run `axis-browser snapshot` to see available elements and their @uid refs",
     ]);
   }
   if (message.includes("timeout") || message.includes("timed out")) {
     return new CdpError(message, "TIMEOUT", [
-      "Run `chrome-devtools-axi snapshot` to see current page state",
+      "Run `axis-browser snapshot` to see current page state",
     ]);
   }
   // Try to parse JSON error
@@ -528,7 +528,7 @@ export function mapErrorMessage(message: string): CdpError {
     const parsed = JSON.parse(message);
     if (parsed.error) {
       return new CdpError(parsed.error, "BROWSER_ERROR", [
-        "Run `chrome-devtools-axi snapshot` to see current page state",
+        "Run `axis-browser snapshot` to see current page state",
       ]);
     }
   } catch {

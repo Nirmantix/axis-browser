@@ -89,7 +89,7 @@ Built-in commands exposed by this project:
 
 - `axis-browser`
 - `axib`
-- `chrome-devtools-axi`
+- `chrome-devtools-axi` (legacy alias for the upstream base tool)
 
 This guide uses `axis-browser` because it is the primary public command.
 

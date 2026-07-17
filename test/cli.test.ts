@@ -87,7 +87,10 @@ describe("getCommandHelp", () => {
   it("documents Axis-specific update guidance", () => {
     const help = getCommandHelp("update");
     expect(help).toContain("github:Nirmantix/axis-browser");
-    expect(help).toContain("upstream, not Nirmantix/axis-browser");
+    // Must still name the upstream base package: that npm name is precisely
+    // the thing a user could install by mistake instead of this fork.
+    expect(help).toContain("chrome-devtools-axi");
+    expect(help).toContain("upstream base");
     expect(help).not.toContain("latest published npm version");
   });
 });

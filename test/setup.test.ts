@@ -42,7 +42,7 @@ function makeBrowserSkill(root: string): string {
     [
       "#!/usr/bin/env bash",
       'printf \'check:%s:%s\\n\' "$PWD" "$*"',
-      'printf \'env:%s\\n\' "${AXIS_TEST_ENV:-}"',
+      "printf 'env:%s\\n' \"${AXIS_TEST_ENV:-}\"",
       "exit 0",
       "",
     ].join("\n"),
@@ -52,7 +52,7 @@ function makeBrowserSkill(root: string): string {
     [
       "#!/usr/bin/env bash",
       'printf \'setup:%s:%s\\n\' "$PWD" "$*"',
-      'printf \'env:%s\\n\' "${AXIS_TEST_ENV:-}"',
+      "printf 'env:%s\\n' \"${AXIS_TEST_ENV:-}\"",
       "exit 0",
       "",
     ].join("\n"),
@@ -114,7 +114,9 @@ describe("resolveBrowserSkillDir", () => {
     makeBrowserSkill(portable);
     makeBrowserSkill(standard);
 
-    const env = {
+    // Typed as the real Env (NodeJS.ProcessEnv, all-optional) so the delete
+    // calls below — which walk the resolution precedence chain — typecheck.
+    const env: NodeJS.ProcessEnv = {
       BROWSER_BAY_DIR: envSkill,
       AXIS_BROWSER_HOME: axisHome,
       AXIS_PORTABLE_SKILLS_DIR: portable,
@@ -302,8 +304,7 @@ describe("runSetupWorkflow", () => {
 
 describe("chromeCheck", () => {
   it("detects Windows Chrome install locations", () => {
-    const chrome =
-      "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe";
+    const chrome = "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe";
     const result = chromeCheck("win32", (path) => path === chrome);
     expect(result).toEqual({ status: "ok", path: chrome });
   });
@@ -335,7 +336,6 @@ describe("chromeCheck", () => {
       }
     }
   });
-
 });
 
 describe("setup docs and source portability", () => {

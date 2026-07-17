@@ -44,9 +44,11 @@ export function parseStampedUid(arg: string): ParsedUid {
 /**
  * Rewrite every `uid=<id>` token in snapshot text to carry a generation tag,
  * e.g. `uid=237_15` -> `uid=g7:237_15`. Already-stamped tokens are left alone
- * so this is idempotent. Agents detect re-render churn by feeding tagged refs
- * back to action commands - mismatched generations fail loudly instead of
- * silently no-op'ing against a stale tree.
+ * so this is idempotent. Agents feed tagged refs back to action commands, so a
+ * ref minted by an earlier snapshot fails loudly instead of silently no-op'ing
+ * against a superseded tree. The tag identifies the snapshot a ref came from,
+ * not the DOM's revision: unrelated mutations do not invalidate it, because
+ * resolving a uid that no longer exists is already an error downstream.
  */
 export function stampSnapshotGeneration(
   snapshot: string,
@@ -91,6 +93,39 @@ export function extractTitle(snapshot: string): string {
   const headingMatch = snapshot.match(/\bheading\s+"([^"]+)"/);
   if (headingMatch) return headingMatch[1];
   return "";
+}
+
+/**
+ * Strip everything before the actual accessibility tree (MCP may prepend
+ * status lines and headers).
+ */
+export function stripSnapshotHeader(text: string): string {
+  const lines = text.split("\n");
+  const treeStart = lines.findIndex((l) => /\bRootWebArea\b|\buid=/.test(l));
+  if (treeStart > 0) return lines.slice(treeStart).join("\n");
+  return text.replace(/^[\s\S]*?##\s+Latest page snapshot\s*\n/, "");
+}
+
+/** Extract the actual JS value from an MCP evaluate_script response wrapper. */
+export function parseEvalOutput(output: string): unknown {
+  const jsonBlock = output.match(/```json\n([\s\S]*?)\n```/);
+  if (jsonBlock) {
+    try {
+      return JSON.parse(jsonBlock[1].trim());
+    } catch {
+      return jsonBlock[1].trim();
+    }
+  }
+  const preamble = "Script ran on page and returned:";
+  if (output.includes(preamble)) {
+    const raw = output.slice(output.indexOf(preamble) + preamble.length).trim();
+    try {
+      return JSON.parse(raw);
+    } catch {
+      return raw;
+    }
+  }
+  return output.trim();
 }
 
 export interface TruncationResult {

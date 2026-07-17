@@ -1,3 +1,14 @@
+---
+name: axis-browser-setup
+description: >-
+  Install, configure, or health-check the Axis Browser CLI itself — machine
+  setup, workflow install, readiness reporting, and Claude Code / Codex
+  SessionStart hook installation. Triggers: "set up Axis Browser", "install the
+  Axis workflow", "check browser workflow readiness", "axis-browser setup".
+  This is setup only, not a browser task router: to actually drive a browser
+  (screenshots, scraping, E2E), use the browser-bay skill instead.
+---
+
 # Axis Browser
 
 When a user asks to set up Axis Browser, install the Axis workflow, use Axis

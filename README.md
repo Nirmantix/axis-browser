@@ -26,6 +26,7 @@ This repo keeps a small set of public docs with distinct roles:
 - `docs/setup_and_dev.md` — setup, build, usage, troubleshooting, and teardown lifecycle for the CLI
 - `docs/vibe-coding-browser-workflow.md` — source of truth for the Axis Browser shared-`9222` workflow and troubleshooting habits
 - `docs/better-workflow-lifecycle-design.md` — source of truth for the broader Axis Browser workflow lifecycle: machine setup, skill availability, project readiness, task use, and health audits
+- `docs/browseract-mcp-per-project.md` — project-scoped BrowserAct remote MCP setup, and how it differs from machine CLI auth
 - `docs/upstream_sync.md` — fork override shield for future upstream merges
 
 The optional `skills/browser-bay/` folder is intentionally ignored by the
@@ -80,8 +81,9 @@ Portability note:
 - **BrowserAct**: machine CLI auth is separate from optional **project-scoped**
   remote MCP (published workflows). See
   [docs/browseract-mcp-per-project.md](docs/browseract-mcp-per-project.md) and
-  the skill's [credentials-setup.md](skills/browser-bay/references/credentials-setup.md)
-  when the nested skill is present.
+  the skill's `references/credentials-setup.md` when the nested skill is
+  present. (That path lives under the gitignored `skills/` tree, so it exists
+  only in a local checkout — not on GitHub.)
 - Text-expander prompts live under `prompts/` when present:
   `;absetup` for machine setup/audit, `;abcheck` for target-project readiness
   (gate + setup), `;abuse` for the browser-bay router (includes project gate),
@@ -91,9 +93,9 @@ Portability note:
 ## Command Names
 
 Built-in commands exposed by this project:
-- `axis-browser` — primary documented command
-- `axib` — built-in shorthand compatibility command
-- `chrome-devtools-axi` — upstream-compatible command name
+- `axis-browser` — the command. Use this one; it is what the docs, the CLI's own help, and BrowserBay all refer to.
+- `axib` — built-in shorthand
+- `chrome-devtools-axi` — legacy alias, kept so scripts written against the upstream base tool keep working. Not documented elsewhere; prefer `axis-browser`.
 
 Not built in:
 - `axis`
@@ -214,11 +216,11 @@ npm link
 Agent ergonomics is measurable.
 The [axi benchmark](https://axi.md) runs the same 14 real-world browsing tasks (Wikipedia research, GitHub navigation, multi-site comparison, and more) through 7 browser automation setups - 5 repeats each, with `claude-sonnet-4-6` as the agent and an LLM judge scoring task success.
 
-Axis Browser's upstream-compatible `chrome-devtools-axi` command posts the lowest input tokens, cost, duration, and turn count of all 7 conditions, with 100% task success:
+Axis Browser posts the lowest input tokens, cost, duration, and turn count of all 7 conditions, with 100% task success. (The benchmark measures the upstream `chrome-devtools-axi` base tool; Axis Browser is that same engine plus this fork's changes, so the numbers carry over.)
 
 | Condition                            | Avg Input Tokens | Avg Cost/Task | Avg Duration | Avg Turns | Success  |
 | ------------------------------------ | ---------------- | ------------- | ------------ | --------- | -------- |
-| **Axis Browser / chrome-devtools-axi** | **79,141**       | **$0.074**    | **21.5s**    | **4.5**   | **100%** |
+| **Axis Browser**                     | **79,141**       | **$0.074**    | **21.5s**    | **4.5**   | **100%** |
 | dev-browser                          | 82,532           | $0.078        | 28.6s        | 4.9       | 99%      |
 | agent-browser (Vercel)               | 93,074           | $0.088        | 24.6s        | 4.8       | 99%      |
 | chrome-devtools-mcp + compressor CLI | 130,779          | $0.091        | 29.7s        | 7.6       | 100%     |
@@ -244,8 +246,9 @@ RootWebArea "Example Domain"
   heading "Example Domain"
   paragraph "This domain is for use in illustrative examples..."
   uid=g1:1 link "More information..."
-help[1]:
+help[2]:
   Run `axis-browser click @g1:1` to click the "More information..." link
+  Use `axis-browser eval <expr>` for JS expressions. For multi-statement code, pass a function: `eval "() => { ...; return result }"`
 ```
 
 Refs in snapshot output carry a `g<N>:` generation prefix that bumps every time a new accessibility tree is captured. Pass refs back exactly as printed — if the page re-rendered between snapshot and action, the action fails loudly with `STALE_REF` instead of silently no-op'ing, so the agent re-snapshots and retries.
@@ -499,7 +502,7 @@ Running with no command shows the CLI home view. It prepends `bin` and `descript
 | `--help`                    | Show usage information                      |
 | `-v`, `-V`, `--version`     | Show the installed CLI version              |
 | `--check`                   | Show GitHub update guidance (update)        |
-| `--full`                    | Show complete output without truncation     |
+| `--full`                    | Show complete output without truncation (open, snapshot, click, fill, type, press, scroll, back, eval, hover, drag, fillform, upload, newpage, selectpage) |
 | `--background`              | Open new page in background (newpage)       |
 | `--uid @<uid>`              | Target a specific element (screenshot)      |
 | `--full-page`               | Capture entire scrollable page (screenshot) |
@@ -521,6 +524,12 @@ Running with no command shows the CLI home view. It prepends `bin` and `descript
 | `--file <path>`             | Save trace data to file (perf-start/stop)   |
 | `--response-file <path>`    | Save response body (network-get)            |
 | `--request-file <path>`     | Save request body (network-get)             |
+
+`--full` is accepted only by the commands listed above; other commands strip it
+and ignore it silently. Note that `console` and `network` always truncate at
+2000 characters and have no full-output option — use `--limit` and `--page` to
+page through more, or `--response-file`/`--request-file` on `network-get` to
+capture a body in full.
 
 Local output paths for `screenshot`, `heap`, `network-get --response-file`/`--request-file`, `lighthouse --output-dir`, and `perf-start`/`perf-stop --file` resolve against the directory where you invoke the CLI.
 Saved-path output uses the resolved absolute path.

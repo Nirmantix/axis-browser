@@ -1,0 +1,14 @@
+{
+  // Typecheck-only config. The build config excludes test/ so tests never land
+  // in dist/ — which also meant they were never typechecked at all, so a test
+  // could import a symbol that no longer exists and only fail at run time.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true
+  },
+  // `exclude` must be restated: it is inherited from the base config, and
+  // exclude filters include — leaving the base's "test" entry in place would
+  // silently drop every test file and make this check a no-op.
+  "exclude": ["node_modules", "dist"],
+  "include": ["src/**/*.ts", "bin/**/*.ts", "test/**/*.ts"]
+}

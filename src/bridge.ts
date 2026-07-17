@@ -1,5 +1,5 @@
 /**
- * Persistent MCP bridge server for chrome-devtools-axi.
+ * Persistent MCP bridge server for axis-browser.
  *
  * Spawns chrome-devtools-mcp as a child process and maintains a single
  * persistent MCP session. Exposes a simple HTTP API:
@@ -286,7 +286,7 @@ export function createBridgeServer(
 }
 
 function logBridgeMessage(message: string): void {
-  process.stderr.write(`[chrome-devtools-axi] ${message}\n`);
+  process.stderr.write(`[axis-browser] ${message}\n`);
 }
 
 /**
@@ -492,7 +492,13 @@ function createBridgeClient(): Client {
 async function closeServer(server: Server): Promise<void> {
   await new Promise<void>((resolve, reject) => {
     server.close((error) => {
-      if (error) {
+      // A stop signal can land before listen() completes — runBridge boots
+      // Chrome before binding, so that window is seconds wide. An unbound
+      // server is already closed for our purposes, not a failure.
+      if (
+        error &&
+        (error as NodeJS.ErrnoException).code !== "ERR_SERVER_NOT_RUNNING"
+      ) {
         reject(error);
       } else {
         resolve();
@@ -529,9 +535,24 @@ export async function runBridge(port = resolveSessionPort()): Promise<void> {
     if (shuttingDown) return;
     shuttingDown = true;
     removePidFile();
-    await closeServer(server);
-    await client.close();
-    await transport.close();
+    // Each resource is torn down independently: one failure must not skip the
+    // rest, or a server close error would leave the MCP client and transport
+    // open. Failures are logged, never rethrown — an escaping rejection exits
+    // 1, which ensureBridge reports as a *startup* failure with misleading
+    // Chrome guidance. The exit handler below still reaps the process group,
+    // so a stop that got this far is a clean stop.
+    const close = async (name: string, fn: () => Promise<void>) => {
+      try {
+        await fn();
+      } catch (error) {
+        logBridgeMessage(
+          `Shutdown warning (${name}): ${getErrorMessage(error)}`,
+        );
+      }
+    };
+    await close("server", () => closeServer(server));
+    await close("client", () => client.close());
+    await close("transport", () => transport.close());
     process.exit(0);
   };
 
@@ -547,10 +568,9 @@ export async function runBridge(port = resolveSessionPort()): Promise<void> {
     }
   });
 
-  process.on("SIGTERM", () => {
-    void shutdown();
-  });
-  process.on("SIGINT", () => {
-    void shutdown();
-  });
+  const onStopSignal = () => {
+    shutdown().catch(() => process.exit(0));
+  };
+  process.on("SIGTERM", onStopSignal);
+  process.on("SIGINT", onStopSignal);
 }

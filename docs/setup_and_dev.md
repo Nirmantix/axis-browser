@@ -22,6 +22,8 @@ Keep this lifecycle table in sync with the canonical environment reference in
 | Variable | Required | Purpose |
 | --- | --- | --- |
 | `CHROME_DEVTOOLS_AXI_AUTO_CONNECT` | No | Set to `1` to attach to Chrome 144+ auto-connect. |
+| `CHROME_DEVTOOLS_AXI_SESSION` | No | Named session for concurrent isolation. Each name gets its own bridge process, state dir, and a port derived from the name. Default: `default`. An explicit `CHROME_DEVTOOLS_AXI_PORT` overrides that derivation for **every** session, so exporting one globally forces all sessions onto a single port — set it per session, or not at all. |
+| `CHROME_DEVTOOLS_AXI_CHANNEL` | No | Chrome release channel: `stable` (default), `beta`, `canary`, or `dev`. Ignored when `CHROME_DEVTOOLS_AXI_BROWSER_URL` is set. |
 | `CHROME_DEVTOOLS_AXI_BROWSER_URL` | No | Attach to an existing HTTP(S) or WS(S) CDP endpoint. |
 | `CHROME_DEVTOOLS_AXI_WS_HEADERS` | No | JSON object of headers for WS(S) endpoints. Do not commit secret values. |
 | `CHROME_DEVTOOLS_AXI_USER_DATA_DIR` | No | Use a persistent Chrome profile for a managed launch. |

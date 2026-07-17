@@ -5,9 +5,10 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  workflow_dispatch:
 
 jobs:
-  build-and-test:
+  quality:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -17,6 +18,32 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version: 24
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run format:check
+      # Covers test/, which the build config excludes and so never typechecked.
+      - run: pnpm run typecheck
+
+  build-and-test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # engines.node is ">=20.11" (import.meta.dirname landed in 20.11), so
+        # test the supported floor and each LTS above it. Testing only the
+        # newest lets a break on the floor reach users instead of CI. Pin the
+        # floor to 20.11 rather than a floating 20, which would resolve to the
+        # latest 20.x and never exercise the version engines actually claims.
+        node-version: ["20.11", "22", "24"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ matrix.node-version }}
           cache: pnpm
 
       - run: pnpm install --frozen-lockfile
