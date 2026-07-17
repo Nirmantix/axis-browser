@@ -15,11 +15,34 @@ vi.mock("axi-sdk-js", async () => {
 
 import {
   computeCodexConfigUpdate,
-  computeHookUpdate,
-  getHookTargets,
+  computeSessionStartHookUpdate,
+  type HookSettings,
+} from "axi-sdk-js";
+import {
   installHooksOrThrow,
   shouldInstallHooksForExecPath,
+  stripLegacyManagedHooks,
 } from "../src/hooks.js";
+
+/** Must match src/hooks.ts. */
+const HOOK_MARKER = "axis-browser";
+
+/**
+ * Mirrors the spec `installHooksOrThrow` hands the SDK. These stay contract
+ * tests for the hook behavior the CLI depends on — src/hooks.ts used to wrap
+ * this call, but nothing in production ever called the wrapper, so the tests
+ * drive the SDK directly rather than a shim kept alive only for them.
+ */
+function computeHookUpdate(
+  settings: HookSettings,
+  execPath: string,
+): [HookSettings, boolean] {
+  return computeSessionStartHookUpdate(settings, {
+    marker: HOOK_MARKER,
+    command: execPath,
+    timeoutSeconds: 10,
+  }) as [HookSettings, boolean];
+}
 
 describe("installHooksOrThrow", () => {
   it("throws when the hook installer reports an internal install error", () => {
@@ -38,14 +61,14 @@ describe("computeHookUpdate", () => {
     const settings = {};
     const [updated, changed] = computeHookUpdate(
       settings,
-      "/usr/bin/chrome-devtools-axi",
+      "/usr/bin/axis-browser",
     );
     expect(changed).toBe(true);
     expect(updated.hooks).toBeDefined();
     expect(updated.hooks!.SessionStart).toBeDefined();
     expect(updated.hooks!.SessionStart!.length).toBeGreaterThan(0);
     const hookCmd = JSON.stringify(updated);
-    expect(hookCmd).toContain("chrome-devtools-axi");
+    expect(hookCmd).toContain("axis-browser");
   });
 
   it("installs hook alongside existing hooks", () => {
@@ -67,12 +90,12 @@ describe("computeHookUpdate", () => {
     };
     const [updated, changed] = computeHookUpdate(
       settings,
-      "/usr/bin/chrome-devtools-axi",
+      "/usr/bin/axis-browser",
     );
     expect(changed).toBe(true);
     const str = JSON.stringify(updated);
     expect(str).toContain("other-tool status");
-    expect(str).toContain("chrome-devtools-axi");
+    expect(str).toContain("axis-browser");
   });
 
   it("is a no-op when hook exists with correct path", () => {
@@ -84,7 +107,7 @@ describe("computeHookUpdate", () => {
             hooks: [
               {
                 type: "command" as const,
-                command: "/usr/bin/chrome-devtools-axi",
+                command: "/usr/bin/axis-browser",
                 timeout: 10,
               },
             ],
@@ -92,10 +115,7 @@ describe("computeHookUpdate", () => {
         ],
       },
     };
-    const [, changed] = computeHookUpdate(
-      settings,
-      "/usr/bin/chrome-devtools-axi",
-    );
+    const [, changed] = computeHookUpdate(settings, "/usr/bin/axis-browser");
     expect(changed).toBe(false);
   });
 
@@ -108,7 +128,7 @@ describe("computeHookUpdate", () => {
             hooks: [
               {
                 type: "command" as const,
-                command: "/old/path/chrome-devtools-axi",
+                command: "/old/path/axis-browser",
                 timeout: 10,
               },
             ],
@@ -118,11 +138,11 @@ describe("computeHookUpdate", () => {
     };
     const [updated, changed] = computeHookUpdate(
       settings,
-      "/new/path/chrome-devtools-axi",
+      "/new/path/axis-browser",
     );
     expect(changed).toBe(true);
     const str = JSON.stringify(updated);
-    expect(str).toContain("/new/path/chrome-devtools-axi");
+    expect(str).toContain("/new/path/axis-browser");
     expect(str).not.toContain("/old/path/");
   });
 
@@ -145,12 +165,12 @@ describe("computeHookUpdate", () => {
     };
     const [updated, changed] = computeHookUpdate(
       settings,
-      "/usr/bin/chrome-devtools-axi",
+      "/usr/bin/axis-browser",
     );
     expect(changed).toBe(true);
     const str = JSON.stringify(updated);
     expect(str).toContain("cleanup-tool run");
-    expect(str).toContain("chrome-devtools-axi");
+    expect(str).toContain("axis-browser");
   });
 
   it("repairs hooks regardless of whether the exec path is production-eligible", () => {
@@ -162,7 +182,7 @@ describe("computeHookUpdate", () => {
             hooks: [
               {
                 type: "command" as const,
-                command: "/usr/local/bin/chrome-devtools-axi",
+                command: "/usr/local/bin/axis-browser",
                 timeout: 10,
               },
             ],
@@ -199,34 +219,95 @@ describe("shouldInstallHooksForExecPath", () => {
   });
 });
 
-describe("getHookTargets", () => {
-  it("returns Claude and both Codex targets", () => {
-    const targets = getHookTargets();
-    expect(targets.length).toBe(3);
-    expect(targets.some((t) => t.path.includes(".claude"))).toBe(true);
-    expect(targets.some((t) => t.path.includes(".codex/hooks.json"))).toBe(
-      true,
-    );
-    expect(targets.some((t) => t.path.includes(".codex/config.toml"))).toBe(
-      true,
-    );
+describe("stripLegacyManagedHooks", () => {
+  const legacyGroup = (command: string) => ({
+    matcher: "",
+    hooks: [{ type: "command", command, timeout: 10 }],
   });
 
-  it("Claude target reads from settings.json", () => {
-    const claude = getHookTargets().find((t) => t.path.includes(".claude"));
-    expect(claude!.path).toMatch(/settings\.json$/);
+  it("removes a hook installed under the previous marker", () => {
+    const [updated, changed] = stripLegacyManagedHooks({
+      hooks: { SessionStart: [legacyGroup("/usr/bin/chrome-devtools-axi")] },
+    });
+    expect(changed).toBe(true);
+    expect(JSON.stringify(updated)).not.toContain("chrome-devtools-axi");
   });
 
-  it("Codex target reads from hooks.json", () => {
-    const codex = getHookTargets().find((t) => t.path.includes(".codex"));
-    expect(codex!.path).toMatch(/hooks\.json$/);
+  it("upgrading does not leave both markers firing", () => {
+    // The regression this exists for: the SDK only strips entries matching the
+    // *current* marker, so without this pass an upgrade ran two session hooks.
+    const [updated, changed] = stripLegacyManagedHooks({
+      hooks: {
+        SessionStart: [
+          legacyGroup("/usr/bin/chrome-devtools-axi"),
+          legacyGroup("/usr/bin/axis-browser"),
+        ],
+      },
+    });
+    expect(changed).toBe(true);
+    const str = JSON.stringify(updated);
+    expect(str).not.toContain("chrome-devtools-axi");
+    expect(str).toContain("/usr/bin/axis-browser");
   });
 
-  it("Codex config target reads from config.toml", () => {
-    const codex = getHookTargets().find((t) =>
-      t.path.includes(".codex/config.toml"),
-    );
-    expect(codex!.path).toMatch(/config\.toml$/);
+  it("leaves the current marker's hooks alone", () => {
+    const settings = {
+      hooks: { SessionStart: [legacyGroup("/usr/bin/axis-browser")] },
+    };
+    const [updated, changed] = stripLegacyManagedHooks(settings);
+    expect(changed).toBe(false);
+    expect(updated).toBe(settings);
+  });
+
+  it("does not touch unrelated hooks, including chrome-devtools-mcp", () => {
+    const settings = {
+      hooks: {
+        SessionStart: [
+          legacyGroup("npx -y chrome-devtools-mcp@latest"),
+          legacyGroup("other-tool status"),
+        ],
+      },
+    };
+    const [updated, changed] = stripLegacyManagedHooks(settings);
+    expect(changed).toBe(false);
+    expect(updated).toBe(settings);
+  });
+
+  it("preserves sibling hooks inside a shared group", () => {
+    const [updated, changed] = stripLegacyManagedHooks({
+      hooks: {
+        SessionStart: [
+          {
+            matcher: "",
+            hooks: [
+              { type: "command", command: "/usr/bin/chrome-devtools-axi" },
+              { type: "command", command: "keep-me run" },
+            ],
+          },
+        ],
+      },
+    });
+    expect(changed).toBe(true);
+    const str = JSON.stringify(updated);
+    expect(str).toContain("keep-me run");
+    expect(str).not.toContain("chrome-devtools-axi");
+  });
+
+  it("drops a group left empty and preserves other settings keys", () => {
+    const [updated, changed] = stripLegacyManagedHooks({
+      model: "opus",
+      hooks: { SessionStart: [legacyGroup("/usr/bin/chrome-devtools-axi")] },
+    });
+    expect(changed).toBe(true);
+    expect(updated.hooks!.SessionStart).toEqual([]);
+    expect(updated.model).toBe("opus");
+  });
+
+  it("is a no-op when there are no SessionStart hooks", () => {
+    const settings = {};
+    const [updated, changed] = stripLegacyManagedHooks(settings);
+    expect(changed).toBe(false);
+    expect(updated).toBe(settings);
   });
 });
 

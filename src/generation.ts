@@ -6,13 +6,7 @@
  * detected as stale.
  */
 
-import {
-  existsSync,
-  mkdirSync,
-  readFileSync,
-  unlinkSync,
-  writeFileSync,
-} from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { resolveSessionStateDir } from "./sessions.js";
 
@@ -45,13 +39,4 @@ export function bumpGeneration(): number {
     // worst case is one missed stale-ref detection, not a hang.
   }
   return next;
-}
-
-export function resetGeneration(): void {
-  const file = genFile();
-  try {
-    if (existsSync(file)) unlinkSync(file);
-  } catch {
-    // ignore
-  }
 }

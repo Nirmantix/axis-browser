@@ -199,6 +199,17 @@ export async function waitForProcessExit(
   return !isProcessAlive(pid);
 }
 
+/**
+ * Whether `pid` is one of our bridge processes, decided by inspecting its
+ * command line.
+ *
+ * POSIX-only: `ps` does not exist on Windows, so this returns false there and
+ * callers fall back to killing the bare pid instead of the process group. That
+ * degrades rather than breaks — the bridge still dies — but chrome-devtools-mcp
+ * and Chrome children can survive as orphans. Returning false on an unknown pid
+ * is also the safe direction: it never escalates to a group kill we are not
+ * certain we own.
+ */
 function isBridgeProcess(pid: number): boolean {
   try {
     const command = execFileSync("ps", ["-p", String(pid), "-o", "command="], {
@@ -493,11 +504,22 @@ export async function callTool(
 
   try {
     const resp = await httpPost(port, "/call", { name, args });
-    const data = JSON.parse(resp);
-    if (data.error) {
-      throw new Error(data.error);
+    // Remote input: the bridge always sends a string `result` (extractToolText),
+    // but parsing to `any` let a non-string escape through a Promise<string>
+    // signature untouched. Validate rather than trust the wire.
+    const data = JSON.parse(resp) as { error?: unknown; result?: unknown };
+    // Presence, not truthiness: the bridge sets `error` only on failure, so a
+    // falsy-but-present value ("" from a truncated message, 0, false) is still
+    // an error response and must not fall through as a successful result.
+    if (data.error != null) {
+      const detail =
+        typeof data.error === "string"
+          ? data.error
+          : JSON.stringify(data.error);
+      throw new Error(detail || "Bridge reported an error with no detail");
     }
-    return data.result ?? "";
+    if (data.result == null) return "";
+    return typeof data.result === "string" ? data.result : String(data.result);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     throw mapErrorMessage(message);

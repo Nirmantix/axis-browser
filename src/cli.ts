@@ -21,7 +21,6 @@ import {
   type ParsedSetupArgs,
 } from "./setup.js";
 
-export { wrapJsExpression };
 import {
   countRefs,
   extractTitle,
@@ -246,7 +245,7 @@ examples:
   axis-browser wait 2000
   axis-browser wait "Submit"`,
 
-  eval: `usage: axis-browser eval <js>
+  eval: `usage: axis-browser eval <js> [--full]
 Evaluate a JavaScript expression in the page context and return the result.
 A bare expression is wrapped as () => (<js>); pass a function (arrow or
 function-keyword) for multi-statement logic. No-arg IIFE form (...)() is
@@ -254,6 +253,9 @@ also accepted and unwrapped automatically.
 
 args:
   <js>  JavaScript expression (required)
+
+flags:
+  --full  Show complete output without truncation
 
 examples:
   axis-browser eval "document.title"

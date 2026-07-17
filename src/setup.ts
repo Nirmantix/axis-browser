@@ -88,7 +88,9 @@ const STANDARD_AGENT_SKILL_PARENTS = [
   [".config", "agents", "skills"],
   [".claude", "skills"],
   [".config", "opencode", "skills"],
-  [".pi", "skills"],
+  // pi nests its skills root under ~/.pi/agent/, alongside agents/,
+  // extensions/, and prompts/ — not at ~/.pi/skills.
+  [".pi", "agent", "skills"],
 ] as const;
 
 export function parseSetupArgs(args: string[]): ParsedSetupArgs {

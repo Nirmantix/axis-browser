@@ -142,6 +142,25 @@ describe("resolveBrowserSkillDir", () => {
     );
   });
 
+  it.each([
+    [".codex/skills", [".codex", "skills"]],
+    [".config/agents/skills", [".config", "agents", "skills"]],
+    [".claude/skills", [".claude", "skills"]],
+    [".config/opencode/skills", [".config", "opencode", "skills"]],
+    // pi nests its skills root under ~/.pi/agent/ — a bare ~/.pi/skills is not
+    // a location pi ever reads, so looking there finds nothing.
+    [".pi/agent/skills", [".pi", "agent", "skills"]],
+  ])("discovers a skill installed at the %s host location", (_label, parts) => {
+    const root = tempDir();
+    const home = join(root, "home");
+    const cwd = join(root, "project");
+    const installed = makeBrowserSkill(join(home, ...(parts as string[])));
+
+    expect(resolveBrowserSkillDir({ env: {}, home, cwd }).path).toBe(
+      resolve(installed),
+    );
+  });
+
   it("accepts legacy BROWSER_SKILL_DIR and browser-skill folder names", () => {
     const root = tempDir();
     const home = join(root, "home");

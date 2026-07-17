@@ -48,10 +48,16 @@ describe("getCommandHelp", () => {
     }
   });
 
-  it("does not include --full for non-snapshot commands", () => {
-    expect(getCommandHelp("eval")).not.toContain("--full");
+  it("does not include --full for commands that ignore it", () => {
+    // start/stop take no argv at all, so --full would be silently dropped.
     expect(getCommandHelp("start")).not.toContain("--full");
     expect(getCommandHelp("stop")).not.toContain("--full");
+  });
+
+  it("documents --full for eval, which honors it", () => {
+    // eval dispatches through withFullFlag, so the flag is real — its help
+    // previously omitted it, which is the only reason this read as unsupported.
+    expect(getCommandHelp("eval")).toContain("--full");
   });
 
   it("has help for all commands", () => {

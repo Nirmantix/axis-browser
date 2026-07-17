@@ -234,31 +234,34 @@ export async function handleBridgeRequest(
 ): Promise<void> {
   res.setHeader("Content-Type", "application/json");
 
-  if (
-    req.method === "GET" &&
-    (req.url === "/health" || req.url?.startsWith("/health?"))
-  ) {
-    if (!(await isBridgeClientConnected(client))) {
-      writeJson(res, 503, { status: "error", error: "Not connected" });
-      return;
-    }
-    const deep = req.url.includes("deep=1");
-    if (deep) {
-      const probe = await isBridgeTargetReachable(client);
-      if (!probe.ok) {
-        writeJson(res, 503, {
-          status: "error",
-          error: "CDP target unreachable",
-          reason: probe.reason,
-        });
+  // Every branch stays inside the try. The health probes catch internally
+  // today, so a throw here is not reachable — but this handler is dispatched
+  // without an awaiting caller, so anything that escaped would surface as an
+  // unhandled rejection and take the bridge down rather than fail one request.
+  try {
+    if (
+      req.method === "GET" &&
+      (req.url === "/health" || req.url?.startsWith("/health?"))
+    ) {
+      if (!(await isBridgeClientConnected(client))) {
+        writeJson(res, 503, { status: "error", error: "Not connected" });
         return;
       }
+      if (req.url.includes("deep=1")) {
+        const probe = await isBridgeTargetReachable(client);
+        if (!probe.ok) {
+          writeJson(res, 503, {
+            status: "error",
+            error: "CDP target unreachable",
+            reason: probe.reason,
+          });
+          return;
+        }
+      }
+      writeJson(res, 200, { status: "ok", session: sessionName });
+      return;
     }
-    writeJson(res, 200, { status: "ok", session: sessionName });
-    return;
-  }
 
-  try {
     if (req.method === "GET" && req.url === "/tools") {
       await handleToolsRequest(client, res);
       return;
@@ -281,7 +284,17 @@ export function createBridgeServer(
   sessionName?: string,
 ): Server {
   return createServer((req, res) => {
-    void handleBridgeRequest(client, req, res, sessionName);
+    // Backstop: one failed request must never kill the bridge. handleBridgeRequest
+    // already reports its own errors, so reaching here means the failure escaped
+    // even that — respond if we still can, and always close the socket.
+    handleBridgeRequest(client, req, res, sessionName).catch((error) => {
+      logBridgeMessage(`Request handler error: ${getErrorMessage(error)}`);
+      if (!res.headersSent) {
+        writeJson(res, 500, { error: getErrorMessage(error) });
+      } else {
+        res.end();
+      }
+    });
   });
 }
 

@@ -30,6 +30,21 @@ release history.
 * `console` / `network` truncate at 2000 chars with no full-output option, and
   `--full` is honored by 15 of 36 commands and silently dropped by the rest.
   Both are now documented rather than implied to be global
+* `setup` looked for pi's skills at `~/.pi/skills`, which pi never reads — its
+  skills root is `~/.pi/agent/skills`, alongside `agents/` and `extensions/`.
+  A BrowserBay install there was reported as missing
+* a tagged ref is now rejected when the current page reports no snapshot state.
+  It had fallen back to the session counter, so after a navigation — which wipes
+  that state — a ref minted against the previous document was silently accepted.
+  A failed probe still falls back, since it proves nothing about the page
+* the bridge's `/health` branch sat outside the request try/catch and was
+  dispatched with a bare `void`, so a throw there would have killed the bridge
+  rather than failing one request. Bridge teardown likewise ran three cleanups
+  in one `try`, so a server-close error skipped the client and transport
+* `callTool` parsed the bridge response to `any` and returned it through a
+  `Promise<string>`, letting a non-string `result` escape as a string
+* `eval` honors `--full` but its help omitted it, so the flag read as
+  unsupported
 
 ### Changed
 
@@ -43,6 +58,24 @@ release history.
 * refreshed dependencies, clearing 33 advisories (1 critical, 6 high) — all
   transitive through `@modelcontextprotocol/sdk` and a stale lockfile, with no
   SDK bump required
+* `setup hooks` now writes `axis-browser` as the SessionStart command instead of
+  `chrome-devtools-axi`, so the hook a user finds in their own agent config
+  names the tool they installed. This is also the marker the SDK matches managed
+  hooks by, so `setup hooks` first removes entries written under the previous
+  marker — upgrading otherwise left both installed and fired two session hooks.
+  The orphaned `axi-chrome-devtools-axi.js` opencode plugin is removed too.
+  Unrelated hooks, including `chrome-devtools-mcp`, are untouched
+
+### Removed
+
+* dead exports with no caller in `src/` or `bin/`, which nothing outside could
+  reach either — the package publishes no library entrypoint, only `bin`:
+  `installHooks` (superseded by the explicit `setup hooks` command),
+  `getHookTargets` (also incomplete — it omitted the opencode plugin the SDK
+  writes), `computeHookUpdate` / `computeCodexConfigUpdate` (thin pass-throughs
+  to `axi-sdk-js`; their tests now drive the SDK directly), `resetGeneration`,
+  and `parseUid`. Also dropped a `wrapJsExpression` re-export that existed only
+  so a test could import it from `cli.ts` rather than its real home
 
 ### Added
 
