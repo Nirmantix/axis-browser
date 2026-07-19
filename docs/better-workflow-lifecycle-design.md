@@ -71,13 +71,15 @@ The install mode is interactive and permission-gated. It never writes API keys,
 credential values, shell exports, `.env` files, shell rc files, MCP configs, or
 credential stores.
 
-The default Browser Harness checkout convention is:
+For an Axis Browser workflow checkout, the Browser Harness checkout convention is:
 
 ```text
-$HOME/Developer/browser-harness
+$AXIS_BROWSER_HOME/browser-harness
 ```
 
-Set `BROWSER_HARNESS_DIR` to override that path.
+Set `BROWSER_HARNESS_DIR` to override that path. A standalone BrowserBay install
+without either environment variable retains `$HOME/Developer/browser-harness`
+as its portable fallback.
 
 ## Project Readiness
 

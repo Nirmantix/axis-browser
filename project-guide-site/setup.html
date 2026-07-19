@@ -186,7 +186,7 @@ axis-browser setup --install --project /path/to/target-project</pre>
             </tr>
             <tr>
               <td>Interactive browser work</td>
-              <td><code>uv --version</code><br><code>git clone https://github.com/browser-use/browser-harness "$HOME/Developer/browser-harness"</code><br><code>(cd "$HOME/Developer/browser-harness" &amp;&amp; uv tool install -e .)</code></td>
+              <td><code>uv --version</code><br><code>export BROWSER_HARNESS_DIR="${BROWSER_HARNESS_DIR:-${AXIS_BROWSER_HOME:-$HOME/Developer}/browser-harness}"</code><br><code>git clone https://github.com/browser-use/browser-harness "$BROWSER_HARNESS_DIR"</code><br><code>(cd "$BROWSER_HARNESS_DIR" &amp;&amp; uv tool install -e .)</code></td>
               <td>Browser Harness is the default high-capability browser control path in the skill router.</td>
             </tr>
             <tr>

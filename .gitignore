@@ -23,6 +23,9 @@ chrome-devtools-axi-repomix-full.xml
 skills/
 personal-browser-automation-guide.md
 
+# Vendored browser tools (installed standalone, not part of this repo)
+browser-harness/
+
 # Editor and IDE files
 .vscode/
 .idea/
