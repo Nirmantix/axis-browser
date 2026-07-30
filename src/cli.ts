@@ -1364,16 +1364,29 @@ async function handleReap(args: string[]): Promise<string> {
   });
 }
 
-/** Wait for the operator to press Enter. Resolves immediately when stdin is not a TTY. */
+/** Wait for the operator to press Enter. Resolves immediately when stdin is not a TTY
+ *  (defensive — handleLogin refuses non-TTY first), and also resolves if stdin closes
+ *  before any data, so the bridge and profile lock are never left dangling on a closed
+ *  pipe. (new Promise rather than Promise.withResolvers: the project tsconfig targets
+ *  ES2022 and withResolvers needs ES2024 libs — bumping lib is a separate config pass.) */
 function waitForEnter(): Promise<void> {
   return new Promise((resolve) => {
-    const onData = () => {
+    if (!process.stdin.isTTY) {
+      resolve();
+      return;
+    }
+    const done = () => {
       process.stdin.off("data", onData);
+      process.stdin.off("end", done);
+      process.stdin.off("error", done);
       process.stdin.pause();
       resolve();
     };
+    const onData = () => done();
     process.stdin.resume();
     process.stdin.once("data", onData);
+    process.stdin.once("end", done);
+    process.stdin.once("error", done);
   });
 }
 
@@ -1412,34 +1425,38 @@ async function handleLogin(args: string[]): Promise<string> {
   );
 
   await ensureBridge();
-  try {
-    await callTool("navigate_page", { type: "url", url });
-  } catch (error) {
-    if (!isRecoverableOpenError(error)) throw error;
-    await callTool("new_page", { url });
-  }
-
-  process.stderr.write(
-    `\nA browser window is open on ${url} using the profile at:\n  ${profileDir}\n\n` +
-      "Sign in there, then press Enter here to save and close.\n",
-  );
-  await waitForEnter();
-
-  // Verify something actually landed rather than reporting a success we did not check.
   let cookieCount = 0;
   try {
-    const result = await callTool("evaluate_script", {
-      function:
-        "() => document.cookie.split(';').filter((c) => c.trim()).length",
-    });
-    const match = JSON.stringify(result).match(/(\d+)/);
-    if (match) cookieCount = Number(match[1]);
-  } catch {
-    // A failed probe is not a failed login; report it as unknown rather than zero.
-    cookieCount = -1;
-  }
+    try {
+      await callTool("navigate_page", { type: "url", url });
+    } catch (error) {
+      if (!isRecoverableOpenError(error)) throw error;
+      await callTool("new_page", { url });
+    }
 
-  await stopBridge();
+    process.stderr.write(
+      `\nA browser window is open on ${url} using the profile at:\n  ${profileDir}\n\n` +
+        "Sign in there, then press Enter here to save and close.\n",
+    );
+    await waitForEnter();
+
+    // Verify something actually landed rather than reporting a success we did not check.
+    try {
+      const result = await callTool("evaluate_script", {
+        function:
+          "() => document.cookie.split(';').filter((c) => c.trim()).length",
+      });
+      const match = JSON.stringify(result).match(/(\d+)/);
+      if (match) cookieCount = Number(match[1]);
+    } catch {
+      // A failed probe is not a failed login; report it as unknown rather than zero.
+      cookieCount = -1;
+    }
+  } finally {
+    // stopBridge runs on every path (including throw) so a failed login never leaves a
+    // browser holding the profile's SingletonLock — which would block the next session.
+    await stopBridge();
+  }
 
   return encode({
     status: "saved",

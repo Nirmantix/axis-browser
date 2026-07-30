@@ -21,7 +21,8 @@
  */
 
 import { homedir } from "node:os";
-import { isAbsolute, join, resolve, sep } from "node:path";
+import { realpathSync } from "node:fs";
+import { basename, dirname, isAbsolute, join, resolve, sep } from "node:path";
 import { DEFAULT_SESSION_NAME } from "./sessions.js";
 
 export const AXI_MODES = [
@@ -134,26 +135,49 @@ function isWithin(child: string, parent: string): boolean {
 }
 
 /**
- * Refuse a user-data-dir that resolves inside a human's browser profile. Throws with the
- * reason; returns the resolved path otherwise.
+ * Dereference symlinks on the longest existing ancestor of `dir`, then re-append any
+ * not-yet-existing trailing components. `path.resolve` is purely lexical, so without
+ * this a symlink can route a profile directory inside a real browser profile while
+ * slipping past `isWithin`.
+ */
+function resolveReal(dir: string): string {
+  const abs = resolve(dir);
+  const suffix: string[] = [];
+  let cur = abs;
+  for (;;) {
+    try {
+      const real = realpathSync(cur);
+      return suffix.length ? join(real, ...suffix) : real;
+    } catch {
+      if (cur === sep || dirname(cur) === cur) return abs; // reached root; nothing left to dereference
+      suffix.unshift(basename(cur));
+      cur = dirname(cur);
+    }
+  }
+}
+
+/**
+ * Refuse a user-data-dir that resolves inside a human's browser profile. Throws with
+ * the reason; returns the resolved path otherwise. Symlinks are dereferenced first
+ * (`resolveReal`) so a link cannot smuggle a real profile past the containment check.
  */
 export function assertSafeUserDataDir(
   dir: string,
   home: string = homedir(),
   platform: NodeJS.Platform = process.platform,
 ): string {
-  const resolved = resolve(dir);
+  const realDir = resolveReal(dir);
   for (const root of realProfileRoots(home, platform)) {
-    if (isWithin(resolved, root)) {
+    if (isWithin(realDir, resolveReal(root))) {
       throw new Error(
-        `Refusing to use "${resolved}" as an automation profile: it is inside the browser profile at "${root}". ` +
+        `Refusing to use "${dir}" (resolves to "${realDir}") as an automation profile: it is inside the browser profile at "${root}". ` +
           "Chrome refuses to bind a debugging socket on a default profile (the flag is accepted, nothing listens), " +
           "and an automation run would contend for that profile's lock against the browser you use yourself. " +
           `Use a dedicated directory instead, e.g. CHROME_DEVTOOLS_AXI_USER_DATA_DIR="${defaultManagedProfileDir(home)}".`,
       );
     }
   }
-  return resolved;
+  return resolve(dir);
 }
 
 /**

@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { join } from "node:path";
+import { mkdtempSync, mkdirSync, rmSync, symlinkSync } from "node:fs";
+import { tmpdir } from "node:os";
 import {
   assertSafeUserDataDir,
   defaultManagedProfileDir,
@@ -233,5 +235,30 @@ describe("resolveUserDataDir", () => {
         "darwin",
       ),
     ).toThrow(/Refusing to use/);
+  });
+});
+
+describe("assertSafeUserDataDir — symlinks are dereferenced (CodeRabbit #4)", () => {
+  // path.resolve is lexical; a symlink must not smuggle a real browser profile past the
+  // containment check. This regression needs a real filesystem.
+  it("refuses a symlink whose target is inside a real Chrome profile", () => {
+    const home = mkdtempSync(join(tmpdir(), "axis-mode-"));
+    const chromeProfile = join(
+      home,
+      "Library",
+      "Application Support",
+      "Google",
+      "Chrome",
+    );
+    mkdirSync(chromeProfile, { recursive: true });
+    const link = join(home, "sneaky-profile");
+    symlinkSync(chromeProfile, link);
+    try {
+      expect(() => assertSafeUserDataDir(link, home, "darwin")).toThrow(
+        /Refusing to use/,
+      );
+    } finally {
+      rmSync(home, { recursive: true, force: true });
+    }
   });
 });

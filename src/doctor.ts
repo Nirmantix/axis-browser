@@ -229,6 +229,8 @@ export async function buildDoctorReport(
       if (!exists) {
         // Not an error: the first managed run creates it. But a site that needs a
         // login has nowhere to have stored one yet, and that IS a human's call.
+        // status follows blockers: a condition mandating escalation is not "ok".
+        if (status === "ok") status = "warn";
         blockers.push("NEEDS_INTERACTIVE_LOGIN (profile has no state yet)");
         remedies.push("axis-browser login <url>");
       }
