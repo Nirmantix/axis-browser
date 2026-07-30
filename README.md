@@ -7,16 +7,22 @@
   <a href="https://github.com/kunchenguid/chrome-devtools-axi"><img alt="Compatibility" src="https://img.shields.io/badge/compatibility-upstream--aligned-blue?style=flat-square" /></a>
 </p>
 
-<h3 align="center">Fast, token-efficient browser automation for shared Chrome and CDP workflows</h3>
+<h3 align="center">Fast, token-efficient browser automation with an explicit connection mode</h3>
 
-`Axis Browser` is a lightweight CLI for browser automation, debugging, and shared-session Chrome workflows.
+`Axis Browser` is a lightweight CLI for browser automation, debugging, and persistent-profile Chrome workflows.
 
 It is optimized for:
-- shared Chrome on `9222`
+- a browser Axis launches and owns — throwaway (`ephemeral`) or persistent-profile (`managed`)
 - low-token page inspection
 - repeatable debugging with console, network, and snapshots
-- practical shared-Chrome debugging with `axis-browser`
+- machine-readable preflight (`axis-browser doctor --json`) so an agent can repair its own environment
 - read-only setup reports for Axis workflow readiness
+
+> **Attaching to a browser you did not launch is an escape hatch, not the default.** Earlier
+> versions of this README led with a shared Chrome on port `9222`. That advice caused a
+> full-day work stoppage on 2026-07-30 and has been removed — see
+> [Connection Modes](#connection-modes) and
+> [docs/shared-session-design.md](docs/shared-session-design.md).
 
 ## Documentation Map
 
@@ -24,7 +30,9 @@ This repo keeps a small set of public docs with distinct roles:
 
 - `README.md` — source of truth for install, commands, environment variables, runtime behavior, and development
 - `docs/setup_and_dev.md` — setup, build, usage, troubleshooting, and teardown lifecycle for the CLI
-- `docs/vibe-coding-browser-workflow.md` — source of truth for the Axis Browser shared-`9222` workflow and troubleshooting habits
+- `docs/vibe-coding-browser-workflow.md` — day-to-day agent workflow and troubleshooting habits
+- `docs/shared-session-design.md` — why the connection model looks the way it does: the 2026-07-30 incident, the mode/profile design, and the verification receipts
+- `upstream/README.md` — third-party sources vendored for reading and CodeGraph queries (never built, never tested, never committed)
 - `docs/better-workflow-lifecycle-design.md` — source of truth for the broader Axis Browser workflow lifecycle: machine setup, skill availability, project readiness, task use, and health audits
 - `docs/browseract-mcp-per-project.md` — project-scoped BrowserAct remote MCP setup, and how it differs from machine CLI auth
 - `docs/upstream_sync.md` — fork override shield for future upstream merges
@@ -305,29 +313,43 @@ Agent hook setup remains explicit:
 axis-browser setup hooks
 ```
 
-## Shared Chrome Quick Start
+## Persistent Login Quick Start
 
-For the shared-`9222` workflow:
-
-```bash
-export CHROME_DEVTOOLS_AXI_BROWSER_URL=http://127.0.0.1:9222
-axis-browser stop
-axis-browser pages
-axis-browser snapshot
-```
-
-Why stop first:
-- the bridge is persistent
-- the bridge can outlive your shell session
-- a clean restart guarantees the current environment is what the bridge actually uses
-
-If the bridge view and raw Chrome CDP disagree:
+When a task needs a logged-in session, use `managed` mode. Axis launches and owns a Chrome
+on a profile that survives between runs, so you sign in **once**:
 
 ```bash
-curl -s http://127.0.0.1:9222/json/list
-axis-browser stop
-axis-browser pages
+export CHROME_DEVTOOLS_AXI_MODE=managed      # profile: ~/.axis-browser-data
+axis-browser login https://example.com       # one-time, interactive, needs a terminal
+axis-browser open https://example.com/app    # every later run is silent
 ```
+
+`login` opens a visible browser, waits for you to sign in, verifies something landed, then
+stops the bridge so the profile lock is released. It refuses to run non-interactively rather
+than opening a browser nobody can see or close.
+
+If a run is not authenticated, ask the tool instead of guessing:
+
+```bash
+axis-browser doctor --json
+```
+
+It reports the active mode, the profile in use and whether it is locked, bridge state, and a
+`remedies` array of **runnable commands**. Only two conditions need a human:
+`NEEDS_INTERACTIVE_LOGIN` and `PORT_HELD_BY_FOREIGN_PROCESS`.
+
+Why stop the bridge before changing connection settings:
+- the bridge is persistent and can outlive your shell session
+- it captured the environment it was started with, so a stale bridge silently ignores new
+  settings — `axis-browser stop` then re-running guarantees the current environment is used
+
+> **Why there is no shared-`9222` quick start any more.** This section used to export
+> `CHROME_DEVTOOLS_AXI_BROWSER_URL=http://127.0.0.1:9222`. Exporting that from a shell
+> profile put *every* shell — including every agent's non-interactive shell — permanently
+> into `attach` mode, and on a machine where another Chromium-based browser already held
+> `9222`, every browser command failed with a diagnostic that named neither the mode nor the
+> port holder. `axis-browser doctor` now names both in about two seconds. The full account
+> is in [docs/shared-session-design.md](docs/shared-session-design.md).
 
 For the full public shared-browser operating model, read:
 - [docs/vibe-coding-browser-workflow.md](docs/vibe-coding-browser-workflow.md)
@@ -486,6 +508,28 @@ For large request or response bodies, prefer `network-get <id> --response-file <
 | `stop`        | Stop the bridge server        |
 | `setup hooks` | Install or repair agent hooks |
 
+### Diagnostics And Session
+
+| Command                    | Description                                                                    |
+| -------------------------- | ------------------------------------------------------------------------------ |
+| `doctor`                   | Preflight report: mode, endpoint, browser, profile, bridges, blockers, remedies |
+| `doctor --json`            | The same report as JSON — the contract agents should key on                     |
+| `login <url>`              | One-time interactive sign-in on the managed profile (requires a terminal)       |
+| `reap`                     | Kill orphaned bridges (claimed by no session, older than 4h)                    |
+| `reap --dry-run`           | Report what would be reaped without killing anything                            |
+| `reap --min-age-hours <n>` | Override the age floor                                                          |
+
+Run `doctor --json` **before** a browser task. Every entry in its `remedies` array is a
+command you can execute verbatim; escalate to a human only for `NEEDS_INTERACTIVE_LOGIN` or
+`PORT_HELD_BY_FOREIGN_PROCESS`. **Local CDP has no authentication — never request
+credentials, tokens, or a `ws://` URL to reach it.**
+
+Orphaned bridges are also reaped automatically when a new bridge starts: only processes
+carrying our own bridge marker, claimed by no session, and at least four hours old. Set
+`CHROME_DEVTOOLS_AXI_AUTO_REAP=0` to disable. If a session PID file is unreadable, automatic
+reaping is suppressed entirely (an unparseable claim is not an absent one) and `doctor`
+reports it.
+
 ### Maintenance
 
 | Command          | Description                                            |
@@ -540,17 +584,54 @@ For both commands, `all` or an omitted `--type` returns every item.
 
 ## Configuration
 
-### Connection Mode Precedence
+### Connection Modes
 
-Axis Browser uses these connection modes in order:
-1. `CHROME_DEVTOOLS_AXI_AUTO_CONNECT=1`
-2. `CHROME_DEVTOOLS_AXI_BROWSER_URL=...`
-3. managed browser launch using `CHROME_DEVTOOLS_AXI_USER_DATA_DIR` or an isolated temp profile
+There are four, and you can now name the one you want instead of having it inferred:
+
+| Mode | Browser | Profile | Use it when |
+| --- | --- | --- | --- |
+| `ephemeral` | Axis launches it | throwaway (`--isolated`) | the default; nothing to remember between runs |
+| `managed` | Axis launches it | persistent, Axis-owned | the task needs a logged-in session |
+| `attach` | someone else's | theirs | you deliberately want a browser Axis did not start |
+| `autoconnect` | your running Chrome | your real profile | Chrome 144+ `chrome://inspect` debugging |
+
+```bash
+export CHROME_DEVTOOLS_AXI_MODE=managed
+```
+
+**Explicit beats inferred.** With `CHROME_DEVTOOLS_AXI_MODE` unset, the historical inference
+still applies unchanged — `AUTO_CONNECT` → `BROWSER_URL` → `USER_DATA_DIR` → `ephemeral` — so
+existing setups behave exactly as before. Setting the variable overrides all of it, and a
+mode that cannot be satisfied (`attach` with no `BROWSER_URL`) fails immediately with the fix,
+rather than ~30s later inside `chrome-devtools-mcp` with a diagnostic that names neither the
+mode nor the cause.
+
+`attach` and `autoconnect` point at a browser Axis does not own: it cannot relaunch it, fix
+its flags, or reap it, and `--executablePath` / keychain isolation / `--chrome-arg` do not
+apply. Prefer `managed`.
+
+#### Profiles are per session
+
+`managed` resolves `CHROME_DEVTOOLS_AXI_USER_DATA_DIR` (default `~/.axis-browser-data`) for
+the **default** session, and `<dir>/sessions/<name>` for any *named*
+`CHROME_DEVTOOLS_AXI_SESSION`. Chrome locks a profile to one process, so two concurrent named
+sessions sharing one directory would not merely interfere — the second fails to launch.
+
+Two consequences worth knowing before they surprise you:
+- A **named** session starts logged out even if the default profile is signed in. `doctor`
+  reports this as `NEEDS_INTERACTIVE_LOGIN` rather than failing opaquely.
+- A `user-data-dir` that resolves inside a **real** browser profile (yours, Chrome's default,
+  Edge, Brave, Ulaa) is **refused**. Chrome accepts `--remote-debugging-port` on a default
+  profile and then silently never binds it, and an automation run would fight your own browser
+  for the profile lock. Symlinks are dereferenced before the check.
 
 ### Environment Variables
 
 | Variable | Purpose |
 | --- | --- |
+| `CHROME_DEVTOOLS_AXI_MODE` | `ephemeral` \| `managed` \| `attach` \| `autoconnect`. Overrides inference |
+| `CHROME_DEVTOOLS_AXI_EXECUTABLE_PATH` | Absolute path to the Chrome/Chromium binary to launch. Launch modes only |
+| `CHROME_DEVTOOLS_AXI_AUTO_REAP` | Set to `0` to disable automatic cleanup of orphaned bridges on bridge startup |
 | `CHROME_DEVTOOLS_AXI_AUTO_CONNECT` | Set to `1` to attach to the user's running Chrome through Chrome 144+ auto-connect |
 | `CHROME_DEVTOOLS_AXI_BROWSER_URL` | Connect to an existing Chrome instance instead of launching one |
 | `CHROME_DEVTOOLS_AXI_WS_HEADERS` | JSON headers for authenticated `ws://` / `wss://` browser endpoints |
@@ -568,13 +649,18 @@ Axis Browser uses these connection modes in order:
 Examples:
 
 ```bash
-export CHROME_DEVTOOLS_AXI_BROWSER_URL=http://127.0.0.1:9222
+export CHROME_DEVTOOLS_AXI_MODE=managed
 export CHROME_DEVTOOLS_AXI_PORT=9225
 export CHROME_DEVTOOLS_AXI_HEADED=1
 export CHROME_DEVTOOLS_AXI_CHROME_ARGS="--enable-gpu --ignore-gpu-blocklist"
+export CHROME_DEVTOOLS_AXI_EXECUTABLE_PATH="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
 ```
 
-`CHROME_DEVTOOLS_AXI_BROWSER_URL` accepts both HTTP(S) and WebSocket endpoints:
+Set these **per command or per project**, not in a shell profile. A globally exported
+connection variable applies to every shell on the machine — including the non-interactive
+shells agents run in, where nobody sees it and nothing reports it.
+
+`CHROME_DEVTOOLS_AXI_BROWSER_URL` (attach mode) accepts both HTTP(S) and WebSocket endpoints:
 - `http(s)://` uses `--browserUrl` and discovers the WebSocket URL via `/json/version`
 - `ws(s)://` uses `--wsEndpoint` directly
 
