@@ -761,6 +761,43 @@ Do not copy user-local agent config such as `.codex/`, `.claude/`,
 into this repo. If any credential-bearing config is committed or shared, remove
 it according to the project's incident process and rotate the affected secrets.
 
+## Security
+
+### The bridge is unauthenticated by design, and guarded against DNS rebinding
+
+The bridge is a persistent loopback HTTP service on a known port, and it has no
+authentication — anything that can reach it gets full control of the browser through CDP.
+Binding to `127.0.0.1` does **not** protect it: in a DNS-rebinding attack a malicious page
+re-points its own domain at `127.0.0.1`, and the victim's browser then issues same-origin
+requests that arrive on loopback like any other.
+
+The one thing a rebound request cannot hide is that it carries the attacker's domain in its
+`Host` (and `Origin`) header, and page JavaScript cannot forge either. Every request to
+`/health`, `/tools`, and `/call` is therefore rejected with `403 {"error":"Forbidden host"}`
+unless both headers name loopback. This addresses **GHSA-x439-jhfh-v9x2** in the upstream
+project.
+
+```bash
+curl -H 'Host: evil.attacker.com' http://127.0.0.1:9224/health
+# {"error":"Forbidden host"}
+```
+
+### Local CDP has no authentication — do not go looking for credentials
+
+If a connection to a local DevTools endpoint fails, the cause is never a missing token. An
+agent that reads a bare connection failure and concludes the endpoint needs credentials will
+escalate to a human for something no human can supply. `axis-browser doctor` states this
+explicitly in its output for exactly that reason.
+
+### Automation browsers never touch your profile or your keychain
+
+- A `user-data-dir` resolving inside a real browser profile (yours, Chrome's default, Edge,
+  Brave, Ulaa) is **refused**, symlinks dereferenced first.
+- Every browser Axis launches gets `--use-mock-keychain` and `--password-store=basic`, so an
+  automation run cannot reach — or offer to reset — your login keychain.
+- Neither applies in `attach`/`autoconnect`: that browser belongs to whoever started it, and
+  its policy is theirs to set.
+
 ## Development
 
 ```bash
