@@ -12,6 +12,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # No job here pushes; don't leave GITHUB_TOKEN in .git/config for later steps.
+          persist-credentials: false
 
       - uses: pnpm/action-setup@v4
 
@@ -38,6 +41,9 @@ jobs:
         node-version: ["20.11", "22", "24"]
     steps:
       - uses: actions/checkout@v4
+        with:
+          # No job here pushes; don't leave GITHUB_TOKEN in .git/config for later steps.
+          persist-credentials: false
 
       - uses: pnpm/action-setup@v4
 

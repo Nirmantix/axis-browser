@@ -44,7 +44,7 @@ release history.
 * `engines.node` was `>=20`, but `import.meta.dirname` requires 20.11; users on
   20.0-20.10 would crash. Corrected to `>=20.11`
 * `console` / `network` truncate at 2000 chars with no full-output option, and
-  `--full` is honored by 15 of 36 commands and silently dropped by the rest.
+  `--full` is honored by 15 of 39 commands and silently dropped by the rest.
   Both are now documented rather than implied to be global
 * `setup` looked for pi's skills at `~/.pi/skills`, which pi never reads — its
   skills root is `~/.pi/agent/skills`, alongside `agents/` and `extensions/`.
@@ -61,6 +61,16 @@ release history.
   `Promise<string>`, letting a non-string `result` escape as a string
 * `eval` honors `--full` but its help omitted it, so the flag read as
   unsupported
+* the `prompts/` entry points and the docs that mirror them invoked
+  `bash "$BROWSER_BAY_DIR/scripts/..."` directly. `BROWSER_BAY_DIR` is unset on a
+  fallback or legacy install — the discovery order the same files documented —
+  so the command degraded to `bash "/scripts/..."` and failed with a path error
+  that named nothing useful. All four prompts, `README.md`,
+  `docs/better-workflow-lifecycle-design.md`, and the microsite now resolve the
+  directory first (`BROWSER_BAY_DIR` → `$AXIS_BROWSER_HOME/skills/browser-bay` →
+  `./skills/browser-bay`) and exit 2 with a real message when none exist. The
+  prompt contract test pins the resolver and rejects raw `$BROWSER_BAY_DIR/`
+  paths, so this cannot regress silently
 
 ### Changed
 
@@ -95,6 +105,57 @@ release history.
 
 ### Added
 
+* **`axis-browser doctor [--json]`** — machine-readable preflight. Reports the
+  active connection mode, the endpoint (probed for real: HTTP 200 *and* parseable
+  JSON *and* a `webSocketDebuggerUrl` *and* a Chrome-shaped `Browser` string), the
+  profile and whether it is locked, bridge and orphan state, and a `remedies` array
+  in which **every entry is a runnable command, not prose**. Only two conditions
+  escalate to a human: `NEEDS_INTERACTIVE_LOGIN` and `PORT_HELD_BY_FOREIGN_PROCESS`.
+  Failures also state that local CDP has no authentication, because an agent that
+  read a bare connection failure previously concluded it needed credentials and
+  stopped work to ask for a `ws://` URL that does not exist
+* **`axis-browser login <url>`** — one-time interactive sign-in on the managed
+  profile. Opens a headed browser, waits, verifies something landed, then stops the
+  bridge so the profile lock is released. Refuses to run without a TTY rather than
+  opening a browser nobody can see or close
+* **`axis-browser reap [--dry-run] [--min-age-hours N]`** — kill orphaned bridges.
+  An orphan is defined structurally: a live process carrying our own bridge marker
+  that no session's PID file claims. `runBridge` reaps its own process group on a
+  clean exit, so the leak comes from bridges lost to `SIGKILL` or a crash — six such
+  trees accumulated in about five days on one machine, each holding a port and an
+  invisible browser
+* **`CHROME_DEVTOOLS_AXI_MODE`** — `ephemeral` | `managed` | `attach` |
+  `autoconnect`. The mode was previously only ever *inferred* from whichever
+  variable happened to be set, in a silent `else if` chain, and no command's output
+  ever named it. An explicit mode wins over inference; inference is unchanged when
+  the variable is unset, so existing setups behave identically. An unsatisfiable
+  mode (`attach` with no `BROWSER_URL`) now fails immediately with the fix instead
+  of ~30s later inside `chrome-devtools-mcp`
+* **`CHROME_DEVTOOLS_AXI_EXECUTABLE_PATH`** — pin the Chrome/Chromium binary to
+  launch. Launch modes only; meaningless when attaching to a browser somebody else
+  started. Linux and CI have no `/Applications/Google Chrome.app`, and there was
+  previously no escape hatch at all
+* **`CHROME_DEVTOOLS_AXI_AUTO_REAP`** — set to `0` to disable the automatic
+  orphan cleanup that now runs when a bridge is spawned (own marker, unclaimed,
+  ≥4h old, spawn path only — never the bridge-reuse fast path)
+
+### Changed (connection model)
+
+* **Named sessions get their own Chrome profile.** `managed` resolves
+  `CHROME_DEVTOOLS_AXI_USER_DATA_DIR` for the default session and
+  `<dir>/sessions/<name>` for any named `CHROME_DEVTOOLS_AXI_SESSION`. Chrome locks
+  a profile to one process, so two concurrent named sessions on one directory did
+  not merely interfere — the second failed to launch. **Migration:** a named session
+  that previously used the base directory now starts logged out; `doctor` reports
+  this as `NEEDS_INTERACTIVE_LOGIN` rather than failing opaquely
+* **A `user-data-dir` inside a real browser profile is refused** (Chrome's default,
+  Chromium, Edge, Brave, Ulaa; symlinks dereferenced before the check). Chrome
+  accepts `--remote-debugging-port` on a default profile and then silently never
+  binds it, and an automation run would contend for that profile's lock against the
+  browser you use yourself
+* **Bridge startup failures are mode-aware.** `attach` and `autoconnect` failures no
+  longer suggest Chrome-launch remedies for a browser this tool never launched, and
+  both state the no-authentication rule outright
 * `pnpm typecheck` — the build config excludes `test/`, so tests were never
   typechecked and could reference symbols that no longer exist
 * `pnpm format:check`, plus a CI quality job and a Node 20/22/24 matrix

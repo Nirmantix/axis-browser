@@ -76,6 +76,11 @@ const ATTACH_ONLY_ENV_MATRIX: Array<{
 ];
 
 const MANAGED_ENV_KEYS = [
+  // buildTransportArgs now resolves the mode explicitly, so an ambient
+  // CHROME_DEVTOOLS_AXI_MODE from a developer's shell would drive this whole matrix
+  // (and MODE=attach with the BROWSER_URL below deleted makes resolveMode throw).
+  "CHROME_DEVTOOLS_AXI_MODE",
+  "CHROME_DEVTOOLS_AXI_EXECUTABLE_PATH",
   "CHROME_DEVTOOLS_AXI_HEADED",
   "CHROME_DEVTOOLS_AXI_CHROME_ARGS",
   "CHROME_DEVTOOLS_AXI_BROWSER_URL",

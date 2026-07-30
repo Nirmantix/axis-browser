@@ -205,9 +205,14 @@ axis-browser setup --install --project /path/to/target-project</pre>
 axis-browser setup --json
 axis-browser setup --project /path/to/project
 axis-browser setup --install --project /path/to/project
+
+<span class="comment"># Runtime readiness is a separate question from install readiness:</span>
+axis-browser doctor --json
+
 axis-browser open https://example.com
 axis-browser snapshot</pre>
           <p class="muted-lead">Default setup is read-only. Install mode is permission-gated, keeps credentials out of files, and never installs project-local libraries globally.</p>
+          <p class="muted-lead"><code>setup</code> reports whether the machine is installed correctly; <code>doctor</code> reports whether a browser command will work <em>right now</em> — active connection mode, endpoint, profile and lock state, bridges — with a <code>remedies</code> array of syntactically runnable commands — not all of them safe to run unattended. Run the reversible ones (<code>unset …</code>) directly; confirm the destructive ones (<code>axis-browser reap</code>, <code>axis-browser stop</code>, <code>rm &lt;path&gt;</code>) with a human first. Escalate outright only for <code>NEEDS_INTERACTIVE_LOGIN</code> or <code>PORT_HELD_BY_FOREIGN_PROCESS</code>. Local CDP has no authentication, so a failed local connection is never a missing token.</p>
         </div>
       </section>
 

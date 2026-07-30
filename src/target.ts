@@ -91,51 +91,60 @@ export async function probeCdpEndpoint(
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
-  let response: Response;
+  const wasAborted = (error: unknown) =>
+    controller.signal.aborted ||
+    (error instanceof Error && error.name === "AbortError");
+
+  // The deadline has to cover the BODY, not just the headers. Clearing the timer as
+  // soon as `fetch` resolved left `response.json()` uncovered, so a squatter that
+  // sends headers and then stalls mid-body hung the probe forever — in `doctor`, the
+  // one command whose whole job is to diagnose a misbehaving port without hanging.
   try {
-    response = await doFetch(`${baseUrl.replace(/\/+$/, "")}/json/version`, {
-      signal: controller.signal,
-    });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    // An aborted request is a timeout; anything else at this stage means we never got
-    // a response at all (connection refused, DNS, TLS).
-    const aborted =
-      controller.signal.aborted ||
-      (error instanceof Error && error.name === "AbortError");
-    return withHolder(aborted ? "TIMEOUT" : "NO_LISTENER", message);
+    let response: Response;
+    try {
+      response = await doFetch(`${baseUrl.replace(/\/+$/, "")}/json/version`, {
+        signal: controller.signal,
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      // An aborted request is a timeout; anything else at this stage means we never
+      // got a response at all (connection refused, DNS, TLS).
+      return withHolder(wasAborted(error) ? "TIMEOUT" : "NO_LISTENER", message);
+    }
+
+    if (!response.ok) {
+      return withHolder("NOT_CDP", `HTTP ${response.status}`);
+    }
+
+    let payload: unknown;
+    try {
+      payload = await response.json();
+    } catch (error) {
+      return wasAborted(error)
+        ? withHolder("TIMEOUT", "stalled before the body arrived")
+        : withHolder("NOT_CDP", "response body was not JSON");
+    }
+
+    if (payload === null || typeof payload !== "object") {
+      return withHolder("NOT_CDP", "response JSON was not an object");
+    }
+    const record = payload as Record<string, unknown>;
+    const wsUrl = record.webSocketDebuggerUrl;
+    const browser = record.Browser;
+    if (typeof wsUrl !== "string" || wsUrl.length === 0) {
+      return withHolder("NOT_CDP", "no webSocketDebuggerUrl in /json/version");
+    }
+    if (typeof browser !== "string" || !CHROME_BROWSER_RE.test(browser)) {
+      return withHolder(
+        "WRONG_BROWSER",
+        `Browser=${typeof browser === "string" ? browser : "(absent)"}`,
+      );
+    }
+
+    return { ok: true, browser, wsUrl };
   } finally {
     clearTimeout(timer);
   }
-
-  if (!response.ok) {
-    return withHolder("NOT_CDP", `HTTP ${response.status}`);
-  }
-
-  let payload: unknown;
-  try {
-    payload = await response.json();
-  } catch {
-    return withHolder("NOT_CDP", "response body was not JSON");
-  }
-
-  if (payload === null || typeof payload !== "object") {
-    return withHolder("NOT_CDP", "response JSON was not an object");
-  }
-  const record = payload as Record<string, unknown>;
-  const wsUrl = record.webSocketDebuggerUrl;
-  const browser = record.Browser;
-  if (typeof wsUrl !== "string" || wsUrl.length === 0) {
-    return withHolder("NOT_CDP", "no webSocketDebuggerUrl in /json/version");
-  }
-  if (typeof browser !== "string" || !CHROME_BROWSER_RE.test(browser)) {
-    return withHolder(
-      "WRONG_BROWSER",
-      `Browser=${typeof browser === "string" ? browser : "(absent)"}`,
-    );
-  }
-
-  return { ok: true, browser, wsUrl };
 }
 
 /**

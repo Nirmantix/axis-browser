@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Safety — Axis Browser</title>
-    <meta name="description" content="Safety rules for Axis Browser workflows, shared Chrome, browser artifacts, credentials, and protected sites.">
+    <meta name="description" content="Safety rules for Axis Browser workflows, browser profiles, artifacts, credentials, and protected sites.">
     <meta property="og:title" content="Safety — Axis Browser">
     <meta property="og:description" content="Safety rules for Axis Browser workflows, shared Chrome, browser artifacts, credentials, and protected sites.">
     <meta property="og:image" content="./og-image.png">
@@ -63,6 +63,27 @@
         </div>
       </section>
 
+      <section class="section" aria-labelledby="process-boundaries">
+        <h2 id="process-boundaries">What the runtime enforces for you</h2>
+        <p class="muted-lead">Two boundaries are enforced in code, not by convention. Both matter because CDP has no authentication — anything that reaches the endpoint gets full control of the browser.</p>
+        <div class="feature-board">
+          <div class="safety-band">
+            <div>
+              <strong>Anti-rebinding gate on the bridge</strong>
+              <p>The bridge serves `/health`, `/tools`, and `/call` on loopback, and `/call` maps straight to a tool invocation. A gate now runs first on every route and rejects any request whose `Host` or `Origin` is not loopback, returning `403 {"error":"Forbidden host"}`. Without it, any page you visited could rebind its own domain to `127.0.0.1` and drive CDP from your browser (GHSA-x439-jhfh-v9x2).</p>
+            </div>
+            <div>
+              <strong>Keychain isolation for browsers Axis launches</strong>
+              <p>`ephemeral` and `managed` always pass `--use-mock-keychain` and `--password-store=basic`, so a browser this tool starts cannot reach your OS password store. `attach` and `autoconnect` deliberately omit them — that browser's keychain policy belongs to whoever started it.</p>
+            </div>
+            <div>
+              <strong>Never export a connection variable globally</strong>
+              <p>A `CHROME_DEVTOOLS_AXI_BROWSER_URL` exported from a shell profile reaches every shell and child process that sources it — including the non-interactive ones coding agents run in, where nobody sees it. Scope connection settings to a single command or a project, and prefer `CHROME_DEVTOOLS_AXI_MODE=managed` as a default. Run `axis-browser doctor` to see what your environment is actually set to.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
       <section class="section" aria-labelledby="mode-safety">
         <h2 id="mode-safety">Shared versus isolated browser mode</h2>
         <table class="decision-table">
@@ -75,9 +96,19 @@
           </thead>
           <tbody>
             <tr>
-              <td>Shared Chrome on `9222`</td>
+              <td>`ephemeral` (Axis owns it, no profile)</td>
+              <td>Reproducible or destructive checks, parallel agents, CI. The default.</td>
+              <td>Starts logged out every time. Keychain-isolated.</td>
+            </tr>
+            <tr>
+              <td>`managed` (Axis owns it, persistent profile)</td>
+              <td>A login must survive between runs. Sign in once with `axis-browser login &lt;url&gt;`.</td>
+              <td>Holds real cookies on disk under the session profile. Keychain-isolated. A newly created named session starts logged out; later runs reuse that profile and keep the login.</td>
+            </tr>
+            <tr>
+              <td>A browser Axis does not own (`attach` / `autoconnect`)</td>
               <td>Real login, SSO, cookies, manual continuity, or cross-tool state matters.</td>
-              <td>Can see real account data. Do not close user tabs from Playwright; use `disconnect()`.</td>
+              <td>Can see real account data. Not keychain-isolated — that browser's policy is whoever started it. Do not close user tabs from Playwright; use `disconnect()`.</td>
             </tr>
             <tr>
               <td>Isolated Playwright</td>

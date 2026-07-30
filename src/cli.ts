@@ -96,8 +96,12 @@ environment:
                                     a new browser. Requires remote debugging enabled in Chrome.
   CHROME_DEVTOOLS_AXI_CHANNEL       Chrome release channel to target: stable (default), beta,
                                     canary, or dev. Selects which installed Chrome --autoConnect
-                                    attaches to, and which one is launched in the default and
-                                    USER_DATA_DIR modes. Ignored with CHROME_DEVTOOLS_AXI_BROWSER_URL.
+                                    attaches to, and which one is launched in ephemeral and
+                                    managed modes. Ignored only in attach mode. When MODE is
+                                    unset and the mode is inferred, AUTO_CONNECT outranks
+                                    BROWSER_URL, so that combination infers autoconnect and
+                                    still applies the channel; an explicit MODE=attach does
+                                    not, and is authoritative.
   CHROME_DEVTOOLS_AXI_HEADED        Set to 1 to run Chrome in headed (visible) mode
   CHROME_DEVTOOLS_AXI_CHROME_ARGS   Whitespace-separated Chrome flags forwarded to the browser
                                     (no shell-style quoting; flags with spaces are not supported)
@@ -1441,13 +1445,19 @@ async function handleLogin(args: string[]): Promise<string> {
     await waitForEnter();
 
     // Verify something actually landed rather than reporting a success we did not check.
+    //
+    // The count is tagged and the parse anchored to that tag. `callTool` returns MCP
+    // prose wrapped in a response envelope, so matching the first digit run anywhere in
+    // the serialized result could latch onto an unrelated number (a page id, a
+    // timestamp) and report a confidently wrong cookie count. No tag match means the
+    // probe told us nothing — which is "unverified", not "zero".
     try {
       const result = await callTool("evaluate_script", {
         function:
-          "() => document.cookie.split(';').filter((c) => c.trim()).length",
+          "() => 'AXIS_COOKIE_COUNT=' + document.cookie.split(';').filter((c) => c.trim()).length",
       });
-      const match = JSON.stringify(result).match(/(\d+)/);
-      if (match) cookieCount = Number(match[1]);
+      const match = JSON.stringify(result).match(/AXIS_COOKIE_COUNT=(\d+)/);
+      cookieCount = match ? Number(match[1]) : -1;
     } catch {
       // A failed probe is not a failed login; report it as unknown rather than zero.
       cookieCount = -1;

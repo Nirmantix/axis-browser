@@ -378,7 +378,14 @@ describe("buildTransportArgs — launch modes claim no TCP endpoint", () => {
     }
   });
   afterEach(() => {
-    for (const k of KEYS) process.env[k] = savedEnv[k];
+    // Assigning an undefined savedEnv entry back sets the literal string
+    // "undefined" (Node coerces), which later suites then read as a *set* variable —
+    // e.g. --channel=undefined, or a USER_DATA_DIR of "undefined" flipping the mode.
+    for (const k of KEYS) {
+      const saved = savedEnv[k];
+      if (saved === undefined) delete process.env[k];
+      else process.env[k] = saved;
+    }
   });
 
   const claimsAnEndpoint = (args: string[]) =>

@@ -21,12 +21,15 @@ Keep this lifecycle table in sync with the canonical environment reference in
 
 | Variable | Required | Purpose |
 | --- | --- | --- |
+| `CHROME_DEVTOOLS_AXI_MODE` | No | `ephemeral` \| `managed` \| `attach` \| `autoconnect`. Overrides mode inference. Unset keeps the historical inference (`AUTO_CONNECT` → `BROWSER_URL` → `USER_DATA_DIR` → `ephemeral`). Set it per command or project — never in a shell profile. |
+| `CHROME_DEVTOOLS_AXI_EXECUTABLE_PATH` | No | Absolute path to the Chrome/Chromium binary to launch. Launch modes only; ignored when attaching. |
+| `CHROME_DEVTOOLS_AXI_AUTO_REAP` | No | Set to `0` to disable automatic cleanup of orphaned bridges on bridge startup. |
 | `CHROME_DEVTOOLS_AXI_AUTO_CONNECT` | No | Set to `1` to attach to Chrome 144+ auto-connect. |
 | `CHROME_DEVTOOLS_AXI_SESSION` | No | Named session for concurrent isolation. Each name gets its own bridge process, state dir, and a port derived from the name. Default: `default`. An explicit `CHROME_DEVTOOLS_AXI_PORT` overrides that derivation for **every** session, so exporting one globally forces all sessions onto a single port — set it per session, or not at all. |
-| `CHROME_DEVTOOLS_AXI_CHANNEL` | No | Chrome release channel: `stable` (default), `beta`, `canary`, or `dev`. Ignored when `CHROME_DEVTOOLS_AXI_BROWSER_URL` is set. |
+| `CHROME_DEVTOOLS_AXI_CHANNEL` | No | Chrome release channel: `stable` (default), `beta`, `canary`, or `dev`. Ignored only in `attach` mode. `AUTO_CONNECT` outranks `BROWSER_URL`, so with both set the mode is `autoconnect` and the channel still applies. |
 | `CHROME_DEVTOOLS_AXI_BROWSER_URL` | No | Attach to an existing HTTP(S) or WS(S) CDP endpoint. |
 | `CHROME_DEVTOOLS_AXI_WS_HEADERS` | No | JSON object of headers for WS(S) endpoints. Do not commit secret values. |
-| `CHROME_DEVTOOLS_AXI_USER_DATA_DIR` | No | Use a persistent Chrome profile for a managed launch. |
+| `CHROME_DEVTOOLS_AXI_USER_DATA_DIR` | No | Persistent Chrome profile for a managed launch. Default `~/.axis-browser-data`; a *named* session uses `<dir>/sessions/<name>`. A path inside a real browser profile is refused. |
 | `CHROME_DEVTOOLS_AXI_HEADED` | No | Set to `1` to launch Chrome headed. |
 | `CHROME_DEVTOOLS_AXI_CHROME_ARGS` | No | Whitespace-separated Chrome flags. Flags with spaces are not supported. |
 | `CHROME_DEVTOOLS_AXI_PORT` | No | Local bridge server port. Default: `9224`. |
@@ -155,13 +158,19 @@ axis-browser snapshot
 axis-browser click @g1:1
 ```
 
-Shared Chrome workflow:
+Persistent-login (managed) workflow:
 
 ```bash
-export CHROME_DEVTOOLS_AXI_BROWSER_URL=http://127.0.0.1:9222
-axis-browser stop
-axis-browser pages
+export CHROME_DEVTOOLS_AXI_MODE=managed
+axis-browser login https://example.com   # one-time, interactive
+axis-browser open https://example.com
 axis-browser snapshot
+```
+
+Preflight before a browser task — every remedy it prints is runnable:
+
+```bash
+axis-browser doctor --json
 ```
 
 Install or repair agent session hooks:
@@ -207,10 +216,22 @@ axis-browser stop
 axis-browser pages
 ```
 
-If shared Chrome is the source of truth, compare raw CDP tabs:
+If the state is unclear, ask the tool rather than probing a port by hand — launch modes drive
+the browser over `--remote-debugging-pipe`, so the browser's CDP endpoint has no TCP address
+to curl at all. (The Axis bridge still listens on its documented local port; it is the
+*browser's* debugging endpoint that is off TCP.)
 
 ```bash
-curl -s http://127.0.0.1:9222/json/list
+axis-browser doctor
+axis-browser pages
+```
+
+If bridges have accumulated (a bridge lost to `SIGKILL` or a crash never cleans up after
+itself):
+
+```bash
+axis-browser reap --dry-run
+axis-browser reap
 ```
 
 If startup is slow because `npx chrome-devtools-mcp` is cold:

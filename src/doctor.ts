@@ -28,7 +28,11 @@ import {
   listBridgeProcesses,
   scanSessionPidFiles,
 } from "./reap.js";
-import { resolveSessionName, resolveSessionPort } from "./sessions.js";
+import {
+  DEFAULT_SESSION_NAME,
+  resolveSessionName,
+  resolveSessionPort,
+} from "./sessions.js";
 import { chromeCheck } from "./setup.js";
 import {
   type ProbeResult,
@@ -115,11 +119,24 @@ export async function buildDoctorReport(
   const platform = deps.platform ?? process.platform;
 
   const mode = resolveModeSafe(env);
-  const sessionName = resolveSessionName();
-  const port = resolveSessionPort(sessionName);
   const blockers: string[] = [];
   const remedies: string[] = [];
   let status: DoctorStatus = "ok";
+
+  // `resolveModeSafe` exists so an invalid mode cannot replace the diagnosis with an
+  // unrelated exception — but `resolveSessionName` throws on an invalid
+  // CHROME_DEVTOOLS_AXI_SESSION for the same reason, and that killed `doctor` with a raw
+  // stack trace instead of reporting the very misconfiguration it exists to report.
+  let sessionName: string;
+  try {
+    sessionName = resolveSessionName();
+  } catch (error) {
+    sessionName = DEFAULT_SESSION_NAME;
+    status = "error";
+    blockers.push(error instanceof Error ? error.message : String(error));
+    remedies.push("unset CHROME_DEVTOOLS_AXI_SESSION");
+  }
+  const port = resolveSessionPort(sessionName);
 
   const report: DoctorReport = {
     status,

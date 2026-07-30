@@ -1,29 +1,34 @@
-# Axis Browser Shared Chrome Workflow
+# Axis Browser Daily Workflow
 
-This public guide explains the recommended Axis Browser operating model for shared Chrome debugging.
+This public guide explains the recommended Axis Browser operating model for browser
+debugging from a shell.
 
 ## Scope
 
 Source of truth split:
 
 - `README.md` — install, commands, environment variables, runtime behavior, and development
-- `docs/vibe-coding-browser-workflow.md` — Axis Browser shared-browser workflow, `9222` usage, and troubleshooting habits
+- `docs/vibe-coding-browser-workflow.md` — the day-to-day workflow and troubleshooting habits
+- `docs/shared-session-design.md` — why the connection model is shaped this way
 
-This guide is intentionally about Axis Browser and does not document unrelated local tool stacks, shell aliases, or machine-specific helpers.
+**What that means for this guide.** It necessarily mentions `CHROME_DEVTOOLS_AXI_MODE`,
+sessions, ports, timeouts, and auto-reaping in order to explain the workflow — but it does
+not own their **semantics**. `README.md` is normative for what a flag, variable, command, or
+value actually does. The examples here are kept current and are meant to be copy-pastable;
+they are simply not the definition. If an example here disagrees with `README.md`, `README.md`
+wins and the disagreement is a bug worth reporting, not a choice to make.
 
-If this checkout includes `skills/browser-bay/`, use that nested skill for
-multi-tool browser tasks, verified runs, reusable workflow scripts, protected
-site guidance, or tool comparison. This guide stays focused on the Axis Browser
-shared-Chrome workflow. For skill portability and setup routes, use
-`project-guide-site/setup.html` or `skills/browser-bay/README.md`: a
-workstation with this repo checked out can point projects at
-`/path/to/axis-browser/skills/browser-bay`, while a new machine must install
-the machine-level browser tools first.
+This guide is intentionally about Axis Browser and does not document unrelated local tool
+stacks, shell aliases, or machine-specific helpers.
 
-If this checkout includes `prompts/`, the `;absetup`, `;abcheck`, `;abuse`, and
-`;abhealth` text-expander prompts are thin wrappers around `skills/browser-bay/`
-and its scripts. They do not replace this CLI guide and they do not create a
-second browser-tool router.
+If this checkout includes `skills/browser-bay/`, use that nested skill for multi-tool browser
+tasks, verified runs, reusable workflow scripts, protected site guidance, or tool comparison.
+For skill portability and setup routes, use `project-guide-site/setup.html` or
+`skills/browser-bay/README.md`.
+
+If this checkout includes `prompts/`, the `;absetup`, `;abcheck`, `;abuse`, and `;abhealth`
+text-expander prompts are thin wrappers around `skills/browser-bay/` and its scripts. They do
+not replace this CLI guide and they do not create a second browser-tool router.
 
 For the full machine → skill → project → task lifecycle, read
 `docs/better-workflow-lifecycle-design.md`.
@@ -36,90 +41,106 @@ Axis Browser is most useful when you want a compact CLI view into a real browser
 - interact with visible controls by `uid`
 - inspect console messages
 - inspect network requests
-- reuse a logged-in Chrome profile when realism matters
+- reuse a logged-in profile when realism matters
 - keep browser debugging low-token and repeatable from a shell
 
-## Shared Chrome Baseline
+## Start Here: Let Axis Own The Browser
 
-The standard shared-browser pattern is a dedicated Chrome instance exposing Chrome DevTools Protocol on `9222`:
-
-```bash
-"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" \
-  --remote-debugging-port=9222 \
-  --user-data-dir="$HOME/.axis-browser-data" \
-  --no-first-run \
-  --no-default-browser-check
-```
-
-Then point Axis Browser at it:
+Axis launches and owns its browser. You do not start Chrome yourself, and you do not manage
+a debugging port.
 
 ```bash
-export CHROME_DEVTOOLS_AXI_BROWSER_URL=http://127.0.0.1:9222
-axis-browser stop
-axis-browser pages
+axis-browser open http://localhost:3000
 axis-browser snapshot
 ```
 
-Why `axis-browser stop` first:
+That is `ephemeral` mode: a throwaway profile, discarded when the run ends. It is the right
+default for anything that does not need a login.
 
-- the bridge is persistent
-- it can outlive your current shell
-- stopping it guarantees the next command uses the current environment
+When the task **does** need a login, switch to `managed` mode — same idea, but the profile
+persists so you sign in once:
 
-## Dedicated Profile Recommendation
-
-Prefer a dedicated automation profile instead of your everyday browser profile.
-
-Good default:
-
-```text
-~/.axis-browser-data
+```bash
+export CHROME_DEVTOOLS_AXI_MODE=managed      # profile: ~/.axis-browser-data
+axis-browser login https://app.example.com   # one-time, interactive, needs a terminal
+axis-browser open https://app.example.com    # silent from here on
 ```
 
-Benefits:
+Set the mode **per command or per project**. Do not export a connection variable from your
+shell profile — see [Do Not Export A Connection Variable Globally](#do-not-export-a-connection-variable-globally).
 
-- manual login can persist across debugging sessions
-- automation does not disturb your normal browser profile
-- destructive tests are less likely to damage personal browsing state
-- the same profile can be relaunched with or without remote debugging for SSO flows
+### Why not launch Chrome yourself with a debugging port?
 
-## Built-In Commands
+Because you do not need to, and doing so is how this goes wrong. Axis drives the browser over
+`--remote-debugging-pipe` — file descriptors, so **Chrome's DevTools endpoint is not on a TCP
+port at all** — and there is no debugging port to collide with or squat. (Axis's own bridge
+still listens locally, on its documented port `9224`; pipe mode removes the *browser's*
+debugging socket, not every listening socket.) A hand-launched `--remote-debugging-port=9222`
+browser puts the DevTools endpoint back on a contended port, with a lifecycle you now own and
+a failure mode where something else already holds it.
 
-Built-in commands exposed by this project:
+Earlier versions of this guide opened with exactly that pattern, including a copy-pasteable
+`axis-init` helper. It is gone. See
+[When You Genuinely Need To Attach](#when-you-genuinely-need-to-attach).
 
-- `axis-browser`
-- `axib`
-- `chrome-devtools-axi` (legacy alias for the upstream base tool)
+## When Something Is Wrong, Ask The Tool
 
-This guide uses `axis-browser` because it is the primary public command.
+```bash
+axis-browser doctor          # human-readable
+axis-browser doctor --json   # the contract to key on
+```
 
-Not built in:
+`doctor` reports the active mode, the endpoint (actually probed, not assumed), the browser
+binary, the profile and whether it is locked, bridge and orphan state, and a `remedies` array
+where **every entry is a syntactically runnable command** — which is not the same as every
+entry being safe to run unattended.
 
-- `axis`
-- `axi`
-- `axisb`
-- `axis-init`
-- `axis-human`
-- `axisb-init`
-- `axisb-human`
+Sort the remedies before running any of them:
 
-Those names are only local aliases or shell functions if a user creates them.
+| Kind          | Examples                                                        | How to run                          |
+| ------------- | --------------------------------------------------------------- | ----------------------------------- |
+| Reversible    | `unset CHROME_DEVTOOLS_AXI_SESSION`, `unset CHROME_DEVTOOLS_AXI_EXECUTABLE_PATH` | run them                            |
+| Destructive   | `axis-browser reap`, `axis-browser stop`, `rm <path>`           | confirm with a human first          |
+
+`doctor` emits these fully resolved — `rm <path>` above stands for a real remedy line like
+`rm ~/.axis-browser-data/sessions/default.pid` (absolute in the actual output), and
+`axis-browser login <url>` for `axis-browser login https://app.example.com`. Angle brackets
+appear in this table, not in the output; run what `doctor` printed, not what is written here.
+
+The destructive ones kill processes or delete files, and `doctor` emits `axis-browser reap`
+and the `rm` of a PID file together precisely when that file is unreadable — the one case
+where a *live* bridge can look orphaned. Run `axis-browser reap --dry-run` and read the list
+before the real thing.
+
+Escalate to a human for exactly two conditions:
+
+| Blocker                        | Why a human                                                     |
+| ------------------------------ | --------------------------------------------------------------- |
+| `NEEDS_INTERACTIVE_LOGIN`      | someone has to type a password — run `axis-browser login <url>` |
+| `PORT_HELD_BY_FOREIGN_PROCESS` | killing someone's browser is their call, not the tool's         |
+
+Anything else, run the reversible remedies; confirm the destructive ones.
+
+> **Local CDP has no authentication.** If a connection to a local DevTools endpoint fails, the
+> cause is never a missing token. Do not request credentials, API keys, or a `ws://` URL —
+> there is nothing to supply. `doctor` says this in its own output because an agent once
+> concluded otherwise and stopped work for a full day.
 
 ## Daily Debugging Flow
 
 ```bash
-export CHROME_DEVTOOLS_AXI_BROWSER_URL=http://127.0.0.1:9222
-axis-browser stop
-axis-browser pages
 axis-browser open http://localhost:3000
 axis-browser snapshot
 axis-browser console
 axis-browser network
 ```
 
-Snapshot refs now carry a generation prefix (e.g., `@g1:3` instead of `@3`). Always pass refs back exactly as printed. If the page re-rendered between your snapshot and action, you get a clear `STALE_REF` error — just re-snapshot and retry.
+Snapshot refs carry a generation prefix (e.g. `@g1:3`, not `@3`). Pass refs back exactly as
+printed. If the page re-rendered between your snapshot and your action you get a clear
+`STALE_REF` — re-snapshot and retry.
 
-After each meaningful interaction, inspect actual browser state before changing application code:
+After each meaningful interaction, inspect actual browser state before changing application
+code:
 
 ```bash
 axis-browser snapshot
@@ -131,130 +152,106 @@ axis-browser network
 
 When a browser feature breaks:
 
-1. reproduce it in the shared browser
-2. run `axis-browser snapshot`
-3. run `axis-browser console`
-4. run `axis-browser network`
+1. reproduce it
+2. `axis-browser snapshot`
+3. `axis-browser console`
+4. `axis-browser network`
 5. inspect the failing request or exception
 6. only then change code
 
-This is especially useful for:
-
-- client-side state bugs
-- auth/session problems
-- silent button failures
-- failed form submissions
-- frontend/backend contract mismatches
+Especially useful for client-side state bugs, auth/session problems, silent button failures,
+failed form submissions, and frontend/backend contract mismatches.
 
 For an auditable handoff, capture the same evidence through
-`skills/browser-bay/references/verified-run.md` when that optional skill is
-available. Axis Browser supplies compact observations; the skill supplies the
-artifact contract and validation.
-
-## Tab Source Of Truth
-
-Raw Chrome CDP is the source of truth for tabs:
-
-```bash
-curl -s http://127.0.0.1:9222/json/list
-```
-
-If raw CDP and Axis Browser disagree:
-
-```bash
-axis-browser stop
-axis-browser pages
-```
-
-If attachment to an old tab is unclear, open a fresh controlled tab:
-
-```bash
-axis-browser stop
-axis-browser open http://localhost:3000
-```
+`skills/browser-bay/references/verified-run.md` when that optional skill is available. Axis
+Browser supplies compact observations; the skill supplies the artifact contract and validation.
 
 ## Authentication And Session State
 
-### Normal login flows
-
-1. launch the dedicated shared Chrome profile
-2. open the app manually once
-3. log in manually
-4. keep using the same `--user-data-dir` for future debugging
-
-### SSO, MFA, or sensitive providers
-
-Some providers dislike browser sessions launched with debugging flags.
-
-Safer pattern:
-
-1. launch the same `--user-data-dir` without `--remote-debugging-port`
-2. log in manually
-3. fully quit Chrome
-4. relaunch the same `--user-data-dir` with `--remote-debugging-port=9222`
-5. point Axis Browser at `http://127.0.0.1:9222`
-
-## Local Helper Functions Are Optional
-
-A user may create shell helpers to launch a dedicated shared browser, but these helpers are not part of Axis Browser.
-
-Example local helper:
+`axis-browser login <url>` is the sanctioned path and the only one that needs a human:
 
 ```bash
-axis-init() {
-  mkdir -p "$HOME/.axis-browser-data"
-
-  "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" \
-    --remote-debugging-port=9222 \
-    --user-data-dir="$HOME/.axis-browser-data" \
-    --no-first-run \
-    --no-default-browser-check >/dev/null 2>&1 &
-
-  export CHROME_DEVTOOLS_AXI_BROWSER_URL=http://127.0.0.1:9222
-}
+export CHROME_DEVTOOLS_AXI_MODE=managed
+axis-browser login https://app.example.com
 ```
 
-Important:
+It opens a headed browser on the managed profile, waits for you to sign in, verifies something
+landed, and stops the bridge on the way out so the profile lock is released. Every later run
+reuses the profile silently.
 
-- this is an example only
-- it is not a built-in command
-- use it with a dedicated automation browser/profile
-- if Chrome is already running with a different profile or port, quit that automation browser before relaunching it
+Notes that save time:
 
-## Changing Ports
+- **It requires a terminal.** Non-interactively it refuses rather than opening a browser
+  nobody can see or close.
+- **Named sessions have their own profile.** `CHROME_DEVTOOLS_AXI_SESSION=worker-1` uses
+  `~/.axis-browser-data/sessions/worker-1`, which starts logged out. Chrome locks a profile
+  to one process, so concurrent sessions cannot share one. `doctor` reports this as
+  `NEEDS_INTERACTIVE_LOGIN`.
+- **SSO/MFA providers that dislike automation flags:** the profile is a normal Chrome profile
+  on disk. Log in through `axis-browser login` (headed, no debugging port in the picture) and
+  the cookies persist like any other browsing session.
+- **Your real browser profile is refused.** A `user-data-dir` resolving inside Chrome's
+  default profile, Edge, Brave, or Ulaa is rejected outright by `assertSafeUserDataDir`
+  (`src/mode.ts`). Chrome locks a profile to one process, so an automation run would fight
+  your own browser for that lock — and if your browser wins, the run dies on a lock it
+  cannot explain. The refusal is about profile ownership, not about ports: `managed` and
+  `ephemeral` launch over `--remote-debugging-pipe` and never open a debugging socket.
 
-There are two separate ports:
+For local test sites, prefer provisioning a throwaway account through the app's own tooling
+(`wp user create` → run → `wp user delete`) over reusing a human's session at all.
 
-| Port | Owner | Default | Purpose |
-| --- | --- | --- | --- |
-| `9222` | Chrome | convention only | Chrome DevTools Protocol endpoint |
-| `9224` | Axis Browser | default | local Axis bridge server |
+## When You Genuinely Need To Attach
 
-Usually, keep both defaults.
-
-Change Chrome's CDP port only if `9222` is already in use:
+`attach` and `autoconnect` point Axis at a browser it did not start. They are escape hatches:
 
 ```bash
-"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" \
-  --remote-debugging-port=9333 \
-  --user-data-dir="$HOME/.axis-browser-data"
-
-export CHROME_DEVTOOLS_AXI_BROWSER_URL=http://127.0.0.1:9333
-axis-browser stop
-axis-browser pages
+CHROME_DEVTOOLS_AXI_MODE=attach \
+CHROME_DEVTOOLS_AXI_BROWSER_URL=http://127.0.0.1:9333 \
+  axis-browser pages
 ```
 
-Change the Axis bridge port only if `9224` is already in use:
+Understand what you give up. Axis cannot relaunch that browser, fix its flags, or reap it;
+`--executablePath`, keychain isolation, and `--chrome-arg` do not apply; and its profile and
+lifecycle belong to whoever started it. `doctor` probes the endpoint properly before anything
+else runs — HTTP 200 alone is not accepted as proof, because a process that answers 200 with
+unrelated JSON is worse than one that 404s.
+
+### Do Not Export A Connection Variable Globally
 
 ```bash
-export CHROME_DEVTOOLS_AXI_PORT=9225
-axis-browser stop
-axis-browser pages
+# Do NOT put this in ~/.zshrc, ~/.bashrc, or any shell profile:
+export CHROME_DEVTOOLS_AXI_BROWSER_URL=http://127.0.0.1:9222
 ```
 
-Do not change ports casually. Every tool and shell that talks to the shared browser must use the same Chrome CDP port.
+A connection variable exported from a shell profile applies to **every** shell on the machine,
+including the non-interactive shells coding agents run in — where nobody sees it and, before
+`doctor` existed, nothing reported it. On 2026-07-30 that single line put every shell into
+`attach` mode against a port held by an unrelated Chromium-based browser that served no
+DevTools endpoint, and cost a full day. The post-mortem is `docs/shared-session-design.md`.
+
+Scope connection settings to a command or a project. If you want a default, make it
+`CHROME_DEVTOOLS_AXI_MODE=managed`, which owns its browser rather than depending on one.
+
+## Ports
+
+| Port   | Owner        | Default | Purpose                                                     |
+| ------ | ------------ | ------- | ----------------------------------------------------------- |
+| `9224` | Axis Browser | default | local Axis bridge server                                    |
+| —      | Chrome       | none    | launch modes use `--remote-debugging-pipe`; **no TCP port** |
+
+Named sessions derive their own bridge port automatically, so parallel agents do not collide.
+Change the bridge port only if `9224` is taken:
+
+```bash
+CHROME_DEVTOOLS_AXI_PORT=9225 axis-browser start
+```
+
+Do not export `CHROME_DEVTOOLS_AXI_PORT` globally either — it forces every session onto one
+port and reintroduces the collisions that per-session derivation exists to avoid.
 
 ## Troubleshooting
+
+Start with `axis-browser doctor`. The entries below are the cases worth understanding.
 
 ### Bridge feels stale
 
@@ -263,51 +260,79 @@ axis-browser stop
 axis-browser pages
 ```
 
-The bridge now uses deep health checks to detect when the attached Chrome target has gone away. In most cases, simply running a command will auto-recycle a stale bridge without needing a manual stop.
+The bridge uses deep health checks to detect when the attached browser target has gone away,
+so in most cases simply running a command auto-recycles a stale bridge. A manual `stop` is
+still the reliable way to force the **current** environment to be used: the bridge is
+persistent, can outlive your shell, and captured the environment it was started with.
 
 ### Bridge startup is slow
 
 If the bridge takes more than 30 seconds to start (common on cold systems using npx):
 
 ```bash
-# Option 1: Install chrome-devtools-mcp globally for ~1-2s startup
-npm install -g chrome-devtools-mcp
-
-# Option 2: Extend the timeout
-export CHROME_DEVTOOLS_AXI_BRIDGE_TIMEOUT_MS=60000
+npm install -g chrome-devtools-mcp                 # ~1-2s startup
+export CHROME_DEVTOOLS_AXI_BRIDGE_TIMEOUT_MS=60000 # or extend the deadline
 ```
-
-### Chrome CDP is not reachable
-
-```bash
-curl -s http://127.0.0.1:9222/json/version
-```
-
-If that fails, Chrome was not launched with the expected `--remote-debugging-port`, or another process/profile is using the port.
 
 ### Login state is missing
 
-- confirm the same `--user-data-dir` was reused
-- confirm the login happened in that exact profile
-- for SSO, log in without remote debugging first, then relaunch the same profile with remote debugging
+- confirm you are in `managed` mode — `doctor` prints the mode; `ephemeral` has no profile
+- confirm the session name: a _named_ session has its own profile and starts logged out
+- re-run `axis-browser login <url>`
+
+### Bridges accumulating
+
+A bridge killed with `SIGKILL` or lost to a crash never runs its own cleanup and leaks a
+process group holding a browser you cannot see.
+
+```bash
+axis-browser reap --dry-run   # what would be cleaned
+axis-browser reap             # clean it
+```
+
+This also happens automatically when a new bridge starts (own marker, unclaimed by any
+session, ≥4h old). `CHROME_DEVTOOLS_AXI_AUTO_REAP=0` disables it.
 
 ### Wrong tab is selected
 
 ```bash
-curl -s http://127.0.0.1:9222/json/list
-axis-browser stop
 axis-browser pages
 axis-browser open http://localhost:3000
 ```
 
+## Built-In Commands
+
+Built-in commands exposed by this project:
+
+- `axis-browser`
+- `axib`
+- `chrome-devtools-axi` (legacy alias for the upstream base tool)
+
+This guide uses `axis-browser` because it is the primary public command.
+
+Not built in: `axis`, `axi`, `axisb`, `axis-init`, `axis-human`, `axisb-init`, `axisb-human`.
+Those names are only local aliases or shell functions if a user creates them — and if you have
+an `axis-init` that launches Chrome with `--remote-debugging-port` and exports
+`CHROME_DEVTOOLS_AXI_BROWSER_URL`, retire it. That helper is the shape of the 2026-07-30
+incident. Retire it in this order, because deleting a helper other scripts still call just
+moves the outage:
+
+1. Strip the Chrome launch and the `CHROME_DEVTOOLS_AXI_BROWSER_URL` export from it first —
+   that alone ends the incident shape, and does it immediately.
+2. Find the remaining callers — `grep -rn axis-init ~/.zshrc ~/.bashrc ~/bin` — then repeat
+   that search from the root of each repository you actually work in. Point every caller at
+   `axis-browser` directly.
+3. Delete the helper once nothing calls it.
+
 ## Final Recommendation
 
-For public Axis Browser usage:
-
 - keep `axis-browser` as the documented command
-- use a dedicated shared Chrome profile when real login state matters
+- let Axis own the browser: `ephemeral` by default, `managed` when a login is needed
+- run `axis-browser doctor --json` before a browser task; run its reversible remedies and
+  confirm the destructive ones (`reap`, `stop`, `rm`) before executing them
+- never export a connection variable from a shell profile
 - reset the bridge when switching targets
 - inspect snapshot, console, and network before changing app code
-- use the optional browser-bay verified-run flow when the task needs a
-  checkable evidence bundle
+- use the optional browser-bay verified-run flow when the task needs a checkable evidence
+  bundle
 - keep local aliases and personal tool stacks out of public docs

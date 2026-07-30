@@ -82,10 +82,40 @@ Portability note:
   installed on the machine, and Playwright should still be installed
   project-local when reusable scripts, traces, network interception, visual
   regression, or CI are needed.
-- For direct script calls, set `BROWSER_BAY_DIR` (or legacy `BROWSER_SKILL_DIR`)
-  and run the project gate inside each target app (not `$HOME`):
-  `bash "$BROWSER_BAY_DIR/scripts/ensure-project-ready.sh"` then
-  `bash "$BROWSER_BAY_DIR/scripts/setup.sh"` if the gate exits `2`.
+- For direct script calls, resolve the skill directory first, then run the
+  project gate inside each target app (not `$HOME`). Resolving matters: on a
+  fallback or legacy install `BROWSER_BAY_DIR` is unset, and
+  `bash "$BROWSER_BAY_DIR/scripts/..."` degrades to `bash "/scripts/..."` with a
+  confusing path error. The chain below searches the same places
+  `axis-browser setup` does, so a skill copied into a host skill location
+  resolves here too.
+
+  ```bash
+  BB="${BROWSER_BAY_DIR:-}"
+  for p in "${AXIS_BROWSER_HOME:+$AXIS_BROWSER_HOME/skills}" "${AXIS_PORTABLE_SKILLS_DIR:-}" \
+           ./skills "$HOME/.codex/skills" "$HOME/.config/agents/skills" \
+           "$HOME/.claude/skills" "$HOME/.config/opencode/skills" "$HOME/.pi/agent/skills"; do
+    [ -n "$BB" ] && break
+    if [ -n "$p" ] && [ -d "$p/browser-bay" ]; then BB="$p/browser-bay"; fi
+  done
+  [ -d "$BB" ] || { echo "browser-bay not found; set BROWSER_BAY_DIR"; exit 2; }
+
+  bash "$BB/scripts/ensure-project-ready.sh"; rc=$?      # read-only gate
+  if [ "$rc" = 2 ]; then                                 # 2 = one-time setup needed
+    bash "$BB/scripts/setup.sh" || exit $?               # the only writing step; needs operator approval
+    bash "$BB/scripts/ensure-project-ready.sh"; rc=$?    # re-check once
+  fi
+  [ "$rc" = 0 ] || exit "$rc"                            # any other status is a real error
+  ```
+
+  Branch on the exit code rather than running both in sequence: the gate exits `0` when
+  the project is already ready, and `setup.sh` is the only step that writes. Let a failing
+  `setup.sh` exit — do not fall through to the re-check, or a gate that passes on the retry
+  will report success over a setup that failed. Exit `2` on the re-check means setup did not
+  finish the job; read its output rather than looping.
+
+  The legacy alias `BROWSER_SKILL_DIR` is still honoured by `axis-browser setup`
+  itself; prefer `BROWSER_BAY_DIR` in new shells.
 - **BrowserAct**: machine CLI auth is separate from optional **project-scoped**
   remote MCP (published workflows). See
   [docs/browseract-mcp-per-project.md](docs/browseract-mcp-per-project.md) and
@@ -228,13 +258,18 @@ Axis Browser posts the lowest input tokens, cost, duration, and turn count of al
 
 | Condition                            | Avg Input Tokens | Avg Cost/Task | Avg Duration | Avg Turns | Success  |
 | ------------------------------------ | ---------------- | ------------- | ------------ | --------- | -------- |
-| **Axis Browser**                     | **79,141**       | **$0.074**    | **21.5s**    | **4.5**   | **100%** |
+| **Axis Browser** (upstream engine\*) | **79,141**       | **$0.074**    | **21.5s**    | **4.5**   | **100%** |
 | dev-browser                          | 82,532           | $0.078        | 28.6s        | 4.9       | 99%      |
 | agent-browser (Vercel)               | 93,074           | $0.088        | 24.6s        | 4.8       | 99%      |
 | chrome-devtools-mcp + compressor CLI | 130,779          | $0.091        | 29.7s        | 7.6       | 100%     |
 | chrome-devtools-mcp + ToolSearch     | 133,712          | $0.096        | 29.4s        | 7.5       | 99%      |
 | chrome-devtools-mcp (raw MCP)        | 184,711          | $0.101        | 26.0s        | 6.2       | 99%      |
 | chrome-devtools-mcp code execution   | 129,606          | $0.120        | 36.2s        | 6.4       | 100%     |
+
+\* These are **inherited upstream results**, not an independent measurement of this fork: the
+benchmark ran `chrome-devtools-axi`, the engine Axis Browser is built on. The numbers have not
+been re-run against this fork, so treat them as an upstream reference point rather than a
+measurement of what you will observe here.
 
 Against raw chrome-devtools-mcp - the very server this CLI wraps - that is 57% fewer input tokens, 26% lower cost, and 27% fewer agent turns.
 
@@ -335,8 +370,11 @@ axis-browser doctor --json
 ```
 
 It reports the active mode, the profile in use and whether it is locked, bridge state, and a
-`remedies` array of **runnable commands**. Only two conditions need a human:
-`NEEDS_INTERACTIVE_LOGIN` and `PORT_HELD_BY_FOREIGN_PROCESS`.
+`remedies` array of **syntactically runnable commands** — which is not the same as safe to
+run unattended. Run the reversible ones (`unset …`) directly; confirm the destructive ones
+(`axis-browser reap`, `axis-browser stop`, `rm <path>`) with a human first, and prefer
+`axis-browser reap --dry-run` before the real thing. Only two conditions need a human
+outright: `NEEDS_INTERACTIVE_LOGIN` and `PORT_HELD_BY_FOREIGN_PROCESS`.
 
 Why stop the bridge before changing connection settings:
 - the bridge is persistent and can outlive your shell session
@@ -680,10 +718,13 @@ export CHROME_DEVTOOLS_AXI_AUTO_CONNECT=1
 export CHROME_DEVTOOLS_AXI_CHANNEL=beta
 ```
 
-This selects which Chrome `--autoConnect` attaches to, and which one is launched
-in the default and `CHROME_DEVTOOLS_AXI_USER_DATA_DIR` modes. It is ignored when
-`CHROME_DEVTOOLS_AXI_BROWSER_URL` is set, since that connects to an explicit
-endpoint regardless of channel.
+This selects which Chrome `--autoConnect` attaches to, and which one is launched in
+`ephemeral` and `managed` modes. It is ignored **only in `attach` mode**, which connects to
+an explicit endpoint regardless of channel.
+
+Note the precedence: `CHROME_DEVTOOLS_AXI_AUTO_CONNECT` outranks
+`CHROME_DEVTOOLS_AXI_BROWSER_URL`, so with both set the mode is `autoconnect` and the channel
+**still applies**. Only a resolved mode of `attach` drops it.
 
 Chrome 144+ auto-connect example:
 

@@ -91,7 +91,12 @@ site** — and that should be a one-time explicit handoff, not a per-run blocker
 
 ---
 
-## 4. Target model — three modes
+## 4. Target model — three modes (shipped as four)
+
+> **As shipped:** this section proposed three modes; `autoconnect` was split out as a
+> fourth during implementation. `CHROME_DEVTOOLS_AXI_MODE` accepts
+> `ephemeral` / `managed` / `attach` / `autoconnect`. The proposal is kept as written
+> below for the record.
 
 | Mode | Profile | Transport | Lifecycle owner | Operator needed |
 |---|---|---|---|---|
@@ -108,9 +113,10 @@ that should ever escalate.
 unreachable **only** because the `browserUrl` branch at `src/bridge.ts:494` wins the
 `else if` chain — removing that export (Phase 1) is sufficient to reach it.
 
-**Naming caveat:** the mode *names* in this table are this document's vocabulary, not
-axis's. `CHROME_DEVTOOLS_AXI_MODE` does not exist in the source (Phase 2.3 proposes it).
-Today the behaviour is selected implicitly by which env vars are set.
+**Naming caveat (updated):** these mode *names* began as this document's vocabulary. They
+are now the real thing — `CHROME_DEVTOOLS_AXI_MODE` shipped in Phase 2.3 (`src/mode.ts`) and
+accepts exactly `ephemeral` / `managed` / `attach` / `autoconnect`. Implicit selection from
+whichever env var happens to be set is retained only as the fallback when `MODE` is unset.
 
 ### Mode selection today (broken precedence)
 
@@ -126,6 +132,7 @@ Introduce one authoritative variable:
 
 ```
 CHROME_DEVTOOLS_AXI_MODE = ephemeral | managed | attach     # default: ephemeral
+                           (shipped with `autoconnect` as a fourth value)
 ```
 
 Legacy inference retained for back-compat: `BROWSER_URL` set + `MODE` unset → `attach`,
@@ -232,19 +239,23 @@ conflict this section exists to prevent. Another reason the §5 revision is corr
 - **Never** globally export `CHROME_DEVTOOLS_AXI_PORT` — `src/cli.ts:76-82` warns it
   defeats per-session port derivation and forces concurrent sessions onto one port.
 
-### Conflict that exists today and must be fixed
+### Conflict found here — since fixed
 
-`~/.zshrc` `axis-reinit` runs:
+**Resolved.** Recorded as found, with the fix noted inline; see the closing status list.
+
+`~/.zshrc` `axis-reinit` **used to** run:
 
 ```zsh
-pkill -f "chrome-devtools-mcp"        # ← kills EVERY chrome-devtools-mcp on the machine
+pkill -f "chrome-devtools-mcp"        # ← killed EVERY chrome-devtools-mcp on the machine
 ```
 
-`chrome-devtools-mcp` is a widely-used standalone MCP server. Nothing scopes this to
-axis's own processes. Nothing is currently co-installed (verified), so it has not bitten
-yet — but it is a live cross-tool hazard. **Replace pattern-matching with pid-file
-ownership**, the same discipline `removePidFile` (`src/bridge.ts:108`) already applies:
-only act on processes we recorded as ours.
+`chrome-devtools-mcp` is a widely-used standalone MCP server. Nothing scoped that to
+axis's own processes. Nothing was co-installed at the time (verified), so it never bit —
+but it was a live cross-tool hazard. It has been **replaced with pid/group ownership**,
+the same discipline `removePidFile` (`src/bridge.ts:108`) already applies: only act on
+processes we recorded as ours. `axis-reinit` now resolves its targets with
+`pgrep -f 'chrome-devtools-axi-bridge'` and kills those process groups. Verified against
+`~/.zshrc`.
 
 The two agent-browser Chrome trees seen during cleanup (PIDs 11920, 84441) are **not
 orphans** — each has a live `agent-browser-darwin-arm64` parent (11919/84440), which is
@@ -355,9 +366,12 @@ export CHROME_DEVTOOLS_AXI_USER_DATA_DIR="${CHROME_DEVTOOLS_AXI_USER_DATA_DIR:-$
 export CHROME_AUTOMATION_PORT="${CHROME_AUTOMATION_PORT:-9333}"   # attach-mode only, off 9222
 ```
 
-> `CHROME_DEVTOOLS_AXI_MODE=managed` is **deliberately not set**. `MODE` does not exist
-> until Phase 2.3; exporting it today would be inert and misleading. Managed mode is
-> reached via `USER_DATA_DIR` alone (`src/bridge.ts:527`), which works on 0.1.27 as-is.
+> `CHROME_DEVTOOLS_AXI_MODE=managed` was **deliberately not set** when Phase 1 was applied,
+> because `MODE` did not exist yet and exporting it would have been inert and misleading.
+> **That constraint is gone** — Phase 2.3 shipped it (`resolveMode`, `src/mode.ts`). Managed
+> mode is still reachable via `USER_DATA_DIR` alone; setting `MODE` explicitly is now the
+> clearer option, and it is what `doctor` reports. Scope it per command or project, never as
+> a global shell export — that is the failure this whole document is about.
 
 Helpers restructured so no recovery path lives only in interactive zsh:
 `axis-init` now reports status only; `axis-login` does the interactive login handoff and
@@ -956,8 +970,10 @@ bridge currently holds the profile, which is the normal state mid-session, and `
 
 ### Not done here (out of scope, still open)
 
-- `~/.zshrc` `axis-reinit` still runs `pkill -f "chrome-devtools-mcp"` unscoped (§6). Operator-owned
-  config; wants the pid-file ownership discipline `removePidFile` (`src/bridge.ts`) already uses.
+- ~~`~/.zshrc` `axis-reinit` still runs `pkill -f "chrome-devtools-mcp"` unscoped (§6).~~
+  **Done — this contradicted §8.** `axis-reinit` now reaps only axis's own bridge process
+  groups (`pgrep -f 'chrome-devtools-axi-bridge'`, then a group-scoped `kill`); it no longer
+  pattern-matches every `chrome-devtools-mcp` on the machine. Verified against `~/.zshrc`.
 - The agent environment exports `CHROME_DEVTOOLS_AXI_PORT=9224`, which §6 forbids because it defeats
   per-session port derivation. It fails loudly (`BRIDGE_PORT_IN_USE_EXIT_CODE` → `BRIDGE_NOT_READY`,
   the `BRIDGE_PORT_IN_USE_EXIT_CODE` branch of `buildBridgeEarlyExitError` in `src/client.ts`), so

@@ -12,9 +12,14 @@ Axis Browser has four layers:
 2. **Skill availability** — make `skills/browser-bay/` available to the agent.
 3. **Project readiness** — create `.tmp/` artifact folders and verify tools in
    the target project.
-4. **Task use** — load `$BROWSER_BAY_DIR/SKILL.md` and let it route the browser
+   *Install readiness is not runtime readiness.* `axis-browser doctor --json`
+   answers the second question — active connection mode, probed endpoint,
+   profile lock, orphaned bridges — and returns runnable remedies. Run it before
+   browser work, not just after something breaks.
+4. **Task use** — load the browser-bay `SKILL.md` and let it route the browser
    task. (Always path-qualify it: a bare `SKILL.md` at the repo root resolves to
-   the Axis Browser setup skill, which is not the router.)
+   the Axis Browser setup skill, which is not the router. See
+   [Skill Availability](#skill-availability) for how to resolve the directory.)
 
 The text-expander prompts under `prompts/` are thin entry points into those
 layers:
@@ -23,7 +28,7 @@ layers:
 |---|---|---|
 | `;absetup` | Machine setup | Runs `check-prerequisites.sh --install` through browser-bay. |
 | `;abcheck` | Project readiness | Runs the read-only `ensure-project-ready.sh` gate, then `check-prerequisites.sh`. On gate exit 2, runs `setup.sh` only with operator approval. |
-| `;abuse` | Task use | Loads `$BROWSER_BAY_DIR/SKILL.md` and lets it route the browser task. |
+| `;abuse` | Task use | Resolves the skill directory, loads its `SKILL.md`, and lets it route the browser task. |
 | `;abhealth` | Maintenance | Runs `check-prerequisites.sh --update` and performs a read-only content audit. |
 
 ## Core Boundaries
@@ -55,7 +60,29 @@ the agent host. Use one of these routes:
 - For hosts without native `SKILL.md` discovery, use the adapters under
   `skills/browser-bay/adapters/`.
 
-Once available, `$BROWSER_BAY_DIR/SKILL.md` remains the router. The prompt table above maps
+### Resolve the directory before running anything
+
+The routes above are only useful if the commands actually use them.
+`BROWSER_BAY_DIR` is unset on a fallback or legacy install, and
+`bash "$BROWSER_BAY_DIR/scripts/..."` would then run `bash "/scripts/..."` and
+fail with a confusing path error. Resolve it once per shell:
+
+```bash
+BB="${BROWSER_BAY_DIR:-}"
+for p in "${AXIS_BROWSER_HOME:+$AXIS_BROWSER_HOME/skills}" "${AXIS_PORTABLE_SKILLS_DIR:-}" \
+         ./skills "$HOME/.codex/skills" "$HOME/.config/agents/skills" \
+         "$HOME/.claude/skills" "$HOME/.config/opencode/skills" "$HOME/.pi/agent/skills"; do
+  [ -n "$BB" ] && break
+  if [ -n "$p" ] && [ -d "$p/browser-bay" ]; then BB="$p/browser-bay"; fi
+done
+[ -d "$BB" ] || { echo "browser-bay not found; set BROWSER_BAY_DIR"; exit 2; }
+
+```
+
+Every command below uses `"$BB"`. The same three lines appear in the `prompts/`
+entry points, so agents and operators resolve the path identically.
+
+Once available, `$BB/SKILL.md` remains the router. The prompt table above maps
 shortcodes to setup, readiness, use, and maintenance entry points; it does not
 replace the skill discovery step.
 
@@ -64,7 +91,7 @@ replace the skill discovery step.
 Machine setup is handled by:
 
 ```bash
-bash "$BROWSER_BAY_DIR/scripts/check-prerequisites.sh" --install
+bash "$BB/scripts/check-prerequisites.sh" --install
 ```
 
 The install mode is interactive and permission-gated. It never writes API keys,
@@ -87,7 +114,7 @@ Project readiness is gated, and the gate is read-only. Run it inside the target
 project (its CWD must be the project, not `$HOME`):
 
 ```bash
-bash "$BROWSER_BAY_DIR/scripts/ensure-project-ready.sh"
+bash "$BB/scripts/ensure-project-ready.sh"
 ```
 
 - **Exit 0** — the project is ready; continue straight to
@@ -96,13 +123,13 @@ bash "$BROWSER_BAY_DIR/scripts/ensure-project-ready.sh"
   their approval**, run `setup.sh`, then re-run the gate until it exits 0:
 
   ```bash
-  bash "$BROWSER_BAY_DIR/scripts/setup.sh" --dry-run
-  bash "$BROWSER_BAY_DIR/scripts/setup.sh"
-  bash "$BROWSER_BAY_DIR/scripts/ensure-project-ready.sh"
+  bash "$BB/scripts/setup.sh" --dry-run
+  bash "$BB/scripts/setup.sh"
+  bash "$BB/scripts/ensure-project-ready.sh"
   ```
 
 ```bash
-bash "$BROWSER_BAY_DIR/scripts/check-prerequisites.sh"
+bash "$BB/scripts/check-prerequisites.sh"
 ```
 
 `setup.sh` is the only writing step here, which is why it sits behind the gate
@@ -121,7 +148,7 @@ project artifact hygiene:
 Monthly or biweekly health checks use:
 
 ```bash
-bash "$BROWSER_BAY_DIR/scripts/check-prerequisites.sh" --update
+bash "$BB/scripts/check-prerequisites.sh" --update
 ```
 
 `--update` is report-first and permission-gated. It records pre-update versions
@@ -160,11 +187,15 @@ behavior. Use the targeted tests above.
 The same workflow can be performed manually:
 
 1. Read `skills/browser-bay/README.md`.
-2. Export `BROWSER_BAY_DIR`, or export `AXIS_BROWSER_HOME` and resolve
-   `$AXIS_BROWSER_HOME/skills/browser-bay`.
+2. Resolve `BB` with the snippet above (export `BROWSER_BAY_DIR`, or export
+   `AXIS_BROWSER_HOME`, or rely on the host skill locations it searches).
 3. Run `ensure-project-ready.sh` in the target project. On exit 2, run
    `setup.sh` (with approval) and re-run the gate until it exits 0.
 4. Run `check-prerequisites.sh`.
-5. Use `$BROWSER_BAY_DIR/SKILL.md` to choose the task reference.
+5. Run `axis-browser doctor --json`. Steps 3-4 prove the project and the machine
+   are set up; only this one proves a browser command will work right now. Run
+   its reversible remedies (`unset …`); confirm the destructive ones
+   (`axis-browser reap`, `axis-browser stop`, `rm <path>`) before executing.
+6. Use `$BB/SKILL.md` to choose the task reference.
 
 The prompts are convenience wrappers, not a separate source of truth.

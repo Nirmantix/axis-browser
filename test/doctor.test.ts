@@ -199,6 +199,19 @@ describe("buildDoctorReport", () => {
     expect(report.remedies.some((r) => r.startsWith("rm "))).toBe(true);
   });
 
+  it("reports an invalid session name instead of dying on it", async () => {
+    // doctor exists to report misconfiguration; resolveSessionName throws on a bad
+    // CHROME_DEVTOOLS_AXI_SESSION, which killed the command with a raw stack trace.
+    process.env.CHROME_DEVTOOLS_AXI_SESSION = "../../etc";
+    const report = await buildDoctorReport(
+      { CHROME_DEVTOOLS_AXI_MODE: "ephemeral" },
+      deps({ ok: true }),
+    );
+    expect(report.status).toBe("error");
+    expect(report.blockers.join("\n")).toContain("CHROME_DEVTOOLS_AXI_SESSION");
+    expect(report.remedies).toContain("unset CHROME_DEVTOOLS_AXI_SESSION");
+  });
+
   it("flags a managed profile that has never been used as needing a login", async () => {
     const report = await buildDoctorReport(
       { CHROME_DEVTOOLS_AXI_USER_DATA_DIR: join(home, "never-used") },

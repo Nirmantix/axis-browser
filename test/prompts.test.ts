@@ -21,6 +21,16 @@ describe("Axis Browser workflow prompts", () => {
       expect(
         body.includes("BROWSER_BAY_DIR") || body.includes("skills/browser-bay"),
       ).toBe(true);
+
+      // The discovery sources are only useful if the commands resolve them.
+      // An unset BROWSER_BAY_DIR must fall back, not degrade to "/scripts/...".
+      expect(body).toContain('BB="${BROWSER_BAY_DIR:-}"');
+      expect(body).toContain("for p in");
+      expect(body).toContain('[ -d "$BB" ] ||');
+      // Both the bare and braced forms — `${BROWSER_BAY_DIR}/scripts/...` fails
+      // exactly the same way as `$BROWSER_BAY_DIR/scripts/...` when it is unset.
+      expect(body).not.toMatch(/\$\{?BROWSER_BAY_DIR\}?\//);
+
       expect(body).toContain("NEVER write API keys");
       expect(body).toContain("NEVER modify .env");
       expect(body).toContain("NEVER print credential values");
@@ -31,7 +41,7 @@ describe("Axis Browser workflow prompts", () => {
   it("abuse is only a launcher", async () => {
     const body = await promptBody("abuse");
 
-    expect(body).toContain('Load "$BROWSER_BAY_DIR/SKILL.md"');
+    expect(body).toContain('Load "$BB/SKILL.md"');
     expect(body).toContain("Follow SKILL.md for all routing");
     expect(body).toContain("No standalone tool routing table");
     expect(body).not.toMatch(/\bnpm\s+install\b/);

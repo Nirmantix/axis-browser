@@ -147,6 +147,33 @@ describe("probeCdpEndpoint — a 200 is not proof", () => {
     expect(result).toMatchObject({ ok: false, reason: "TIMEOUT" });
   });
 
+  it("times out when a squatter sends headers then stalls mid-body", async () => {
+    // The deadline must cover the BODY, not just the headers. Clearing the abort timer
+    // as soon as fetch() resolved left response.json() uncovered, so a port squatter
+    // that answered headers and then stalled hung doctor indefinitely.
+    const result = await probeCdpEndpoint("http://127.0.0.1:9222", 20, {
+      fetchFn: async (_input, init) =>
+        ({
+          ok: true,
+          status: 200,
+          json: () =>
+            new Promise((_resolve, reject) => {
+              init?.signal?.addEventListener("abort", () => {
+                const error = new Error("aborted");
+                error.name = "AbortError";
+                reject(error);
+              });
+            }),
+        }) as unknown as Response,
+      ...noHolder,
+    });
+    expect(result).toMatchObject({
+      ok: false,
+      reason: "TIMEOUT",
+      detail: "stalled before the body arrived",
+    });
+  });
+
   it("names the port holder on failure — 'nothing is listening' and 'Ulaa is listening' need opposite fixes", async () => {
     const result = await probeCdpEndpoint("http://127.0.0.1:9222", 1000, {
       fetchFn: async () => {

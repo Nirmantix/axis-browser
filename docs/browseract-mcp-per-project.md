@@ -30,10 +30,21 @@ cd /path/to/your-project
 export BROWSERACT_MCP_SERVER_URL='https://mcp.browseract.com/<SERVER_ID>/mcp/'
 export BROWSERACT_API_KEY='…'   # paste only in your terminal
 
+# Note the single quotes: they keep the shell from expanding the key, so what gets
+# stored is the literal reference '${BROWSERACT_API_KEY}', which Claude Code resolves
+# from the environment at connect time. (The trailing backslash is only a line
+# continuation — it has no effect on expansion.)
 claude mcp add --transport http browseract "$BROWSERACT_MCP_SERVER_URL" \
-  --header "Authorization: Bearer $BROWSERACT_API_KEY" \
+  --header 'Authorization: Bearer ${BROWSERACT_API_KEY}' \
   --scope project
 ```
+
+> **Never let the shell expand the key into this command.** `--scope project` writes to
+> `.mcp.json`, a file that is normally committed — an expanded `$BROWSERACT_API_KEY` puts the
+> raw token in version control, and it is also visible in the process list (`ps`) while the
+> command runs. Storing the `${VAR}` reference keeps the secret in your environment, where it
+> belongs. If you already ran the expanded form, rotate the key and check whether `.mcp.json`
+> was committed.
 
 Verify (from same project):
 

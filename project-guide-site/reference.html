@@ -64,6 +64,21 @@
             <div><strong>Routes to</strong><p>Current selected page in the Axis bridge.</p></div>
             <div><strong>Expected output</strong><p>Screenshot artifact under `.tmp/screenshots/`.</p></div>
           </div>
+          <div class="trigger-row">
+            <div><strong>Preflight</strong><p><code>axis-browser doctor --json</code></p></div>
+            <div><strong>Routes to</strong><p>Mode resolution, endpoint probe, browser binary, profile lock, bridge and orphan state.</p></div>
+            <div><strong>Expected output</strong><p>Status, blockers, and a `remedies` array of syntactically runnable commands — not all safe unattended. Run the reversible ones (`unset …`); confirm the destructive ones (`axis-browser reap`, `axis-browser stop`, `rm &lt;path&gt;`). Escalate outright only for `NEEDS_INTERACTIVE_LOGIN` or `PORT_HELD_BY_FOREIGN_PROCESS`. Local CDP has no authentication — never request credentials or a `ws://` URL.</p></div>
+          </div>
+          <div class="trigger-row">
+            <div><strong>One-time login</strong><p><code>axis-browser login URL</code></p></div>
+            <div><strong>Routes to</strong><p>Headed browser on the managed profile; refuses without a TTY.</p></div>
+            <div><strong>Expected output</strong><p>Saved profile state; later runs are silent. Stops the bridge so the profile lock is released.</p></div>
+          </div>
+          <div class="trigger-row">
+            <div><strong>Orphan cleanup</strong><p><code>axis-browser reap --dry-run</code><br><code>axis-browser reap</code></p></div>
+            <div><strong>Routes to</strong><p>Bridges carrying our own marker, claimed by no session, older than 4h.</p></div>
+            <div><strong>Expected output</strong><p>Orphan list with ages, and what was reaped. Also runs automatically on bridge start unless `CHROME_DEVTOOLS_AXI_AUTO_REAP=0`.</p></div>
+          </div>
         </article>
 
         <article class="trigger-category category-blue">
@@ -82,9 +97,16 @@
             <div><strong>Expected output</strong><p>Missing tools, auth presence signals, no installs, no secret values.</p></div>
           </div>
           <div class="trigger-row">
-            <div><strong>Resolve skill path</strong><p><code>BROWSER_BAY_DIR=/path/to/browser-bay</code><br><code>AXIS_BROWSER_HOME=/path/to/axis-browser</code></p></div>
-            <div><strong>Routes to</strong><p>`BROWSER_BAY_DIR`, `$AXIS_BROWSER_HOME/skills/browser-bay`, `$AXIS_PORTABLE_SKILLS_DIR/browser-bay`, then standard skill locations.</p></div>
-            <div><strong>Expected output</strong><p>Setup reports which router source was selected, or that the router source is not configured.</p></div>
+            <div><strong>Resolve skill path</strong><pre>BB="${BROWSER_BAY_DIR:-}"
+for p in "${AXIS_BROWSER_HOME:+$AXIS_BROWSER_HOME/skills}" "${AXIS_PORTABLE_SKILLS_DIR:-}" \
+         ./skills "$HOME/.codex/skills" "$HOME/.config/agents/skills" \
+         "$HOME/.claude/skills" "$HOME/.config/opencode/skills" "$HOME/.pi/agent/skills"; do
+  [ -n "$BB" ] &amp;&amp; break
+  if [ -n "$p" ] &amp;&amp; [ -d "$p/browser-bay" ]; then BB="$p/browser-bay"; fi
+done
+[ -d "$BB" ] || { echo "browser-bay not found; set BROWSER_BAY_DIR"; exit 2; }</pre></div>
+            <div><strong>Routes to</strong><p>The same order `axis-browser setup` uses: `BROWSER_BAY_DIR`, `$AXIS_BROWSER_HOME/skills/browser-bay`, `$AXIS_PORTABLE_SKILLS_DIR/browser-bay`, `./skills/browser-bay`, then standard agent skill locations.</p></div>
+            <div><strong>Expected output</strong><p>A resolved `$BB`, or exit 2 with `browser-bay not found` when no route matches.</p></div>
           </div>
           <div class="trigger-row">
             <div><strong>Machine setup</strong><p><code>axis-browser setup --install</code></p></div>
@@ -92,12 +114,12 @@
             <div><strong>Expected output</strong><p>Core and optional tool actions approved, skipped, or blocked. No credential writes.</p></div>
           </div>
           <div class="trigger-row">
-            <div><strong>Health audit</strong><p><code>bash "$BROWSER_BAY_DIR/scripts/check-prerequisites.sh" --update</code></p></div>
+            <div><strong>Health audit</strong><p>Resolve <code>$BB</code> with the chain in the “Resolve skill path” row above, then:</p><p><code>bash "$BB/scripts/check-prerequisites.sh" --update</code></p></div>
             <div><strong>Routes to</strong><p>Report-first version-drift audit for shared tools.</p></div>
             <div><strong>Expected output</strong><p>Current versions, update recommendations, and permission-gated follow-up actions.</p></div>
           </div>
           <div class="trigger-row">
-            <div><strong>Verified run</strong><p><code>node "$BROWSER_BAY_DIR/scripts/init-verified-run.mjs" --task "..." --slug run</code><br><code>node "$BROWSER_BAY_DIR/scripts/validate-verified-run.mjs" --run .tmp/verified-runs/run</code></p></div>
+            <div><strong>Verified run</strong><p><code>node "$BB/scripts/init-verified-run.mjs" --task "..." --slug run</code><br><code>node "$BB/scripts/validate-verified-run.mjs" --run .tmp/verified-runs/run</code></p></div>
             <div><strong>Routes to</strong><p>Evidence-backed browser task workflow.</p></div>
             <div><strong>Expected output</strong><p>Validated STEP markers with exit code 0, 1, or 2.</p></div>
           </div>

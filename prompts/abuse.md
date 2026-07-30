@@ -5,11 +5,31 @@ Purpose: use the Axis Browser workflow for a browser-related task.
 Associated skill:
 - ./skills/browser-bay when run from the axis-browser checkout, BROWSER_BAY_DIR when set, or AXIS_BROWSER_HOME/skills/browser-bay when AXIS_BROWSER_HOME is set
 
+
+Resolve the skill directory first — the discovery sources above are only useful if the
+commands actually use them. `BROWSER_BAY_DIR` may be unset on a fallback or legacy install,
+and an unresolved path would then run `bash "/scripts/..."` and fail with
+a confusing path error:
+
+```bash
+BB="${BROWSER_BAY_DIR:-}"
+for p in "${AXIS_BROWSER_HOME:+$AXIS_BROWSER_HOME/skills}" "${AXIS_PORTABLE_SKILLS_DIR:-}" \
+         ./skills "$HOME/.codex/skills" "$HOME/.config/agents/skills" \
+         "$HOME/.claude/skills" "$HOME/.config/opencode/skills" "$HOME/.pi/agent/skills"; do
+  [ -n "$BB" ] && break
+  if [ -n "$p" ] && [ -d "$p/browser-bay" ]; then BB="$p/browser-bay"; fi
+done
+[ -d "$BB" ] || { echo "browser-bay not found; set BROWSER_BAY_DIR"; exit 2; }
+
+```
+
+Use `"$BB"` in place of `"$BROWSER_BAY_DIR"` in the commands below.
+
 Launcher rules:
-- Resolve BROWSER_BAY_DIR.
-- Load "$BROWSER_BAY_DIR/SKILL.md".
+- Resolve "$BB" with the snippet above.
+- Load "$BB/SKILL.md".
 - Ensure cwd is the target product project (not $HOME).
-- Run bash "$BROWSER_BAY_DIR/scripts/ensure-project-ready.sh" before browser work.
+- Run bash "$BB/scripts/ensure-project-ready.sh" before browser work.
   If exit 2, stop and ask the operator to approve setup.sh in that project first.
 - Pass the operator's browser task through verbatim.
 - Follow SKILL.md for all routing, tools, references, fallbacks, safety rules, and reporting.
