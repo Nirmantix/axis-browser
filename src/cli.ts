@@ -31,6 +31,15 @@ import {
   truncateText,
 } from "./snapshot.js";
 import { getSuggestions } from "./suggestions.js";
+import { buildDoctorReport, renderDoctorReport } from "./doctor.js";
+import { resolveUserDataDir } from "./mode.js";
+import {
+  DEFAULT_REAP_MIN_AGE_MS,
+  findOrphanBridges,
+  reapBridges,
+  scanSessionPidFiles,
+} from "./reap.js";
+import { resolveSessionName } from "./sessions.js";
 import { installHooksOrThrow } from "./hooks.js";
 import { resolveOutputPath } from "./paths.js";
 
@@ -48,7 +57,7 @@ export type MainOptions = {
 };
 
 export const TOP_HELP = `usage: axis-browser [command] [args] [flags]
-commands[36]:
+commands[39]:
   open <url>, snapshot, screenshot <path>, click @<uid>, fill @<uid> <text>,
   type <text>, press <key>, scroll <dir>, back, wait <ms|text>, eval <js>,
   run,
@@ -56,12 +65,32 @@ commands[36]:
   upload @<uid> <path>, pages, newpage <url>, selectpage <id>, closepage <id>,
   resize <w> <h>, emulate, console, console-get <id>, network,
   network-get [id], lighthouse, perf-start, perf-stop,
-  perf-insight <set> <name>, heap <path>, start, stop, setup, setup hooks, update
+  perf-insight <set> <name>, heap <path>, start, stop, setup, setup hooks, update,
+  doctor [--json], reap [--dry-run] [--min-age-hours N], login <url>
 
 flags[2]:
   --help, -v/-V/--version
 
+preflight:
+  Run \`axis-browser doctor --json\` before a browser task. It reports the active mode,
+  the endpoint/profile/bridge state, and a list of REMEDIES that are runnable commands.
+  Execute them. Escalate to a human only for NEEDS_INTERACTIVE_LOGIN (run
+  \`axis-browser login <url>\`) or PORT_HELD_BY_FOREIGN_PROCESS (killing someone's
+  browser is their call). Local CDP has no authentication — never request credentials,
+  tokens, or a ws:// URL to reach it.
+
 environment:
+  CHROME_DEVTOOLS_AXI_MODE          Connection mode, stated explicitly instead of inferred:
+                                    ephemeral (throwaway profile), managed (persistent profile
+                                    axis owns), attach (a browser someone else runs), or
+                                    autoconnect (your running Chrome via chrome://inspect).
+                                    Unset = inferred from the variables below, as before.
+  CHROME_DEVTOOLS_AXI_EXECUTABLE_PATH
+                                    Absolute path to the Chrome/Chromium binary to launch.
+                                    Launch modes only — ignored when attaching to a browser
+                                    somebody else started.
+  CHROME_DEVTOOLS_AXI_AUTO_REAP     Set to 0 to disable automatic cleanup of orphaned bridges
+                                    (>4h old, claimed by no session) on bridge startup.
   CHROME_DEVTOOLS_AXI_AUTO_CONNECT  Set to 1 to connect to the user's running Chrome (144+)
                                     via chrome://inspect/#remote-debugging instead of launching
                                     a new browser. Requires remote debugging enabled in Chrome.
@@ -1299,6 +1328,130 @@ async function handleStart(): Promise<string> {
   return encode({ status: "ready", port });
 }
 
+async function handleDoctor(args: string[]): Promise<string> {
+  const json = args.includes("--json");
+  const report = await buildDoctorReport();
+  return json ? JSON.stringify(report, null, 2) : renderDoctorReport(report);
+}
+
+async function handleReap(args: string[]): Promise<string> {
+  const dryRun = args.includes("--dry-run");
+  const hoursIndex = args.indexOf("--min-age-hours");
+  const hours =
+    hoursIndex >= 0
+      ? Number(args[hoursIndex + 1])
+      : DEFAULT_REAP_MIN_AGE_MS / 3_600_000;
+  if (!Number.isFinite(hours) || hours < 0) {
+    throw new Error("--min-age-hours expects a non-negative number");
+  }
+
+  const orphans = findOrphanBridges(hours * 3_600_000);
+  const outcome = reapBridges(orphans, { dryRun });
+  // Manual reap still acts on these, but the operator should know automatic reaping
+  // is currently suppressed and why.
+  const malformed = scanSessionPidFiles().malformed;
+  return encode({
+    ...(malformed.length > 0
+      ? { malformedPidFiles: malformed, autoReapSuppressed: true }
+      : {}),
+    orphans: orphans.map((o) => ({
+      pid: o.pid,
+      ageMinutes: Math.round(o.ageMs / 60_000),
+    })),
+    reaped: outcome.reaped,
+    failed: outcome.failed,
+    ...(dryRun ? { dryRun: true, wouldReap: outcome.skipped } : {}),
+  });
+}
+
+/** Wait for the operator to press Enter. Resolves immediately when stdin is not a TTY. */
+function waitForEnter(): Promise<void> {
+  return new Promise((resolve) => {
+    const onData = () => {
+      process.stdin.off("data", onData);
+      process.stdin.pause();
+      resolve();
+    };
+    process.stdin.resume();
+    process.stdin.once("data", onData);
+  });
+}
+
+/**
+ * `axis-browser login <url>` — the one sanctioned operator touchpoint.
+ *
+ * Opens the managed profile headed, hands the browser to the human, and waits. Every run
+ * after this one is silent, because the cookies live in the profile on disk. The bridge is
+ * stopped on the way out so the profile lock is released and Chrome flushes its state —
+ * leaving it running would both leak a browser and block the next session.
+ */
+async function handleLogin(args: string[]): Promise<string> {
+  const url = args.find((a) => !a.startsWith("-"));
+  if (!url) {
+    throw new Error(
+      "usage: axis-browser login <url>  (opens the managed profile headed for a one-time interactive login)",
+    );
+  }
+  if (!process.stdin.isTTY) {
+    throw new Error(
+      "axis-browser login is interactive and needs a terminal: it hands you a visible browser and waits for you to sign in. " +
+        "Run it yourself in a terminal, then re-run the original command — every later run reuses the saved profile silently.",
+    );
+  }
+
+  // Force the mode for this invocation: login is meaningless in a mode that owns no
+  // persistent profile, and silently logging into a throwaway profile would be worse
+  // than refusing.
+  process.env.CHROME_DEVTOOLS_AXI_MODE = "managed";
+  process.env.CHROME_DEVTOOLS_AXI_HEADED = "1";
+
+  const profileDir = resolveUserDataDir(
+    "managed",
+    process.env,
+    resolveSessionName(),
+  );
+
+  await ensureBridge();
+  try {
+    await callTool("navigate_page", { type: "url", url });
+  } catch (error) {
+    if (!isRecoverableOpenError(error)) throw error;
+    await callTool("new_page", { url });
+  }
+
+  process.stderr.write(
+    `\nA browser window is open on ${url} using the profile at:\n  ${profileDir}\n\n` +
+      "Sign in there, then press Enter here to save and close.\n",
+  );
+  await waitForEnter();
+
+  // Verify something actually landed rather than reporting a success we did not check.
+  let cookieCount = 0;
+  try {
+    const result = await callTool("evaluate_script", {
+      function:
+        "() => document.cookie.split(';').filter((c) => c.trim()).length",
+    });
+    const match = JSON.stringify(result).match(/(\d+)/);
+    if (match) cookieCount = Number(match[1]);
+  } catch {
+    // A failed probe is not a failed login; report it as unknown rather than zero.
+    cookieCount = -1;
+  }
+
+  await stopBridge();
+
+  return encode({
+    status: "saved",
+    profile: profileDir ?? "(none)",
+    cookies: cookieCount < 0 ? "unverified" : cookieCount,
+    note:
+      cookieCount === 0
+        ? "No cookies were visible on that page — if the site stores its session elsewhere this may still be fine, but re-run and check if the next command is not authenticated."
+        : "Later runs reuse this profile silently.",
+  });
+}
+
 export function formatStopOutput(wasStopped: boolean): string {
   return encode({ status: wasStopped ? "stopped" : "stopped (no-op)" });
 }
@@ -1762,6 +1915,9 @@ const COMMANDS: Record<string, CommandFn> = {
   "perf-insight": withoutFullFlag(handlePerfInsight),
   heap: withoutFullFlag(handleHeap),
   start: async () => handleStart(),
+  doctor: withoutFullFlag(handleDoctor),
+  reap: withoutFullFlag(handleReap),
+  login: withoutFullFlag(handleLogin),
   stop: async () => handleStop(),
   setup: withoutFullFlag(handleSetup),
   update: withoutFullFlag(handleUpdate),

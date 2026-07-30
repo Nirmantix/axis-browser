@@ -302,7 +302,16 @@ describe("buildBridgeEarlyExitError", () => {
 
   it("gives generic startup guidance (not port collision) for a non-EADDRINUSE early exit", () => {
     delete process.env.CHROME_DEVTOOLS_AXI_MCP_PATH;
-    const err = buildBridgeEarlyExitError("worker-2", 9231, 1, null);
+    // Mode is stated explicitly: the guidance below is launch-mode guidance, and
+    // leaving it to be inferred would make this test depend on whatever
+    // CHROME_DEVTOOLS_AXI_* the ambient shell happens to export.
+    const err = buildBridgeEarlyExitError(
+      "worker-2",
+      9231,
+      1,
+      null,
+      "ephemeral",
+    );
 
     expect(err.code).toBe("BRIDGE_NOT_READY");
     expect(err.message).toContain("exited with code 1");
@@ -314,7 +323,13 @@ describe("buildBridgeEarlyExitError", () => {
 
   it("points at CHROME_DEVTOOLS_AXI_MCP_PATH when an explicit path is set", () => {
     process.env.CHROME_DEVTOOLS_AXI_MCP_PATH = "/opt/mcp.js";
-    const err = buildBridgeEarlyExitError("worker-2", 9231, 1, null);
+    const err = buildBridgeEarlyExitError(
+      "worker-2",
+      9231,
+      1,
+      null,
+      "ephemeral",
+    );
 
     const suggestions = err.suggestions.join("\n");
     expect(suggestions).toContain("CHROME_DEVTOOLS_AXI_MCP_PATH");
@@ -333,6 +348,7 @@ describe("ensureBridge early-exit fast-fail", () => {
   const savedHome = process.env.HOME;
   const savedTimeout = process.env.CHROME_DEVTOOLS_AXI_BRIDGE_TIMEOUT_MS;
   const savedPort = process.env.CHROME_DEVTOOLS_AXI_PORT;
+  const savedMode = process.env.CHROME_DEVTOOLS_AXI_MODE;
   let tmpHome: string;
 
   const restore = (key: string, value: string | undefined) => {
@@ -347,6 +363,10 @@ describe("ensureBridge early-exit fast-fail", () => {
     process.env.HOME = tmpHome;
     process.env.CHROME_DEVTOOLS_AXI_SESSION = "early-exit-worker";
     delete process.env.CHROME_DEVTOOLS_AXI_PORT;
+    // Pin the mode: the guidance asserted below is launch-mode guidance, and an
+    // ambient CHROME_DEVTOOLS_AXI_BROWSER_URL in the developer's shell would
+    // otherwise put these through the attach-mode branch instead.
+    process.env.CHROME_DEVTOOLS_AXI_MODE = "ephemeral";
     // A long deadline so the assertion proves the *early-exit* path returns
     // fast, not that it merely hit the timeout.
     process.env.CHROME_DEVTOOLS_AXI_BRIDGE_TIMEOUT_MS = "20000";
@@ -357,6 +377,7 @@ describe("ensureBridge early-exit fast-fail", () => {
     restore("HOME", savedHome);
     restore("CHROME_DEVTOOLS_AXI_BRIDGE_TIMEOUT_MS", savedTimeout);
     restore("CHROME_DEVTOOLS_AXI_PORT", savedPort);
+    restore("CHROME_DEVTOOLS_AXI_MODE", savedMode);
     rmSync(tmpHome, { recursive: true, force: true });
   });
 

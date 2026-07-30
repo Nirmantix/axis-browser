@@ -7,6 +7,8 @@ import { readFileSync, existsSync } from "node:fs";
 import { request } from "node:http";
 import { AxiError } from "axi-sdk-js";
 import { BRIDGE_PORT_IN_USE_EXIT_CODE, resolveBridgeScript } from "./bridge.js";
+import { type AxiMode, resolveModeSafe } from "./mode.js";
+import { autoReapOrphans } from "./reap.js";
 import {
   resolveSessionName,
   resolveSessionPidFile,
@@ -335,23 +337,52 @@ export function buildBridgeEarlyExitError(
   port: number,
   code: number | null,
   signal: NodeJS.Signals | null,
+  mode: AxiMode = resolveModeSafe(),
 ): CdpError {
   const how =
     signal != null
       ? `was killed by ${signal}`
       : `exited with code ${code ?? "unknown"}`;
-  const message = `Bridge for session "${sessionName}" ${how} before becoming ready on port ${port}`;
+  const message = `Bridge for session "${sessionName}" ${how} before becoming ready on port ${port} (mode: ${mode})`;
 
   if (code === BRIDGE_PORT_IN_USE_EXIT_CODE) {
     return new CdpError(message, "BRIDGE_NOT_READY", [
       `Port ${port} is already in use. It may be held by another axis-browser session's bridge (a hashed-port collision, or a globally-exported CHROME_DEVTOOLS_AXI_PORT forcing every session onto one port), by a stale or crashed bridge that could not be reused, or by an unrelated process.`,
       "Set a distinct CHROME_DEVTOOLS_AXI_PORT for this session, unset a global CHROME_DEVTOOLS_AXI_PORT so every session derives its own, or free whatever is holding the port.",
+      "Run `axis-browser doctor` to see who holds it, and `axis-browser reap` to clear orphaned bridges.",
+    ]);
+  }
+
+  // In attach mode axis launches no browser, so every Chrome-launch remedy below is a
+  // false lead. Worse, a bare connection failure against an unauthenticated local port
+  // has been observed to make an agent conclude the endpoint needs credentials and
+  // escalate to a human. Both failure modes are addressed head-on here.
+  if (mode === "attach") {
+    const browserUrl = process.env.CHROME_DEVTOOLS_AXI_BROWSER_URL ?? "(unset)";
+    return new CdpError(message, "BRIDGE_NOT_READY", [
+      `Attach mode: axis did not launch a browser — it tried to connect to ${browserUrl}, which something else is expected to be serving.`,
+      "Run `axis-browser doctor` to probe that endpoint and name the process holding the port.",
+      "If nothing is serving DevTools there, unset CHROME_DEVTOOLS_AXI_BROWSER_URL so axis launches and owns its own browser (or set CHROME_DEVTOOLS_AXI_MODE=managed).",
+      "Local CDP has no authentication. Do not request credentials, tokens, or a ws:// URL.",
+    ]);
+  }
+
+  if (mode === "autoconnect") {
+    return new CdpError(message, "BRIDGE_NOT_READY", [
+      "Autoconnect mode: axis attaches to your already-running Chrome via chrome://inspect/#remote-debugging (Chrome 144+); it launches nothing.",
+      "Confirm Chrome is running and that remote debugging is enabled on that page, or unset CHROME_DEVTOOLS_AXI_AUTO_CONNECT to let axis launch its own browser.",
+      "Local CDP has no authentication. Do not request credentials, tokens, or a ws:// URL.",
     ]);
   }
 
   const suggestions = [
     "Check that chrome-devtools-mcp can start: npx chrome-devtools-mcp@latest --help",
   ];
+  if (mode === "managed") {
+    suggestions.push(
+      "Managed mode uses a persistent profile, and Chrome locks a profile to one process: if another Chrome already holds it, this launch fails. Run `axis-browser doctor` to see the lock holder.",
+    );
+  }
   if (process.env.CHROME_DEVTOOLS_AXI_MCP_PATH) {
     suggestions.push(
       "Verify CHROME_DEVTOOLS_AXI_MCP_PATH points to a valid chrome-devtools-mcp build.",
@@ -404,6 +435,12 @@ export async function ensureBridge(
       killProcessGroup: isBridgeProcess(pidInfo.pid),
     });
   }
+
+  // We are about to start a bridge, which is the one moment it is both safe and
+  // useful to clear abandoned ones: the reuse fast path above has already been
+  // ruled out, so nothing here can be reaping a bridge this command wants. Only
+  // our own bridges, claimed by no session, older than four hours — see reap.ts.
+  autoReapOrphans();
 
   // Start a new bridge
   const child = spawnBridge(port, sessionName);

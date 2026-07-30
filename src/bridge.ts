@@ -35,6 +35,7 @@ import {
   resolveSessionPidFile,
   resolveSessionPort,
 } from "./sessions.js";
+import { resolveMode, resolveUserDataDir } from "./mode.js";
 
 export interface BridgeContentBlock {
   type: string;
@@ -482,16 +483,18 @@ export const KEYCHAIN_ISOLATION_CHROME_ARGS = [
 export function buildTransportArgs(): string[] {
   const args = ["-y", "chrome-devtools-mcp@latest"];
 
-  const autoConnect = process.env.CHROME_DEVTOOLS_AXI_AUTO_CONNECT === "1";
+  // The mode is now resolved explicitly rather than inferred from whichever variable
+  // happened to be set first. resolveMode() falls back to the historical inference when
+  // CHROME_DEVTOOLS_AXI_MODE is unset, so this is behaviour-preserving by default.
+  const mode = resolveMode();
   const browserUrl = process.env.CHROME_DEVTOOLS_AXI_BROWSER_URL;
-  const userDataDir = process.env.CHROME_DEVTOOLS_AXI_USER_DATA_DIR;
   const channel = process.env.CHROME_DEVTOOLS_AXI_CHANNEL?.trim();
 
-  if (autoConnect) {
+  if (mode === "autoconnect") {
     // Chrome 144+ built-in remote debugging via chrome://inspect/#remote-debugging.
     // Connects to the user's running Chrome - no separate browser launched.
     args.push("--autoConnect");
-  } else if (browserUrl) {
+  } else if (mode === "attach" && browserUrl) {
     // Connect to an existing Chrome instance - skip --isolated and --headless
     // since the user manages the browser lifecycle externally.
     // ws://|wss:// route to --wsEndpoint (direct WebSocket), http(s):// to --browserUrl
@@ -522,6 +525,11 @@ export function buildTransportArgs(): string[] {
       args.push(`--browserUrl=${browserUrl}`);
     }
   } else {
+    const userDataDir = resolveUserDataDir(
+      mode,
+      process.env,
+      resolveSessionName(),
+    );
     if (userDataDir) {
       // Persistent profile — skip --isolated so the profile is preserved.
       args.push(`--userDataDir=${userDataDir}`);
@@ -530,6 +538,13 @@ export function buildTransportArgs(): string[] {
     }
     if (process.env.CHROME_DEVTOOLS_AXI_HEADED !== "1") {
       args.push("--headless");
+    }
+    // Launch modes only: pinning an executable is meaningless when attaching to a
+    // browser somebody else started — that browser already exists.
+    const executablePath =
+      process.env.CHROME_DEVTOOLS_AXI_EXECUTABLE_PATH?.trim();
+    if (executablePath) {
+      args.push(`--executablePath=${executablePath}`);
     }
     // Launch modes only: `--chrome-arg` is ignored when chrome-devtools-mcp
     // attaches to a browser somebody else started, and that browser's keychain
@@ -542,8 +557,8 @@ export function buildTransportArgs(): string[] {
   // --channel selects which installed Chrome distribution chrome-devtools-mcp
   // targets: the running instance --autoConnect attaches to, or the one launched
   // by default. It is irrelevant when attaching to an explicit endpoint, so it is
-  // omitted in BROWSER_URL/wsEndpoint mode. Validation is left to chrome-devtools-mcp.
-  if (channel && !browserUrl) {
+  // omitted in attach mode. Validation is left to chrome-devtools-mcp.
+  if (channel && mode !== "attach") {
     args.push(`--channel=${channel}`);
   }
 

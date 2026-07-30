@@ -73,3 +73,10 @@ build/
 .next/
 __pycache__/
 .pytest_cache/
+
+# Local CodeGraph index — machine-local, never committed
+.codegraph/
+
+# Vendored reference checkouts of other projects (each has its own .git and remote).
+# Kept out of both the index and the test gate — see vitest.config.ts.
+upstream/

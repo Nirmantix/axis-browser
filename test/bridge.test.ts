@@ -347,6 +347,89 @@ describe("buildTransportArgs", () => {
   });
 });
 
+/**
+ * Locks the transport contract that the operator-free session design depends on:
+ * when axis LAUNCHES the browser (isolated or persistent-profile), it must never
+ * ask for a TCP endpoint. chrome-devtools-mcp then drives Chrome over
+ * `--remote-debugging-pipe`, which is what makes port squatting (the 2026-07-30
+ * `127.0.0.1:9222` incident, where Ulaa held the port) structurally impossible.
+ *
+ * Verified end-to-end on 2026-07-30: a managed-mode Chrome ran with
+ * `--remote-debugging-pipe` and exposed no TCP LISTEN socket anywhere in its
+ * process tree. That transport is supplied by UPSTREAM, not by this repo, so these
+ * assertions exist to fail loudly if a change here (or an upstream flag rename we
+ * adopt) reintroduces a port. See docs/shared-session-design.md.
+ */
+describe("buildTransportArgs — launch modes claim no TCP endpoint", () => {
+  const PORTISH = ["--browserUrl", "--wsEndpoint", "--remote-debugging-port"];
+  const savedEnv: Record<string, string | undefined> = {};
+  const KEYS = [
+    "CHROME_DEVTOOLS_AXI_BROWSER_URL",
+    "CHROME_DEVTOOLS_AXI_USER_DATA_DIR",
+    "CHROME_DEVTOOLS_AXI_AUTO_CONNECT",
+    "CHROME_DEVTOOLS_AXI_HEADED",
+    "CHROME_DEVTOOLS_AXI_CHROME_ARGS",
+  ];
+
+  beforeEach(() => {
+    for (const k of KEYS) {
+      savedEnv[k] = process.env[k];
+      delete process.env[k];
+    }
+  });
+  afterEach(() => {
+    for (const k of KEYS) process.env[k] = savedEnv[k];
+  });
+
+  const claimsAnEndpoint = (args: string[]) =>
+    args.filter((a) => PORTISH.some((p) => a.startsWith(p)));
+
+  it("ephemeral mode requests no endpoint flag", () => {
+    expect(claimsAnEndpoint(buildTransportArgs())).toEqual([]);
+  });
+
+  it("managed mode (persistent profile) requests no endpoint flag", () => {
+    process.env.CHROME_DEVTOOLS_AXI_USER_DATA_DIR = "/tmp/axis-profile";
+    const args = buildTransportArgs();
+    expect(args).toContain("--userDataDir=/tmp/axis-profile");
+    expect(claimsAnEndpoint(args)).toEqual([]);
+  });
+
+  it("managed mode stays endpoint-free when headed", () => {
+    process.env.CHROME_DEVTOOLS_AXI_USER_DATA_DIR = "/tmp/axis-profile";
+    process.env.CHROME_DEVTOOLS_AXI_HEADED = "1";
+    expect(claimsAnEndpoint(buildTransportArgs())).toEqual([]);
+  });
+
+  it("a --chrome-arg cannot smuggle in a debug port", () => {
+    process.env.CHROME_DEVTOOLS_AXI_USER_DATA_DIR = "/tmp/axis-profile";
+    process.env.CHROME_DEVTOOLS_AXI_CHROME_ARGS =
+      "--remote-debugging-port=9222";
+    const args = buildTransportArgs();
+    // Forwarded args are prefixed, so they are inert as transport selection —
+    // assert the prefix is intact rather than that the string is absent.
+    expect(args).toContain("--chrome-arg=--remote-debugging-port=9222");
+    expect(claimsAnEndpoint(args)).toEqual([]);
+  });
+
+  it("keychain isolation is applied whenever axis launches the browser", () => {
+    for (const profile of [undefined, "/tmp/axis-profile"]) {
+      if (profile) process.env.CHROME_DEVTOOLS_AXI_USER_DATA_DIR = profile;
+      else delete process.env.CHROME_DEVTOOLS_AXI_USER_DATA_DIR;
+      const args = buildTransportArgs();
+      expect(args).toContain("--chrome-arg=--use-mock-keychain");
+      expect(args).toContain("--chrome-arg=--password-store=basic");
+    }
+  });
+
+  it("attach modes do NOT apply keychain isolation (that browser is not ours)", () => {
+    process.env.CHROME_DEVTOOLS_AXI_BROWSER_URL = "http://127.0.0.1:9333";
+    const args = buildTransportArgs();
+    expect(args).not.toContain("--chrome-arg=--use-mock-keychain");
+    expect(args).not.toContain("--chrome-arg=--password-store=basic");
+  });
+});
+
 describe("resolveTransportSpec", () => {
   const savedEnv: Record<string, string | undefined> = {};
 
