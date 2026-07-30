@@ -7,6 +7,22 @@ release history.
 
 ## Unreleased
 
+### Security
+
+* **bridge: reject non-loopback Host/Origin to block DNS rebinding**
+  (GHSA-x439-jhfh-v9x2, merged from upstream `0.1.27`). The bridge exposed
+  `GET /health`, `GET /tools`, and `POST /call` on loopback with no Host, Origin,
+  or auth checks, and `POST /call` maps straight to `client.callTool` — arbitrary
+  CDP execution. Any page the victim visited could DNS-rebind its own domain to
+  `127.0.0.1` and drive CDP from the victim's browser. An anti-rebinding gate now
+  runs first on every route, ahead of this fork's request try/catch backstop
+* **keychain isolation for launched Chrome** (merged from upstream). Launch modes
+  (`--isolated`, `CHROME_DEVTOOLS_AXI_USER_DATA_DIR`) now always pass
+  `--use-mock-keychain` and `--password-store=basic`, so a browser this tool starts
+  cannot reach the machine owner's OS password store. Attach modes
+  (`AUTO_CONNECT`, `BROWSER_URL`, `wsEndpoint`) deliberately omit them — that
+  browser's keychain policy belongs to whoever started it
+
 ### Fixed
 
 * installing the fork from GitHub produced a broken CLI: `dist/` is not

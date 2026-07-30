@@ -608,6 +608,25 @@ export CHROME_DEVTOOLS_AXI_AUTO_CONNECT=1
 When auto-connect is enabled, it takes precedence over
 `CHROME_DEVTOOLS_AXI_BROWSER_URL` and `CHROME_DEVTOOLS_AXI_USER_DATA_DIR`.
 
+### Keychain isolation
+
+When Axis Browser launches Chrome itself — the default `--isolated` mode and
+`CHROME_DEVTOOLS_AXI_USER_DATA_DIR` — it always passes `--use-mock-keychain` and
+`--password-store=basic`. An automation browser has no business reading, writing,
+or offering to reset your OS password store, so it is kept off it entirely.
+Password autofill and saved-password access are therefore intentionally
+unavailable inside browsers this tool launches. On macOS this also means the
+browser can never raise the system "Keychain Not Found … Reset To Defaults"
+panel, which Chrome triggers when it tries to store its `Chrome Safe Storage` key
+and no default keychain can be resolved for the process.
+
+Your own externally launched Chrome is unaffected: its saved passwords remain
+available and untouched, because this tool does not read, write, move, or reset
+the login keychain or its `Chrome Safe Storage` item. The isolation flags apply
+only to browsers this tool starts, and are deliberately not sent in the
+`CHROME_DEVTOOLS_AXI_AUTO_CONNECT`, `CHROME_DEVTOOLS_AXI_BROWSER_URL`, and
+`wsEndpoint` modes, where the browser belongs to whoever launched it.
+
 Run multiple isolated bridges at once with `CHROME_DEVTOOLS_AXI_SESSION` — one
 per agent session, worktree, or test worker:
 

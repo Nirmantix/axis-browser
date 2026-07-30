@@ -1,6 +1,6 @@
 {
   "name": "chrome-devtools-axi",
-  "version": "0.1.26",
+  "version": "0.1.27",
   "packageManager": "pnpm@11.1.1",
   "description": "Axis Browser: fast, token-efficient Chrome automation for shared CDP workflows",
   "//private": "The package name is upstream's on npm (kunchenguid/chrome-devtools-axi) and is kept for compatibility — see docs/upstream_sync.md. This fork is distributed from GitHub, so publishing is blocked to prevent an accidental push to upstream's name. Git installs and npm pack are unaffected.",
