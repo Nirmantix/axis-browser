@@ -1,6 +1,6 @@
 # Axis Browser — Operator-Free Session Design
 
-**Status:** Phase 0, Phase 1, and the 0.1.27 upstream sync are APPLIED and verified (§12). Phases 2-3 are proposed, for Dev B review.
+**Status:** Phases 0-3 and the 0.1.27 upstream sync are **APPLIED and verified** — Phase 0/1 and the sync in §12, Phase 2 in §13, Phase 3 (browser-bay doctrine + ego lite routing) in §14.
 **Author:** Dev A (this session), with Nitesh
 **Date:** 2026-07-30
 **Context:** post-mortem of the `127.0.0.1:9222` escalation + permanent fix
@@ -796,7 +796,11 @@ Phase 2's `doctor` should assert the transport rather than trust it.
 ### Still not verified this session
 
 - **CloakBrowser's default CDP port** — `cloakbrowser --help` returned nothing usable.
-- **Phase 2 code** — not written; this document is the plan for it.
+- ~~**Phase 2 code** — not written; this document is the plan for it.~~ **Superseded.** Phase 2 is
+  implemented and verified — see §8 Phase 2 and the receipts in §13. `src/mode.ts`, `src/doctor.ts`,
+  `src/reap.ts`, and `src/target.ts` exist, and `login` / `doctor --json` / `reap` /
+  `CHROME_DEVTOOLS_AXI_MODE` are all present in the installed 0.1.27 CLI. This bullet was left
+  behind when §8 was updated in place; corrected during the Phase 3 pass.
 
 ---
 
@@ -849,3 +853,113 @@ rather than opening a browser nobody can see or close.
 
 **No leaks.** After the live runs: zero bridge processes, zero test-profile Chromes, Ulaa
 untouched.
+
+---
+
+## 14. Phase 3 — browser-bay skill doctrine *(APPLIED 2026-07-30)*
+
+§8 Phase 3 is implemented. All edits are inside `skills/browser-bay/`; nothing outside the skill
+changed except this document.
+
+### What landed
+
+| File | Change |
+|---|---|
+| `SKILL.md` | Connection Mode block replaced: `doctor --json` first (**scoped** to Axis/login tasks), execute `remedies[]`, escalate only for `NEEDS_INTERACTIVE_LOGIN` / `PORT_HELD_BY_FOREIGN_PROCESS`, and the no-credentials rule verbatim. Four axis modes documented, with `attach` + `autoconnect` grouped as unowned-browser escape hatches. Two-axis profile rule added. Parallel-task block now uses `env -u CHROME_DEVTOOLS_AXI_PORT`. |
+| `SKILL.md` | Five ego-primary routing rows, ego lite under Optional tools, precedence rule over ego's own skill description, two imported Safety Rules (credential refusal, handoff hard-stop). |
+| `references/auth-flow-testing.md` | The `--remote-debugging-port=9222` walkthrough and the "shared 9222" fallback row are **deleted**. Replaced by the ranked three-rung credential ladder, a login-page detection pattern, and a clearly-fenced "throwaway accounts on dev environments only" section for the autotyping examples. |
+| `references/ego-browser.md` | **New.** Thin handoff doc; defers all API semantics to ego's own app-owned `SKILL.md`. |
+| `scripts/check-prerequisites.sh` | Read-only `ego_signal()` reporting presence *and liveness*, wired into both the default report and the capability summary. |
+| `references/tool-stack.md`, `tool-comparison.md` | ego lite added, plus rows for headless/CI, Lighthouse, login reuse, human handoff, parallel contexts, drivability, platform. |
+| `references/ui-ux-review.md`, `form-flows.md` | Write-probe rule imported as tool-agnostic doctrine; ui-ux-review gained a "reviewing behind a login" section. |
+
+### The two-axis profile trap (the reason Phase 3 needed more than a doctor call)
+
+Login state is reachable only when **both** axes are right. The canonical statement of this rule for
+agents lives in `skills/browser-bay/SKILL.md` → *Connection Mode Decision · Step 2*; this section is
+the rationale behind it. **Citations below name symbols, not line numbers** — `src/mode.ts`,
+`src/doctor.ts`, and `src/cli.ts` are actively edited, and an earlier draft of this section carried
+line numbers that went stale within the hour.
+
+- **Mode** — a profile exists only in `managed` (`resolveUserDataDir` returns `null` for every other
+  mode), and `login` forces `managed` for its own invocation only (`handleLogin` in `src/cli.ts`
+  assigns `process.env.CHROME_DEVTOOLS_AXI_MODE`). Inference cannot be relied on: `inferMode`
+  (`src/mode.ts`) resolves `AUTO_CONNECT` → `BROWSER_URL` → `USER_DATA_DIR` → `ephemeral`, so a
+  non-interactive shell that never inherited `USER_DATA_DIR` but *did* inherit a stale `BROWSER_URL`
+  lands in **`attach`** — the original incident. Explicit `CHROME_DEVTOOLS_AXI_MODE=managed` wins
+  over inference, makes `buildTransportArgs` (`src/bridge.ts`) skip its
+  `mode === "attach" && browserUrl` branch, and resolves the default profile with no other variable
+  set.
+- **Session** — the default session maps to `~/.axis-browser-data`; any *named* session maps to
+  `~/.axis-browser-data/sessions/<name>` (the `sessionName === DEFAULT_SESSION_NAME` branch of
+  `resolveUserDataDir`), which starts empty.
+
+These compose into a self-reinforcing loop the doctrine now defuses: a locked profile makes `doctor`
+emit `CHROME_DEVTOOLS_AXI_SESSION=<name>-2 axis-browser start` → a fresh empty profile → the next
+`doctor` pushes the `NEEDS_INTERACTIVE_LOGIN (profile has no state yet)` blocker → the agent
+escalates for a login the operator already completed. Both strings are in `buildDoctorReport`
+(`src/doctor.ts`). The skill now marks that remedy as concurrency-only and tells the agent to
+resolve the lock instead.
+
+### Verified during this pass
+
+```
+$ axis-browser doctor --json                    # inherited stale BROWSER_URL
+  status: error · mode: attach · NOT_CDP (HTTP 404) · PORT_HELD_BY_FOREIGN_PROCESS (Ulaa, pid 96228)
+
+$ CHROME_DEVTOOLS_AXI_MODE=managed axis-browser doctor --json    # same shell, stale var left set
+  status: ok · mode: managed · blockers: [] · remedies: []
+  profile: { dir: ~/.axis-browser-data, exists: true }
+```
+
+The `profile` object is emitted **only** in managed mode (`buildDoctorReport` assigns
+`report.profile` inside its `mode === "managed"` branch), so its presence — not `mode` alone — is the
+assertion worth gating on: an unsafe directory throws in `assertSafeUserDataDir` and leaves `profile`
+unset, so `profile.dir` proves both *managed* and *safely resolved*.
+
+**Do not assert on `profile.locked`.** It is transient — it reads `true` whenever any healthy axis
+bridge currently holds the profile, which is the normal state mid-session, and `doctor` still reports
+`status: ok` in that case because the holder is our own bridge. Gate on `profile.dir` /
+`profile.exists` only.
+
+### ego lite decisions
+
+- **Specialist, never a global default.** Primary for five bands: authenticated interactive work,
+  human handoff, parallel authenticated workspaces, rich editors, authenticated recurring
+  extraction. Never for headless/CI, cross-browser, measurement, diagnostics, or public-page scrapes.
+- **Routed to, not absorbed.** `~/.claude/skills/ego-browser` is a symlink into
+  `/Applications/ego lite.app`, recreated on every launch and version bump, so folding it into
+  browser-bay is impossible and editing it is futile. Precedence therefore lives in browser-bay.
+  Same pattern browser-bay already uses for browser-act.
+- **Chrome-under-axis keeps the middle ground.** ego cannot run headless, has no CDP port (nothing
+  else can drive it), and offers no Lighthouse/perf/heap — so `managed` mode remains the default for
+  authenticated-but-reproducible work. Split by consumer: a schedule → axis; a human → ego.
+- **API drift is pinned.** The installed build exposes flat helpers + `cliLog`; the public repo's
+  `main` is an unreleased v2 (facades, `console.log`, options-object `screenshot`). Examples are
+  written against the installed skill, and `upstream/ego-lite` is pinned at `f260b21`.
+- **Runtime-verified gotchas** now documented in `references/ego-browser.md`, none of them in ego's
+  own `SKILL.md`. All five were established by running the installed build, and three were found
+  only during the post-implementation self-audit:
+  1. ego's `cwd` is `/`, so evidence paths must be absolute.
+  2. `captureScreenshot` takes a **positional** path; an options object throws `ERR_INVALID_ARG_TYPE`.
+  3. `listTaskSpaces()` reads stale immediately after `completeTaskSpace()`.
+  4. **Full-page capture is `{ full: true }`, not `{ fullPage: true }` — and the wrong key fails
+     *silently*.** On a 2600px-tall page, `{ full: true }` → `1701x2600` while `{ fullPage: true }`,
+     `{ fullpage: true }`, and a bare `true` all returned `1716x1345` (viewport only) with no error.
+     `fullPage` is the unreleased-v2 spelling. An earlier draft of the reference asserted `fullPage`;
+     that was wrong and is corrected.
+  5. **The caller's environment is not inherited.** `FOO=bar ego-browser nodejs …` leaves
+     `process.env.FOO` undefined — the script runs inside the ego lite app process and sees the
+     *app's* env (83 vars, incl. `HOME`), not the shell's. Same root cause as `cwd: /`. So the
+     heredoc text is the only channel in: use unquoted `<<EOF` for path interpolation and escape any
+     `$` the JavaScript needs as `\$`.
+
+### Not done here (out of scope, still open)
+
+- `~/.zshrc` `axis-reinit` still runs `pkill -f "chrome-devtools-mcp"` unscoped (§6). Operator-owned
+  config; wants the pid-file ownership discipline `removePidFile` (`src/bridge.ts`) already uses.
+- The agent environment exports `CHROME_DEVTOOLS_AXI_PORT=9224`, which §6 forbids because it defeats
+  per-session port derivation. It fails loudly (`BRIDGE_PORT_IN_USE_EXIT_CODE` → `BRIDGE_NOT_READY`,
+  the `BRIDGE_PORT_IN_USE_EXIT_CODE` branch of `buildBridgeEarlyExitError` in `src/client.ts`), so
+  the skill now prescribes `env -u CHROME_DEVTOOLS_AXI_PORT` for
+  parallel work rather than changing the operator's environment.
