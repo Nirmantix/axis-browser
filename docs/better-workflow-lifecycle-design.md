@@ -53,10 +53,14 @@ the agent host. Use one of these routes:
 - Point the session at an Axis Browser workflow checkout with
   `AXIS_BROWSER_HOME`; agents then resolve
   `$AXIS_BROWSER_HOME/skills/browser-bay`.
-- Copy or clone `skills/browser-bay/` into a host-supported skill location,
-  such as `.agents/skills/browser-bay/`, `~/.codex/skills/browser-bay/`,
-  `~/.claude/skills/browser-bay/`, or another path documented in the skill
-  README.
+- Copy or clone `skills/browser-bay/` into a skill location that setup actually
+  searches. That list is `STANDARD_AGENT_SKILL_PARENTS` in `src/setup.ts`, and
+  today it is `~/.codex/skills/`, `~/.config/agents/skills/`, `~/.claude/skills/`,
+  `~/.config/opencode/skills/`, `~/.pi/agent/skills/`, and `~/.agents/skills/` —
+  each holding a `browser-bay/` (or legacy `browser-skill/`) directory. Note these
+  are all under `$HOME`; a `.agents/` directory at a *project* root is not
+  searched. Installing anywhere else means setting `BROWSER_BAY_DIR` or
+  `AXIS_PORTABLE_SKILLS_DIR` to point at it.
 - For hosts without native `SKILL.md` discovery, use the adapters under
   `skills/browser-bay/adapters/`.
 
@@ -71,16 +75,20 @@ fail with a confusing path error. Resolve it once per shell:
 BB="${BROWSER_BAY_DIR:-}"
 for p in "${AXIS_BROWSER_HOME:+$AXIS_BROWSER_HOME/skills}" "${AXIS_PORTABLE_SKILLS_DIR:-}" \
          ./skills "$HOME/.codex/skills" "$HOME/.config/agents/skills" \
-         "$HOME/.claude/skills" "$HOME/.config/opencode/skills" "$HOME/.pi/agent/skills"; do
+         "$HOME/.claude/skills" "$HOME/.config/opencode/skills" \
+         "$HOME/.pi/agent/skills" "$HOME/.agents/skills"; do
   [ -n "$BB" ] && break
-  if [ -n "$p" ] && [ -d "$p/browser-bay" ]; then BB="$p/browser-bay"; fi
+  [ -n "$p" ] || continue
+  for n in browser-bay browser-skill; do
+    if [ -d "$p/$n" ]; then BB="$p/$n"; break; fi
+  done
 done
 [ -d "$BB" ] || { echo "browser-bay not found; set BROWSER_BAY_DIR"; exit 2; }
-
 ```
 
-Every command below uses `"$BB"`. The same three lines appear in the `prompts/`
-entry points, so agents and operators resolve the path identically.
+Every command below uses `"$BB"`. The same snippet appears verbatim in the
+`prompts/` entry points and on the microsite, so agents and operators resolve the
+path identically — and a test pins it to the CLI's own candidate list.
 
 Once available, `$BB/SKILL.md` remains the router. The prompt table above maps
 shortcodes to setup, readiness, use, and maintenance entry points; it does not

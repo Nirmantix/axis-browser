@@ -91,6 +91,9 @@ const STANDARD_AGENT_SKILL_PARENTS = [
   // pi nests its skills root under ~/.pi/agent/, alongside agents/,
   // extensions/, and prompts/ — not at ~/.pi/skills.
   [".pi", "agent", "skills"],
+  // Host-agnostic location. Appended rather than inserted so adding it cannot
+  // change which skill an existing install already resolves to.
+  [".agents", "skills"],
 ] as const;
 
 export function parseSetupArgs(args: string[]): ParsedSetupArgs {

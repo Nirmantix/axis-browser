@@ -48,12 +48,12 @@
         <div class="feature-board">
           <div class="safety-band">
             <div>
-              <strong>Artifacts stay under `.tmp/`</strong>
+              <strong>Artifacts stay under <code>.tmp/</code></strong>
               <p>Screenshots, traces, scrapes, reports, verified runs, cookies, and generated credentials must not be committed.</p>
             </div>
             <div>
               <strong>Secrets stay user-local</strong>
-              <p>Do not write API keys into repo files, `.env`, `.tmp/`, generated scripts, MCP snippets, or screenshots.</p>
+              <p>Do not write API keys into repo files, <code>.env</code>, <code>.tmp/</code>, generated scripts, MCP snippets, or screenshots.</p>
             </div>
             <div>
               <strong>Protected sites need permission</strong>
@@ -70,15 +70,15 @@
           <div class="safety-band">
             <div>
               <strong>Anti-rebinding gate on the bridge</strong>
-              <p>The bridge serves `/health`, `/tools`, and `/call` on loopback, and `/call` maps straight to a tool invocation. A gate now runs first on every route and rejects any request whose `Host` or `Origin` is not loopback, returning `403 {"error":"Forbidden host"}`. Without it, any page you visited could rebind its own domain to `127.0.0.1` and drive CDP from your browser (GHSA-x439-jhfh-v9x2).</p>
+              <p>The bridge serves <code>/health</code>, <code>/tools</code>, and <code>/call</code> on loopback, and <code>/call</code> maps straight to a tool invocation. A gate now runs first on every route and rejects any request whose <code>Host</code> or <code>Origin</code> is not loopback, returning <code>403 {"error":"Forbidden host"}</code>. Without it, any page you visited could rebind its own domain to <code>127.0.0.1</code> and drive CDP from your browser (GHSA-x439-jhfh-v9x2).</p>
             </div>
             <div>
               <strong>Keychain isolation for browsers Axis launches</strong>
-              <p>`ephemeral` and `managed` always pass `--use-mock-keychain` and `--password-store=basic`, so a browser this tool starts cannot reach your OS password store. `attach` and `autoconnect` deliberately omit them — that browser's keychain policy belongs to whoever started it.</p>
+              <p><code>ephemeral</code> and <code>managed</code> always pass <code>--use-mock-keychain</code> and <code>--password-store=basic</code>, so a browser this tool starts cannot reach your OS password store. <code>attach</code> and <code>autoconnect</code> deliberately omit them — that browser's keychain policy belongs to whoever started it.</p>
             </div>
             <div>
               <strong>Never export a connection variable globally</strong>
-              <p>A `CHROME_DEVTOOLS_AXI_BROWSER_URL` exported from a shell profile reaches every shell and child process that sources it — including the non-interactive ones coding agents run in, where nobody sees it. Scope connection settings to a single command or a project, and prefer `CHROME_DEVTOOLS_AXI_MODE=managed` as a default. Run `axis-browser doctor` to see what your environment is actually set to.</p>
+              <p>A <code>CHROME_DEVTOOLS_AXI_BROWSER_URL</code> exported from a shell profile reaches every shell and child process that sources it — including the non-interactive ones coding agents run in, where nobody sees it. Scope connection settings to a single command or a project, and prefer <code>CHROME_DEVTOOLS_AXI_MODE=managed</code> as a default. Run <code>axis-browser doctor</code> to see what your environment is actually set to.</p>
             </div>
           </div>
         </div>
@@ -96,19 +96,19 @@
           </thead>
           <tbody>
             <tr>
-              <td>`ephemeral` (Axis owns it, no profile)</td>
+              <td><code>ephemeral</code> (Axis owns it, no profile)</td>
               <td>Reproducible or destructive checks, parallel agents, CI. The default.</td>
               <td>Starts logged out every time. Keychain-isolated.</td>
             </tr>
             <tr>
-              <td>`managed` (Axis owns it, persistent profile)</td>
-              <td>A login must survive between runs. Sign in once with `axis-browser login &lt;url&gt;`.</td>
+              <td><code>managed</code> (Axis owns it, persistent profile)</td>
+              <td>A login must survive between runs. Sign in once with <code>axis-browser login &lt;url&gt;</code>.</td>
               <td>Holds real cookies on disk under the session profile. Keychain-isolated. A newly created named session starts logged out; later runs reuse that profile and keep the login.</td>
             </tr>
             <tr>
-              <td>A browser Axis does not own (`attach` / `autoconnect`)</td>
+              <td>A browser Axis does not own (<code>attach</code> / <code>autoconnect</code>)</td>
               <td>Real login, SSO, cookies, manual continuity, or cross-tool state matters.</td>
-              <td>Can see real account data. Not keychain-isolated — that browser's policy is whoever started it. Do not close user tabs from Playwright; use `disconnect()`.</td>
+              <td>Can see real account data. Not keychain-isolated — that browser's policy is whoever started it. Do not close user tabs from Playwright; use <code>disconnect()</code>.</td>
             </tr>
             <tr>
               <td>Isolated Playwright</td>
@@ -153,7 +153,7 @@
           </article>
           <article class="command-card">
             <strong>Do not hide failed checks</strong>
-            <p>Report `STEP_FAIL` or `STEP_SKIP`. Do not remove plan checks to force a green validator.</p>
+            <p>Report <code>STEP_FAIL</code> or <code>STEP_SKIP</code>. Do not remove plan checks to force a green validator.</p>
           </article>
           <article class="command-card">
             <strong>Do not use stealth tools casually</strong>

@@ -50,9 +50,16 @@ Axis launches and owns its browser. You do not start Chrome yourself, and you do
 a debugging port.
 
 ```bash
+axis-browser doctor --json     # what mode am I actually in, and does it work?
 axis-browser open http://localhost:3000
 axis-browser snapshot
 ```
+
+`doctor` comes first for the same reason it does everywhere else in this guide: it reports
+the mode you are *actually* in, which is how an inherited connection variable gets caught
+before it wastes an afternoon. See
+[When Something Is Wrong, Ask The Tool](#when-something-is-wrong-ask-the-tool) for how to
+read its output and which remedies need a human first.
 
 That is `ephemeral` mode: a throwaway profile, discarded when the run ends. It is the right
 default for anything that does not need a login.
@@ -191,11 +198,12 @@ Notes that save time:
   on disk. Log in through `axis-browser login` (headed, no debugging port in the picture) and
   the cookies persist like any other browsing session.
 - **Your real browser profile is refused.** A `user-data-dir` resolving inside Chrome's
-  default profile, Edge, Brave, or Ulaa is rejected outright by `assertSafeUserDataDir`
-  (`src/mode.ts`). Chrome locks a profile to one process, so an automation run would fight
-  your own browser for that lock — and if your browser wins, the run dies on a lock it
-  cannot explain. The refusal is about profile ownership, not about ports: `managed` and
-  `ephemeral` launch over `--remote-debugging-pipe` and never open a debugging socket.
+  default profile, Edge, Brave, or Ulaa is rejected by `assertSafeUserDataDir` (`src/mode.ts`)
+  **before Chrome is launched at all** — so this is Axis refusing, not Chrome failing. The
+  reason is profile ownership: Chrome locks a profile to one process, so an automation run
+  would contend with your own browser for that lock. It has nothing to do with ports;
+  `managed` and `ephemeral` launch over `--remote-debugging-pipe` and open no debugging
+  socket either way.
 
 For local test sites, prefer provisioning a throwaway account through the app's own tooling
 (`wp user create` → run → `wp user delete`) over reusing a human's session at all.

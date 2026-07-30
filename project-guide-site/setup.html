@@ -40,7 +40,7 @@
 
       <section class="intro" aria-labelledby="page-title">
         <h1 id="page-title">Two setup routes: current workstation or fresh machine.</h1>
-        <p>The browser-bay folder is portable. Installed browser tools are machine-local. Each target project still needs `.tmp/` artifact setup, and Playwright stays project-local for deterministic scripts, traces, or CI.</p>
+        <p>The browser-bay folder is portable. Installed browser tools are machine-local. Each target project still needs <code>.tmp/</code> artifact setup, and Playwright stays project-local for deterministic scripts, traces, or CI.</p>
       </section>
 
       <section class="section" aria-labelledby="portability">
@@ -58,7 +58,7 @@
               <tr>
                 <td>Workflow brain</td>
                 <td>Yes. The skill router, references, and scripts can be reused from this checkout.</td>
-                <td>The agent must know the path through `BROWSER_BAY_DIR`, `AXIS_BROWSER_HOME`, or an agent-supported skill location.</td>
+                <td>The agent must know the path through <code>BROWSER_BAY_DIR</code>, <code>AXIS_BROWSER_HOME</code>, or an agent-supported skill location.</td>
               </tr>
               <tr>
                 <td>Axis Browser CLI</td>
@@ -68,12 +68,12 @@
               <tr>
                 <td>Browser Harness, optional CLIs, Playwright browsers</td>
                 <td>No. These are machine/project dependencies, not bundled inside the skill.</td>
-                <td>Use `axis-browser setup` to see what is available; install Playwright inside target projects only when needed.</td>
+                <td>Use <code>axis-browser setup</code> to see what is available; install Playwright inside target projects only when needed.</td>
               </tr>
               <tr>
                 <td>Project artifacts</td>
-                <td>No. `.tmp/` belongs to the target project.</td>
-                <td>Run `axis-browser setup --install --project &lt;path&gt;` for each project where browser evidence will be saved.</td>
+                <td>No. <code>.tmp/</code> belongs to the target project.</td>
+                <td>Run <code>axis-browser setup --install --project &lt;path&gt;</code> for each project where browser evidence will be saved.</td>
               </tr>
             </tbody>
           </table>
@@ -103,7 +103,7 @@ axis-browser setup --json --project .</pre>
           </article>
           <article class="phase-card">
             <strong>Best for team repos</strong>
-            <p>Copy the skill to `.agents/skills/browser-bay/` or the host-specific project path when the repo should carry the workflow with it.</p>
+            <p>Copy the skill to <code>.agents/skills/browser-bay/</code> or the host-specific project path when the repo should carry the workflow with it.</p>
           </article>
           <article class="phase-card">
             <strong>Still project-local</strong>
@@ -142,18 +142,18 @@ axis-browser setup
 
 <span class="comment"># 5. In each target project, run permission-gated setup.</span>
 axis-browser setup --install --project /path/to/target-project</pre>
-          <p class="muted-lead">`npx -y chrome-devtools-axi` resolves the upstream npm package, not the Axis Browser GitHub fork. Use the GitHub install path for this fork.</p>
+          <p class="muted-lead"><code>npx -y chrome-devtools-axi</code> resolves the upstream npm package, not the Axis Browser GitHub fork. Use the GitHub install path for this fork.</p>
         </div>
         <div class="feature-board">
-          <p class="muted-lead">Setup resolver order: `BROWSER_BAY_DIR`, `$AXIS_BROWSER_HOME/skills/browser-bay`, `$AXIS_PORTABLE_SKILLS_DIR/browser-bay`, then standard agent skill locations.</p>
+          <p class="muted-lead">Setup resolver order: <code>BROWSER_BAY_DIR</code>, <code>$AXIS_BROWSER_HOME/skills/browser-bay</code>, <code>$AXIS_PORTABLE_SKILLS_DIR/browser-bay</code>, then standard agent skill locations.</p>
           <div class="workflow-chain">
             <article class="phase-card">
               <strong>macOS</strong>
-              <p>Use Homebrew or standard installers for Node.js, `uv`, `jq`, ImageMagick, and optional CLIs. Axis Browser itself is a Node global install.</p>
+              <p>Use Homebrew or standard installers for Node.js, <code>uv</code>, <code>jq</code>, ImageMagick, and optional CLIs. Axis Browser itself is a Node global install.</p>
             </article>
             <article class="phase-card">
               <strong>Linux</strong>
-              <p>The core CLI and browser-bay work. Use the distro package manager for Node.js 20+, Chromium/Chrome, `uv`, and optional utilities.</p>
+              <p>The core CLI and browser-bay work. Use the distro package manager for Node.js 20+, Chromium/Chrome, <code>uv</code>, and optional utilities.</p>
             </article>
             <article class="phase-card">
               <strong>Windows</strong>

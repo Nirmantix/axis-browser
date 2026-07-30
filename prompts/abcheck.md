@@ -25,9 +25,13 @@ a confusing path error:
 BB="${BROWSER_BAY_DIR:-}"
 for p in "${AXIS_BROWSER_HOME:+$AXIS_BROWSER_HOME/skills}" "${AXIS_PORTABLE_SKILLS_DIR:-}" \
          ./skills "$HOME/.codex/skills" "$HOME/.config/agents/skills" \
-         "$HOME/.claude/skills" "$HOME/.config/opencode/skills" "$HOME/.pi/agent/skills"; do
+         "$HOME/.claude/skills" "$HOME/.config/opencode/skills" \
+         "$HOME/.pi/agent/skills" "$HOME/.agents/skills"; do
   [ -n "$BB" ] && break
-  if [ -n "$p" ] && [ -d "$p/browser-bay" ]; then BB="$p/browser-bay"; fi
+  [ -n "$p" ] || continue
+  for n in browser-bay browser-skill; do
+    if [ -d "$p/$n" ]; then BB="$p/$n"; break; fi
+  done
 done
 [ -d "$BB" ] || { echo "browser-bay not found; set BROWSER_BAY_DIR"; exit 2; }
 

@@ -15,8 +15,12 @@ const RESOLVER_HEAD = 'BB="${BROWSER_BAY_DIR:-}"';
  * was installed correctly. Reading the list out of the source keeps the two in
  * step instead of trusting a comment.
  */
+async function setupSource(): Promise<string> {
+  return readFile(join(repoRoot, "src", "setup.ts"), "utf8");
+}
+
 async function cliSkillRoots(): Promise<string[]> {
-  const source = await readFile(join(repoRoot, "src", "setup.ts"), "utf8");
+  const source = await setupSource();
   const block = source.match(
     /const STANDARD_AGENT_SKILL_PARENTS\s*=\s*\[([\s\S]*?)\]\s*as const;/,
   );
@@ -25,6 +29,22 @@ async function cliSkillRoots(): Promise<string[]> {
   return [...block[1].matchAll(/\[([^\]]*)\]/g)].map((row) =>
     [...row[1].matchAll(/"([^"]+)"/g)].map((part) => part[1]).join("/"),
   );
+}
+
+/**
+ * Resolution has two dimensions, and pinning only one is how the docs drifted:
+ * the roots were verified against the CLI while every documented resolver still
+ * probed `browser-bay` alone, so a legacy `browser-skill/` install resolved
+ * through `axis-browser setup` and reported "not found" from the docs.
+ */
+async function cliSkillFolderNames(): Promise<string[]> {
+  const source = await setupSource();
+  const block = source.match(
+    /const SKILL_FOLDER_NAMES\s*=\s*\[([\s\S]*?)\]\s*as const;/,
+  );
+  if (!block) throw new Error("SKILL_FOLDER_NAMES not found");
+
+  return [...block[1].matchAll(/"([^"]+)"/g)].map((part) => part[1]);
 }
 
 /**
@@ -124,14 +144,66 @@ describe("browser-bay path resolution in documented commands", () => {
     const gaps: string[] = [];
 
     for (const { path, blocks } of await docFiles()) {
-      const resolver = blocks.find((block) => block.includes(RESOLVER_HEAD));
-      if (!resolver) continue;
-
-      for (const root of roots) {
-        if (!resolver.includes(root)) gaps.push(`${path}: missing ${root}`);
+      // Every resolver copy in the file, not just the first: workflow.html
+      // carries two, and checking only one let the second drift silently.
+      for (const resolver of blocks.filter((b) => b.includes(RESOLVER_HEAD))) {
+        for (const root of roots) {
+          if (!resolver.includes(root)) gaps.push(`${path}: missing ${root}`);
+        }
       }
     }
 
     expect(gaps).toEqual([]);
+  });
+
+  it("every documented resolver probes the same folder names the CLI does", async () => {
+    const names = await cliSkillFolderNames();
+    expect(names).toContain("browser-bay");
+    expect(names.length).toBeGreaterThan(1);
+
+    const gaps: string[] = [];
+
+    for (const { path, blocks } of await docFiles()) {
+      for (const resolver of blocks.filter((b) => b.includes(RESOLVER_HEAD))) {
+        for (const name of names) {
+          if (!resolver.includes(name)) {
+            gaps.push(`${path}: a resolver never probes ${name}`);
+          }
+        }
+      }
+    }
+
+    expect(gaps).toEqual([]);
+  });
+
+  /**
+   * File-level checking is not enough for the microsite. A <pre> on a web page is
+   * a discrete copy-paste unit — readers take that block, not the page — so a
+   * block that uses "$BB/ while relying on a resolver defined in some *other*
+   * block still produces `node "/scripts/..."` for whoever copies it. That is
+   * exactly how workflow.html's craft-mode block stayed broken while the
+   * file-level assertions above were green.
+   *
+   * Markdown fenced blocks keep the file-level rule: they sit inside numbered
+   * prose that is read in order, and repeating an 8-line resolver in every block
+   * would be worse documentation, not safer.
+   */
+  it("each microsite <pre> that runs $BB is self-contained", async () => {
+    const pages = (await readdir(join(repoRoot, "project-guide-site")))
+      .filter((name) => name.endsWith(".html"))
+      .map((name) => join("project-guide-site", name));
+
+    const offenders: string[] = [];
+
+    for (const path of pages) {
+      const source = await readFile(join(repoRoot, path), "utf8");
+      for (const block of source.match(/<pre\b[\s\S]*?<\/pre>/g) ?? []) {
+        if (block.includes('"$BB/') && !block.includes(RESOLVER_HEAD)) {
+          offenders.push(`${path}: a <pre> uses "$BB/ without resolving it`);
+        }
+      }
+    }
+
+    expect(offenders).toEqual([]);
   });
 });

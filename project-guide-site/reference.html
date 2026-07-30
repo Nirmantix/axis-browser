@@ -57,17 +57,17 @@
           <div class="trigger-row">
             <div><strong>Runtime debugging</strong><p><code>axis-browser console --type error</code><br><code>axis-browser network --type fetch</code></p></div>
             <div><strong>Routes to</strong><p>DevTools console and network surfaces.</p></div>
-            <div><strong>Expected output</strong><p>Error list, request list, IDs for `console-get` and `network-get`.</p></div>
+            <div><strong>Expected output</strong><p>Error list, request list, IDs for <code>console-get</code> and <code>network-get</code>.</p></div>
           </div>
           <div class="trigger-row">
             <div><strong>Evidence capture</strong><p><code>axis-browser screenshot .tmp/screenshots/page.png --full-page</code></p></div>
             <div><strong>Routes to</strong><p>Current selected page in the Axis bridge.</p></div>
-            <div><strong>Expected output</strong><p>Screenshot artifact under `.tmp/screenshots/`.</p></div>
+            <div><strong>Expected output</strong><p>Screenshot artifact under <code>.tmp/screenshots/</code>.</p></div>
           </div>
           <div class="trigger-row">
             <div><strong>Preflight</strong><p><code>axis-browser doctor --json</code></p></div>
             <div><strong>Routes to</strong><p>Mode resolution, endpoint probe, browser binary, profile lock, bridge and orphan state.</p></div>
-            <div><strong>Expected output</strong><p>Status, blockers, and a `remedies` array of syntactically runnable commands — not all safe unattended. Run the reversible ones (`unset …`); confirm the destructive ones (`axis-browser reap`, `axis-browser stop`, `rm &lt;path&gt;`). Escalate outright only for `NEEDS_INTERACTIVE_LOGIN` or `PORT_HELD_BY_FOREIGN_PROCESS`. Local CDP has no authentication — never request credentials or a `ws://` URL.</p></div>
+            <div><strong>Expected output</strong><p>Status, blockers, and a <code>remedies</code> array of syntactically runnable commands — not all safe unattended. Run the reversible ones (<code>unset …</code>); confirm the destructive ones (<code>axis-browser reap</code>, <code>axis-browser stop</code>, <code>rm &lt;path&gt;</code>). Escalate outright only for <code>NEEDS_INTERACTIVE_LOGIN</code> or <code>PORT_HELD_BY_FOREIGN_PROCESS</code>. Local CDP has no authentication — never request credentials or a <code>ws://</code> URL.</p></div>
           </div>
           <div class="trigger-row">
             <div><strong>One-time login</strong><p><code>axis-browser login URL</code></p></div>
@@ -77,7 +77,7 @@
           <div class="trigger-row">
             <div><strong>Orphan cleanup</strong><p><code>axis-browser reap --dry-run</code><br><code>axis-browser reap</code></p></div>
             <div><strong>Routes to</strong><p>Bridges carrying our own marker, claimed by no session, older than 4h.</p></div>
-            <div><strong>Expected output</strong><p>Orphan list with ages, and what was reaped. Also runs automatically on bridge start unless `CHROME_DEVTOOLS_AXI_AUTO_REAP=0`.</p></div>
+            <div><strong>Expected output</strong><p>Orphan list with ages, and what was reaped. Also runs automatically on bridge start unless <code>CHROME_DEVTOOLS_AXI_AUTO_REAP=0</code>.</p></div>
           </div>
         </article>
 
@@ -100,13 +100,17 @@
             <div><strong>Resolve skill path</strong><pre>BB="${BROWSER_BAY_DIR:-}"
 for p in "${AXIS_BROWSER_HOME:+$AXIS_BROWSER_HOME/skills}" "${AXIS_PORTABLE_SKILLS_DIR:-}" \
          ./skills "$HOME/.codex/skills" "$HOME/.config/agents/skills" \
-         "$HOME/.claude/skills" "$HOME/.config/opencode/skills" "$HOME/.pi/agent/skills"; do
+         "$HOME/.claude/skills" "$HOME/.config/opencode/skills" \
+         "$HOME/.pi/agent/skills" "$HOME/.agents/skills"; do
   [ -n "$BB" ] &amp;&amp; break
-  if [ -n "$p" ] &amp;&amp; [ -d "$p/browser-bay" ]; then BB="$p/browser-bay"; fi
+  [ -n "$p" ] || continue
+  for n in browser-bay browser-skill; do
+    if [ -d "$p/$n" ]; then BB="$p/$n"; break; fi
+  done
 done
 [ -d "$BB" ] || { echo "browser-bay not found; set BROWSER_BAY_DIR"; exit 2; }</pre></div>
-            <div><strong>Routes to</strong><p>The same order `axis-browser setup` uses: `BROWSER_BAY_DIR`, `$AXIS_BROWSER_HOME/skills/browser-bay`, `$AXIS_PORTABLE_SKILLS_DIR/browser-bay`, `./skills/browser-bay`, then standard agent skill locations.</p></div>
-            <div><strong>Expected output</strong><p>A resolved `$BB`, or exit 2 with `browser-bay not found` when no route matches.</p></div>
+            <div><strong>Routes to</strong><p>The same order <code>axis-browser setup</code> uses: <code>BROWSER_BAY_DIR</code>, <code>$AXIS_BROWSER_HOME/skills/browser-bay</code>, <code>$AXIS_PORTABLE_SKILLS_DIR/browser-bay</code>, <code>./skills/browser-bay</code>, then standard agent skill locations.</p></div>
+            <div><strong>Expected output</strong><p>A resolved <code>$BB</code>, or exit 2 with <code>browser-bay not found</code> when no route matches.</p></div>
           </div>
           <div class="trigger-row">
             <div><strong>Machine setup</strong><p><code>axis-browser setup --install</code></p></div>
@@ -119,7 +123,7 @@ done
             <div><strong>Expected output</strong><p>Current versions, update recommendations, and permission-gated follow-up actions.</p></div>
           </div>
           <div class="trigger-row">
-            <div><strong>Verified run</strong><p><code>node "$BB/scripts/init-verified-run.mjs" --task "..." --slug run</code><br><code>node "$BB/scripts/validate-verified-run.mjs" --run .tmp/verified-runs/run</code></p></div>
+            <div><strong>Verified run</strong><p>Resolve <code>$BB</code> with the chain in the “Resolve skill path” row above, then:</p><p><code>node "$BB/scripts/init-verified-run.mjs" --task "..." --slug run</code><br><code>node "$BB/scripts/validate-verified-run.mjs" --run .tmp/verified-runs/run</code></p></div>
             <div><strong>Routes to</strong><p>Evidence-backed browser task workflow.</p></div>
             <div><strong>Expected output</strong><p>Validated STEP markers with exit code 0, 1, or 2.</p></div>
           </div>
@@ -132,22 +136,22 @@ done
           </div>
           <div class="trigger-row">
             <div><strong>;absetup</strong><p>Machine setup and install audit.</p></div>
-            <div><strong>Routes to</strong><p>`prompts/absetup.md` and portable skill resolution.</p></div>
+            <div><strong>Routes to</strong><p><code>prompts/absetup.md</code> and portable skill resolution.</p></div>
             <div><strong>Expected output</strong><p>Tool status, approved/skipped installs, and credential gaps with values hidden.</p></div>
           </div>
           <div class="trigger-row">
             <div><strong>;abcheck</strong><p>Target-project readiness.</p></div>
-            <div><strong>Routes to</strong><p>`prompts/abcheck.md` and portable skill resolution.</p></div>
-            <div><strong>Expected output</strong><p>`.tmp/` readiness, available browser tools, and project-local Playwright recommendation.</p></div>
+            <div><strong>Routes to</strong><p><code>prompts/abcheck.md</code> and portable skill resolution.</p></div>
+            <div><strong>Expected output</strong><p><code>.tmp/</code> readiness, available browser tools, and project-local Playwright recommendation.</p></div>
           </div>
           <div class="trigger-row">
             <div><strong>;abuse</strong><p>Browser task launcher.</p></div>
-            <div><strong>Routes to</strong><p>`prompts/abuse.md` and `SKILL.md`.</p></div>
+            <div><strong>Routes to</strong><p><code>prompts/abuse.md</code> and <code>SKILL.md</code>.</p></div>
             <div><strong>Expected output</strong><p>Selected skill reference, selected tool, and evidence paths.</p></div>
           </div>
           <div class="trigger-row">
             <div><strong>;abhealth</strong><p>Monthly or biweekly health audit.</p></div>
-            <div><strong>Routes to</strong><p>`prompts/abhealth.md`, router update audit when a router is configured, and read-only content consistency review.</p></div>
+            <div><strong>Routes to</strong><p><code>prompts/abhealth.md</code>, router update audit when a router is configured, and read-only content consistency review.</p></div>
             <div><strong>Expected output</strong><p>Version audit, changelog impact, stale-doc findings, and proposed follow-up edits.</p></div>
           </div>
           <div class="trigger-row">
@@ -157,13 +161,13 @@ done
           </div>
           <div class="trigger-row">
             <div><strong>Verify</strong><p>"Use browser-bay to create a verified run proving checkout works."</p></div>
-            <div><strong>Routes to</strong><p>`references/verified-run.md`.</p></div>
-            <div><strong>Expected output</strong><p>`.tmp/verified-runs/&lt;slug&gt;/` with plan, findings, screenshots, validation JSON.</p></div>
+            <div><strong>Routes to</strong><p><code>references/verified-run.md</code>.</p></div>
+            <div><strong>Expected output</strong><p><code>.tmp/verified-runs/&lt;slug&gt;/</code> with plan, findings, screenshots, validation JSON.</p></div>
           </div>
           <div class="trigger-row">
             <div><strong>Craft</strong><p>"Use browser-bay to craft a reusable local workflow for this browser task."</p></div>
-            <div><strong>Routes to</strong><p>`references/reusable-workflow.md`.</p></div>
-            <div><strong>Expected output</strong><p>Rerunnable `script.mjs` plus evidence and validation.</p></div>
+            <div><strong>Routes to</strong><p><code>references/reusable-workflow.md</code>.</p></div>
+            <div><strong>Expected output</strong><p>Rerunnable <code>script.mjs</code> plus evidence and validation.</p></div>
           </div>
           <div class="trigger-row">
             <div><strong>Maintain</strong><p>"Update Axis Browser from upstream safely."</p><p>"Follow the private maintenance playbook."</p><p>"Sync this fork with upstream."</p></div>

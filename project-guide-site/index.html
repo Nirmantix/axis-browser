@@ -46,7 +46,7 @@
       <section class="quick-routes" aria-label="Core routes">
         <article>
           <h2>Current workstation route</h2>
-          <p>Set `BROWSER_BAY_DIR` to the skill path or `AXIS_BROWSER_HOME` to the workflow checkout, then run `axis-browser setup` in the target repo.</p>
+          <p>Set <code>BROWSER_BAY_DIR</code> to the skill path or <code>AXIS_BROWSER_HOME</code> to the workflow checkout, then run <code>axis-browser setup</code> in the target repo.</p>
         </article>
         <article>
           <h2>Fresh machine route</h2>
@@ -54,11 +54,11 @@
         </article>
         <article>
           <h2>Prompt shortcodes</h2>
-          <p>`;absetup`, `;abcheck`, `;abuse`, and `;abhealth` are shortcuts for setup, readiness, browser use, and health checks.</p>
+          <p><code>;absetup</code>, <code>;abcheck</code>, <code>;abuse</code>, and <code>;abhealth</code> are shortcuts for setup, readiness, browser use, and health checks.</p>
         </article>
         <article>
           <h2>Something not connecting?</h2>
-          <p>Run `axis-browser doctor --json` before anything else. It reports the active mode, probes the endpoint, and prints an exact remedy. `axis-browser reap` clears orphaned bridges.</p>
+          <p>Run <code>axis-browser doctor --json</code> before anything else. It reports the active mode, probes the endpoint, and prints an exact remedy. <code>axis-browser reap</code> clears orphaned bridges.</p>
         </article>
         <article>
           <h2>Need to debug a live app?</h2>
@@ -81,11 +81,11 @@
           <div class="workflow-chain">
             <article class="phase-card">
               <strong>1. Preflight</strong>
-              <p>Run `axis-browser doctor --json` first — before choosing a mode, not after. It reports the mode you are <em>actually</em> in, which is how a stray connection variable inherited from your environment gets caught. Run its reversible remedies before anything else; confirm the destructive ones (`reap`, `stop`, `rm`) first.</p>
+              <p>Run <code>axis-browser doctor --json</code> first — before choosing a mode, not after. It reports the mode you are <em>actually</em> in, which is how a stray connection variable inherited from your environment gets caught. Run its reversible remedies before anything else; confirm the destructive ones (<code>reap</code>, <code>stop</code>, <code>rm</code>) first.</p>
             </article>
             <article class="phase-card">
               <strong>2. Choose mode</strong>
-              <p>Set `CHROME_DEVTOOLS_AXI_MODE` explicitly: `managed` for real login state, `ephemeral` for reproducible or destructive checks. Never export a connection variable from a shell profile. Changing mode invalidates the preflight — re-run `doctor` after.</p>
+              <p>Set <code>CHROME_DEVTOOLS_AXI_MODE</code> explicitly: <code>managed</code> for real login state, <code>ephemeral</code> for reproducible or destructive checks. Never export a connection variable from a shell profile. Changing mode invalidates the preflight — re-run <code>doctor</code> after.</p>
             </article>
             <article class="phase-card">
               <strong>3. Observe first</strong>
@@ -97,7 +97,7 @@
             </article>
             <article class="phase-card">
               <strong>5. Save proof</strong>
-              <p>Store screenshots, traces, reports, and verified-run artifacts under `.tmp/`.</p>
+              <p>Store screenshots, traces, reports, and verified-run artifacts under <code>.tmp/</code>.</p>
             </article>
           </div>
         </div>
@@ -110,9 +110,9 @@
             <article class="route-card">
               <div class="route-head"><h3>Set up a project</h3></div>
               <ul>
-                <li><span>local</span> Export `BROWSER_BAY_DIR=/path/to/browser-bay` or `AXIS_BROWSER_HOME=/path/to/axis-browser`, then run `axis-browser setup`.</li>
-                <li><span>fresh</span> Run `axis-browser setup`, then install or copy browser-bay only if router-backed workflows are needed.</li>
-                <li><span>output</span> A project with `.tmp/` artifacts ignored and required browser tools checked.</li>
+                <li><span>local</span> Export <code>BROWSER_BAY_DIR=/path/to/browser-bay</code> or <code>AXIS_BROWSER_HOME=/path/to/axis-browser</code>, then run <code>axis-browser setup</code>.</li>
+                <li><span>fresh</span> Run <code>axis-browser setup</code>, then install or copy browser-bay only if router-backed workflows are needed.</li>
+                <li><span>output</span> A project with <code>.tmp/</code> artifacts ignored and required browser tools checked.</li>
               </ul>
             </article>
             <article class="route-card">
@@ -133,7 +133,7 @@
               <div class="route-head"><h3>Craft a reusable workflow</h3></div>
               <ul>
                 <li><span>craft</span> Prove the flow once, then refactor it into a parameterized script.</li>
-                <li><span>output</span> A rerunnable local `script.mjs` plus evidence.</li>
+                <li><span>output</span> A rerunnable local <code>script.mjs</code> plus evidence.</li>
               </ul>
             </article>
             <article class="route-card">
@@ -147,7 +147,7 @@
           <div class="safety-band">
             <div>
               <strong>No secret storage</strong>
-              <p>Keep `.codex/`, MCP config, cookies, API keys, traces, and screenshots out of git.</p>
+              <p>Keep <code>.codex/</code>, MCP config, cookies, API keys, traces, and screenshots out of git.</p>
             </div>
             <div>
               <strong>No fake authorization</strong>
@@ -163,28 +163,28 @@
 
       <section class="section" aria-labelledby="prompts-title">
         <h2 id="prompts-title">Prompt entry points</h2>
-        <p class="muted-lead">The shortcodes are convenience entry points. They do not replace `SKILL.md`, and they do not create another routing system.</p>
+        <p class="muted-lead">The shortcodes are convenience entry points. They do not replace <code>SKILL.md</code>, and they do not create another routing system.</p>
         <div class="feature-board">
           <div class="route-grid">
             <article class="route-card">
               <div class="route-head"><h3>;absetup</h3></div>
               <ul>
                 <li><span>scope</span> Machine setup and install audit.</li>
-                <li><span>runs</span> `prompts/absetup.md` (browser-bay machine-setup workflow).</li>
+                <li><span>runs</span> <code>prompts/absetup.md</code> (browser-bay machine-setup workflow).</li>
               </ul>
             </article>
             <article class="route-card">
               <div class="route-head"><h3>;abcheck</h3></div>
               <ul>
                 <li><span>scope</span> Target-project readiness.</li>
-                <li><span>runs</span> `prompts/abcheck.md` (browser-bay project-readiness workflow).</li>
+                <li><span>runs</span> <code>prompts/abcheck.md</code> (browser-bay project-readiness workflow).</li>
               </ul>
             </article>
             <article class="route-card">
               <div class="route-head"><h3>;abuse</h3></div>
               <ul>
                 <li><span>scope</span> Browser task launcher.</li>
-                <li><span>runs</span> Loads `SKILL.md`; all routing stays there.</li>
+                <li><span>runs</span> Loads <code>SKILL.md</code>; all routing stays there.</li>
               </ul>
             </article>
             <article class="route-card">
@@ -204,7 +204,7 @@
           <div class="stat-item">
             <span class="stat-number">3</span>
             <span class="stat-label">Axis commands</span>
-            <p>`axis-browser`, `axib`, and upstream-compatible `chrome-devtools-axi`.</p>
+            <p><code>axis-browser</code>, <code>axib</code>, and upstream-compatible <code>chrome-devtools-axi</code>.</p>
           </div>
           <div class="stat-item">
             <span class="stat-number">26</span>
@@ -214,7 +214,7 @@
           <div class="stat-item">
             <span class="stat-number">4</span>
             <span class="stat-label">Prompt shortcodes</span>
-            <p>`absetup`, `abcheck`, `abuse`, and `abhealth` map operators to the skill workflow.</p>
+            <p><code>absetup</code>, <code>abcheck</code>, <code>abuse</code>, and <code>abhealth</code> map operators to the skill workflow.</p>
           </div>
         </div>
       </section>

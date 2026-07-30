@@ -143,6 +143,53 @@ describe("resolveBrowserSkillDir", () => {
   });
 
   it.each([
+    [".codex", "skills"],
+    [".config", "agents", "skills"],
+    [".claude", "skills"],
+    [".config", "opencode", "skills"],
+    [".pi", "agent", "skills"],
+    [".agents", "skills"],
+  ])("resolves a skill installed under ~/%s/%s", (...parent) => {
+    const root = tempDir();
+    const home = join(root, "home");
+    const cwd = join(root, "project");
+    const installed = makeBrowserSkill(join(home, ...parent));
+
+    const resolution = resolveBrowserSkillDir({ env: {}, home, cwd });
+
+    expect(resolution.status).toBe("found");
+    expect(resolution.path).toBe(resolve(installed));
+  });
+
+  it("accepts the legacy browser-skill folder name", () => {
+    const root = tempDir();
+    const home = join(root, "home");
+    const cwd = join(root, "project");
+    const legacy = join(home, ".claude", "skills", "browser-skill");
+    mkdirSync(legacy, { recursive: true });
+    writeFileSync(join(legacy, "SKILL.md"), "# legacy\n");
+
+    expect(resolveBrowserSkillDir({ env: {}, home, cwd }).path).toBe(
+      resolve(legacy),
+    );
+  });
+
+  it("prefers browser-bay over browser-skill under the same parent", () => {
+    const root = tempDir();
+    const home = join(root, "home");
+    const cwd = join(root, "project");
+    const parent = join(home, ".claude", "skills");
+    const legacy = join(parent, "browser-skill");
+    mkdirSync(legacy, { recursive: true });
+    writeFileSync(join(legacy, "SKILL.md"), "# legacy\n");
+    const current = makeBrowserSkill(parent);
+
+    expect(resolveBrowserSkillDir({ env: {}, home, cwd }).path).toBe(
+      resolve(current),
+    );
+  });
+
+  it.each([
     [".codex/skills", [".codex", "skills"]],
     [".config/agents/skills", [".config", "agents", "skills"]],
     [".claude/skills", [".claude", "skills"]],

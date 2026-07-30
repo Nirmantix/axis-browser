@@ -67,10 +67,35 @@ release history.
   so the command degraded to `bash "/scripts/..."` and failed with a path error
   that named nothing useful. All four prompts, `README.md`,
   `docs/better-workflow-lifecycle-design.md`, and the microsite now resolve the
-  directory first (`BROWSER_BAY_DIR` → `$AXIS_BROWSER_HOME/skills/browser-bay` →
-  `./skills/browser-bay`) and exit 2 with a real message when none exist. The
-  prompt contract test pins the resolver and rejects raw `$BROWSER_BAY_DIR/`
-  paths, so this cannot regress silently
+  directory first — `BROWSER_BAY_DIR`, then `$AXIS_BROWSER_HOME/skills`,
+  `$AXIS_PORTABLE_SKILLS_DIR`, `./skills`, and the standard agent skill roots —
+  and exit 2 with a real message when none match. The prompt contract test pins
+  the resolver and rejects raw `$BROWSER_BAY_DIR/` paths, so this cannot regress
+  silently
+* the microsite rendered inline code as literal backtick characters. Seven of the
+  eight pages wrote markdown-style `` `x` `` into HTML, where it has no meaning —
+  `index.html` and `safety.html` had 60+ each and no `<code>` element at all, so
+  readers saw the punctuation instead of styled code. 176 spans across the site
+  are now real `<code>` elements, which `styles.css` has always styled
+* a documented command block could rely on a resolver defined in a *different*
+  block on the same page. `workflow.html`'s craft-mode snippet did exactly that,
+  so copying that block alone still produced `node "/scripts/..."` — the file-level
+  guard was green throughout. Every microsite `<pre>` that runs `$BB` now carries
+  its own resolver, enforced per block rather than per file
+* every documented resolver probed `browser-bay/` only, while the CLI has always
+  accepted `browser-skill/` too (`SKILL_FOLDER_NAMES`). A legacy install resolved
+  through `axis-browser setup` and reported "browser-bay not found" from every
+  documented command. All five copies now probe both names, `browser-bay` first,
+  and a test pins that dimension to the source the same way the roots already were
+* `resolveBrowserSkillDir` had no coverage for the standard-location branch at
+  all. Each entry in `STANDARD_AGENT_SKILL_PARENTS` is now tested, along with the
+  legacy folder name and the `browser-bay`-wins-over-`browser-skill` precedence
+* the lifecycle design doc advertised `.agents/skills/browser-bay/` as an install
+  location. Nothing searches it: `STANDARD_AGENT_SKILL_PARENTS` (`src/setup.ts`)
+  did not list it. `~/.agents/skills/` is now a supported location, appended so it
+  cannot change which skill an existing install already resolves to, and the doc
+  says plainly that these are `$HOME` paths — a `.agents/` directory at a project
+  root is still not searched
 
 ### Changed
 
