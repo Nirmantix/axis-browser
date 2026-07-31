@@ -129,7 +129,10 @@ export async function buildDoctorReport(
   // stack trace instead of reporting the very misconfiguration it exists to report.
   let sessionName: string;
   try {
-    sessionName = resolveSessionName();
+    // Pass the report's own env: buildDoctorReport is parameterised on env, so
+    // reading process.env here would make it diagnose a different environment
+    // than the one it was handed.
+    sessionName = resolveSessionName(env);
   } catch (error) {
     sessionName = DEFAULT_SESSION_NAME;
     status = "error";

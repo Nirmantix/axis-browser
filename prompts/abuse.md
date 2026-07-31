@@ -12,7 +12,10 @@ and an unresolved path would then run `bash "/scripts/..."` and fail with
 a confusing path error:
 
 ```bash
-BB="${BROWSER_BAY_DIR:-}"
+BB=""
+for c in "${BROWSER_BAY_DIR:-}" "${BROWSER_SKILL_DIR:-}"; do
+  [ -z "$BB" ] && [ -n "$c" ] && [ -d "$c" ] && BB="$c"
+done
 for p in "${AXIS_BROWSER_HOME:+$AXIS_BROWSER_HOME/skills}" "${AXIS_PORTABLE_SKILLS_DIR:-}" \
          ./skills "$HOME/.codex/skills" "$HOME/.config/agents/skills" \
          "$HOME/.claude/skills" "$HOME/.config/opencode/skills" \

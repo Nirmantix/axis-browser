@@ -335,7 +335,7 @@ moves the outage:
 ## Final Recommendation
 
 - keep `axis-browser` as the documented command
-- let Axis own the browser: `ephemeral` by default, `managed` when a login is needed
+- use `ephemeral` by default and `managed` when a login is needed
 - run `axis-browser doctor --json` before a browser task; run its reversible remedies and
   confirm the destructive ones (`reap`, `stop`, `rm`) before executing them
 - never export a connection variable from a shell profile

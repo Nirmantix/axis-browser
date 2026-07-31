@@ -100,9 +100,24 @@ release history.
   is `pnpm@11.1.1`, which requires Node >=22.13, so `pnpm install` failed on the
   toolchain before any of this project's code ran — a permanently-red check that
   verified nothing. The floor `engines.node` claims is now verified by a dedicated
-  `engines-floor` job that builds on a supported Node and then runs the built CLI
-  on 20.11 with plain `node`, which is how an installing user actually reaches it
-
+  `engines-floor` job that packs on a supported Node, then installs that tarball
+  into a clean directory on 20.11 with plain npm and runs every documented alias
+  from it. It installs rather than executing `dist/` in place because running
+  `dist/` by path skips the `bin` wiring — the exact thing that broke once before
+* the documented resolver stopped on a set-but-missing `BROWSER_BAY_DIR`, while
+  `resolveBrowserSkillDir` continues to later candidates when the configured
+  directory does not exist. A stale export therefore made every documented command
+  exit 2 for a skill `axis-browser setup` resolves fine. All eight copies now accept
+  `BROWSER_BAY_DIR` (and the legacy `BROWSER_SKILL_DIR`) only when it exists, then
+  fall through — verified against the CLI across six scenarios
+* `resolveSessionName` read `process.env` directly while `buildDoctorReport` is
+  parameterised on `env`, so a session name passed to `doctor` was silently ignored
+  and the report described a different environment than the one it was handed. It
+  now takes an optional env, defaulting to `process.env`, and `doctor` passes its own
+* the prompt tests asserted on shell fragments only, which cannot prove the resolver
+  assigns a usable directory — a prompt could contain every expected string and still
+  leave `BB` empty. They now execute the block each prompt actually ships and assert
+  the resolved path, the exit-2 path, and the fall-through
 ### Changed
 
 * the CLI presents itself as `axis-browser` everywhere — help, usage, examples,

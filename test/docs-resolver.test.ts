@@ -5,7 +5,15 @@ import { fileURLToPath } from "node:url";
 
 const repoRoot = fileURLToPath(new URL("..", import.meta.url));
 
-const RESOLVER_HEAD = 'BB="${BROWSER_BAY_DIR:-}"';
+const RESOLVER_HEAD =
+  'for c in "${BROWSER_BAY_DIR:-}" "${BROWSER_SKILL_DIR:-}"';
+
+/**
+ * `"$BB/` is not the only way a snippet can expand the resolved directory:
+ * unquoted `$BB/scripts/...` and braced `${BB}/scripts/...` run identically and
+ * would bypass a literal check.
+ */
+const BB_PATH = /\$\{?BB\}?\//;
 
 /**
  * The documented shell resolver must search the same roots as the CLI's own
@@ -125,7 +133,7 @@ describe("browser-bay path resolution in documented commands", () => {
     const missing: string[] = [];
 
     for (const { path, blocks } of await docFiles()) {
-      const usesBB = blocks.some((block) => block.includes('"$BB/'));
+      const usesBB = blocks.some((block) => BB_PATH.test(block));
       if (!usesBB) continue;
 
       const source = await readFile(join(repoRoot, path), "utf8");
@@ -198,7 +206,7 @@ describe("browser-bay path resolution in documented commands", () => {
     for (const path of pages) {
       const source = await readFile(join(repoRoot, path), "utf8");
       for (const block of source.match(/<pre\b[\s\S]*?<\/pre>/g) ?? []) {
-        if (block.includes('"$BB/') && !block.includes(RESOLVER_HEAD)) {
+        if (BB_PATH.test(block) && !block.includes(RESOLVER_HEAD)) {
           offenders.push(`${path}: a <pre> uses "$BB/ without resolving it`);
         }
       }

@@ -43,8 +43,10 @@ const STATE_DIR_NAME = ".axis-browser";
  * can resolve an invalid name into a filesystem path that collapses onto the
  * default session's directory.
  */
-export function resolveSessionName(): string {
-  const raw = process.env.CHROME_DEVTOOLS_AXI_SESSION?.trim();
+export function resolveSessionName(
+  env: NodeJS.ProcessEnv = process.env,
+): string {
+  const raw = env.CHROME_DEVTOOLS_AXI_SESSION?.trim();
   const name = raw && raw.length > 0 ? raw : DEFAULT_SESSION_NAME;
   validateSessionName(name);
   return name;

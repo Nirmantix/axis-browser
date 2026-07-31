@@ -202,9 +202,13 @@ describe("buildDoctorReport", () => {
   it("reports an invalid session name instead of dying on it", async () => {
     // doctor exists to report misconfiguration; resolveSessionName throws on a bad
     // CHROME_DEVTOOLS_AXI_SESSION, which killed the command with a raw stack trace.
-    process.env.CHROME_DEVTOOLS_AXI_SESSION = "../../etc";
+    // Supplied through the report's own env — not process.env — so this also pins
+    // that session resolution honours the env buildDoctorReport was given.
     const report = await buildDoctorReport(
-      { CHROME_DEVTOOLS_AXI_MODE: "ephemeral" },
+      {
+        CHROME_DEVTOOLS_AXI_MODE: "ephemeral",
+        CHROME_DEVTOOLS_AXI_SESSION: "../../etc",
+      },
       deps({ ok: true }),
     );
     expect(report.status).toBe("error");
