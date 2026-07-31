@@ -97,7 +97,8 @@ Portability note:
   for p in "${AXIS_BROWSER_HOME:+$AXIS_BROWSER_HOME/skills}" "${AXIS_PORTABLE_SKILLS_DIR:-}" \
            ./skills "$HOME/.codex/skills" "$HOME/.config/agents/skills" \
            "$HOME/.claude/skills" "$HOME/.config/opencode/skills" \
-           "$HOME/.pi/agent/skills" "$HOME/.agents/skills"; do
+           "$HOME/.pi/agent/skills" "$HOME/.agents/skills" \
+           "$HOME/.cursor/skills" "$HOME/.kiro/skills" "$HOME/.gemini/skills"; do
     [ -n "$BB" ] && break
     [ -n "$p" ] || continue
     for n in browser-bay browser-skill; do

@@ -94,6 +94,13 @@ const STANDARD_AGENT_SKILL_PARENTS = [
   // Host-agnostic location. Appended rather than inserted so adding it cannot
   // change which skill an existing install already resolves to.
   [".agents", "skills"],
+  // Hosts that read their own skills root directly. Without these, an agent
+  // could load a skill from one of these directories while `setup` reported it
+  // missing — discovery and the agents disagreeing about the same install.
+  // Appended, so no existing resolution changes.
+  [".cursor", "skills"],
+  [".kiro", "skills"],
+  [".gemini", "skills"],
 ] as const;
 
 export function parseSetupArgs(args: string[]): ParsedSetupArgs {

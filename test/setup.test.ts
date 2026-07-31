@@ -149,6 +149,9 @@ describe("resolveBrowserSkillDir", () => {
     [".config", "opencode", "skills"],
     [".pi", "agent", "skills"],
     [".agents", "skills"],
+    [".cursor", "skills"],
+    [".kiro", "skills"],
+    [".gemini", "skills"],
   ])("resolves a skill installed under ~/%s/%s", (...parent) => {
     const root = tempDir();
     const home = join(root, "home");

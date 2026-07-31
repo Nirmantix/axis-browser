@@ -125,6 +125,12 @@ release history.
   assigns a usable directory — a prompt could contain every expected string and still
   leave `BB` empty. They now execute the block each prompt actually ships and assert
   the resolved path, the exit-2 path, and the fall-through
+* `setup` could report the skill missing while an agent was actively loading it.
+  `~/.cursor/skills`, `~/.kiro/skills`, and `~/.gemini/skills` are read by those
+  hosts directly but were absent from `STANDARD_AGENT_SKILL_PARENTS`, so discovery
+  and the agents disagreed about the same install. All three are now searched,
+  appended so no existing resolution changes, and mirrored into every documented
+  resolver — the drift test failed until they were, which is what it is for
 ### Changed
 
 * the CLI presents itself as `axis-browser` everywhere — help, usage, examples,

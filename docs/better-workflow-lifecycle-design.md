@@ -56,8 +56,9 @@ the agent host. Use one of these routes:
 - Copy or clone `skills/browser-bay/` into a skill location that setup actually
   searches. That list is `STANDARD_AGENT_SKILL_PARENTS` in `src/setup.ts`, and
   today it is `~/.codex/skills/`, `~/.config/agents/skills/`, `~/.claude/skills/`,
-  `~/.config/opencode/skills/`, `~/.pi/agent/skills/`, and `~/.agents/skills/` —
-  each holding a `browser-bay/` (or legacy `browser-skill/`) directory. Note these
+  `~/.config/opencode/skills/`, `~/.pi/agent/skills/`, `~/.agents/skills/`,
+  `~/.cursor/skills/`, `~/.kiro/skills/`, and `~/.gemini/skills/` — each holding a
+  `browser-bay/` (or legacy `browser-skill/`) directory. Note these
   are all under `$HOME`; a `.agents/` directory at a *project* root is not
   searched. Installing anywhere else means setting `BROWSER_BAY_DIR` or
   `AXIS_PORTABLE_SKILLS_DIR` to point at it.
@@ -78,7 +79,8 @@ c="${BROWSER_BAY_DIR:-${BROWSER_SKILL_DIR:-}}"
 for p in "${AXIS_BROWSER_HOME:+$AXIS_BROWSER_HOME/skills}" "${AXIS_PORTABLE_SKILLS_DIR:-}" \
          ./skills "$HOME/.codex/skills" "$HOME/.config/agents/skills" \
          "$HOME/.claude/skills" "$HOME/.config/opencode/skills" \
-         "$HOME/.pi/agent/skills" "$HOME/.agents/skills"; do
+         "$HOME/.pi/agent/skills" "$HOME/.agents/skills" \
+         "$HOME/.cursor/skills" "$HOME/.kiro/skills" "$HOME/.gemini/skills"; do
   [ -n "$BB" ] && break
   [ -n "$p" ] || continue
   for n in browser-bay browser-skill; do
