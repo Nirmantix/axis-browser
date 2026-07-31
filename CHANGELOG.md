@@ -96,6 +96,12 @@ release history.
   cannot change which skill an existing install already resolves to, and the doc
   says plainly that these are `$HOME` paths — a `.agents/` directory at a project
   root is still not searched
+* the CI `build-and-test (20.11)` matrix entry could never pass. `packageManager`
+  is `pnpm@11.1.1`, which requires Node >=22.13, so `pnpm install` failed on the
+  toolchain before any of this project's code ran — a permanently-red check that
+  verified nothing. The floor `engines.node` claims is now verified by a dedicated
+  `engines-floor` job that builds on a supported Node and then runs the built CLI
+  on 20.11 with plain `node`, which is how an installing user actually reaches it
 
 ### Changed
 

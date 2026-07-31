@@ -33,12 +33,13 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # engines.node is ">=20.11" (import.meta.dirname landed in 20.11), so
-        # test the supported floor and each LTS above it. Testing only the
-        # newest lets a break on the floor reach users instead of CI. Pin the
-        # floor to 20.11 rather than a floating 20, which would resolve to the
-        # latest 20.x and never exercise the version engines actually claims.
-        node-version: ["20.11", "22", "24"]
+        # The 20.11 floor that engines.node claims cannot run this job: pnpm
+        # 11.1.1 (packageManager) requires Node >=22.13, so `pnpm install` fails
+        # on the toolchain before any of our code executes. That entry was a
+        # permanently-red check testing nothing. The floor is verified instead
+        # by `engines-floor` below, which smoke-tests the built artifact on
+        # 20.11 with plain node — no pnpm involved.
+        node-version: ["22", "24"]
     steps:
       - uses: actions/checkout@v4
         with:
@@ -55,3 +56,51 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm run build
       - run: pnpm test
+
+  engines-floor:
+    # engines.node claims ">=20.11" (import.meta.dirname landed there) and no
+    # other job runs on it, so without this the floor is a promise nothing checks.
+    #
+    # This installs the packed tarball rather than executing dist/ in place. The
+    # difference matters: running dist/ by path skips the `bin` wiring entirely,
+    # and that wiring is exactly what broke once before — every alias pointed at
+    # a missing dist/bin entry, so the published CLI did not exist (see the first
+    # "Fixed" entry in CHANGELOG.md). A floor check that cannot catch that is not
+    # worth having.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@v4
+
+      # pnpm 11 requires Node >=22.13, so pack on a Node it supports. `npm pack`
+      # runs `prepare`, which is what builds dist/ into the tarball.
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+      # --pack-destination does not create the directory; npm exits non-zero if
+      # it is missing.
+      - run: mkdir -p "$RUNNER_TEMP/pkg" && npm pack --pack-destination "$RUNNER_TEMP/pkg"
+
+      # Everything below runs on the floor itself, with plain npm and node.
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "20.11"
+
+      - name: Installed CLI works on the engines.node floor
+        run: |
+          node --version
+          mkdir -p "$RUNNER_TEMP/floor"
+          cd "$RUNNER_TEMP/floor"
+          npm init -y > /dev/null
+          npm install "$RUNNER_TEMP"/pkg/*.tgz
+          # Every documented alias, not just one: they are separate bin entries.
+          ./node_modules/.bin/axis-browser --version
+          ./node_modules/.bin/axis-browser --help > /dev/null
+          ./node_modules/.bin/axib --version
+          ./node_modules/.bin/chrome-devtools-axi --version
