@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { wrapJsExpression } from "../src/cli.js";
+import { wrapJsExpression } from "../src/run.js";
 
 describe("wrapJsExpression", () => {
   it("wraps an expression in a concise arrow", () => {

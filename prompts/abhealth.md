@@ -3,20 +3,46 @@ Task Shortcode: ;abhealth
 Purpose: monthly or biweekly Axis Browser workflow health audit.
 
 Associated skills:
-- ./skills/browser-skill when run from the axis-browser checkout, BROWSER_SKILL_DIR when set, or AXIS_BROWSER_HOME/skills/browser-skill when AXIS_BROWSER_HOME is set
+- Resolved in this order, explicit configuration before implicit location: BROWSER_BAY_DIR (or legacy BROWSER_SKILL_DIR), then $AXIS_BROWSER_HOME/skills, $AXIS_PORTABLE_SKILLS_DIR, ./skills when run from the axis-browser checkout, then the standard agent skill locations. The snippet below is the authority; this line only summarises it
 - Use available review/documentation skills when the agent host provides them.
 
 Run from the axis-browser repository root unless auditing another checkout.
 
+
+Resolve the skill directory first — the discovery sources above are only useful if the
+commands actually use them. `BROWSER_BAY_DIR` may be unset on a fallback or legacy install,
+and an unresolved path would then run `bash "/scripts/..."` and fail with
+a confusing path error:
+
+```bash
+BB=""
+c="${BROWSER_BAY_DIR:-${BROWSER_SKILL_DIR:-}}"
+[ -n "$c" ] && [ -d "$c" ] && BB="$c"
+for p in "${AXIS_BROWSER_HOME:+$AXIS_BROWSER_HOME/skills}" "${AXIS_PORTABLE_SKILLS_DIR:-}" \
+         ./skills "$HOME/.codex/skills" "$HOME/.config/agents/skills" \
+         "$HOME/.claude/skills" "$HOME/.config/opencode/skills" \
+         "$HOME/.pi/agent/skills" "$HOME/.agents/skills"; do
+  [ -n "$BB" ] && break
+  [ -n "$p" ] || continue
+  for n in browser-bay browser-skill; do
+    if [ -d "$p/$n" ]; then BB="$p/$n"; break; fi
+  done
+done
+[ -d "$BB" ] || { echo "browser-bay not found; set BROWSER_BAY_DIR"; exit 2; }
+
+```
+
+Use `"$BB"` in place of `"$BROWSER_BAY_DIR"` in the commands below.
+
 Phase 1: tool update audit
-- Load browser-skill/SKILL.md.
+- Load browser-bay/SKILL.md.
 - Run:
-  bash "$BROWSER_SKILL_DIR/scripts/check-prerequisites.sh" --update
+  bash "$BB/scripts/check-prerequisites.sh" --update
 - Treat this as report-first and permission-gated.
 - Never update project-local dependencies from this repo-level audit.
 
 Phase 2: content consistency audit
-- Review prompts, SKILL.md, browser-skill references, scripts, README files, workflow docs, and microsite docs.
+- Review prompts, SKILL.md, browser-bay references, scripts, README files, workflow docs, and microsite docs.
 - Use official sources for latest tool behavior, install commands, changelogs, and deprecations.
 - Identify outdated, missing, conflicting, or hallucination-prone instructions.
 

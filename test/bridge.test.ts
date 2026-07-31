@@ -1,15 +1,25 @@
 import { describe, expect, it, beforeEach, afterEach } from "vitest";
 import { IncomingMessage, ServerResponse } from "node:http";
 import { Socket } from "node:net";
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import {
+  BRIDGE_PORT_IN_USE_EXIT_CODE,
   buildTransportArgs,
   detectGlobalMcpPath,
+  extractHostHeaderHostname,
   extractToolText,
   getErrorMessage,
   handleBridgeRequest,
+  isAllowedBridgeHost,
+  isRequestAllowed,
+  isRequestOriginAllowed,
+  handleBridgeServerError,
   isBridgeClientConnected,
   isBridgeTargetReachable,
   parseBridgeCallPayload,
+  removePidFile,
   resolveBridgeScript,
   resolveTransportSpec,
   type BridgeClient,
@@ -81,12 +91,15 @@ describe("buildTransportArgs", () => {
       process.env.CHROME_DEVTOOLS_AXI_AUTO_CONNECT;
     savedEnv.CHROME_DEVTOOLS_AXI_WS_HEADERS =
       process.env.CHROME_DEVTOOLS_AXI_WS_HEADERS;
+    savedEnv.CHROME_DEVTOOLS_AXI_CHANNEL =
+      process.env.CHROME_DEVTOOLS_AXI_CHANNEL;
     delete process.env.CHROME_DEVTOOLS_AXI_HEADED;
     delete process.env.CHROME_DEVTOOLS_AXI_CHROME_ARGS;
     delete process.env.CHROME_DEVTOOLS_AXI_BROWSER_URL;
     delete process.env.CHROME_DEVTOOLS_AXI_USER_DATA_DIR;
     delete process.env.CHROME_DEVTOOLS_AXI_AUTO_CONNECT;
     delete process.env.CHROME_DEVTOOLS_AXI_WS_HEADERS;
+    delete process.env.CHROME_DEVTOOLS_AXI_CHANNEL;
   });
 
   afterEach(() => {
@@ -102,6 +115,8 @@ describe("buildTransportArgs", () => {
       savedEnv.CHROME_DEVTOOLS_AXI_AUTO_CONNECT;
     process.env.CHROME_DEVTOOLS_AXI_WS_HEADERS =
       savedEnv.CHROME_DEVTOOLS_AXI_WS_HEADERS;
+    process.env.CHROME_DEVTOOLS_AXI_CHANNEL =
+      savedEnv.CHROME_DEVTOOLS_AXI_CHANNEL;
   });
 
   it("defaults to headless and isolated", () => {
@@ -111,13 +126,21 @@ describe("buildTransportArgs", () => {
       "chrome-devtools-mcp@latest",
       "--isolated",
       "--headless",
+      "--chrome-arg=--use-mock-keychain",
+      "--chrome-arg=--password-store=basic",
     ]);
   });
 
   it("omits --headless when CHROME_DEVTOOLS_AXI_HEADED=1", () => {
     process.env.CHROME_DEVTOOLS_AXI_HEADED = "1";
     const args = buildTransportArgs();
-    expect(args).toEqual(["-y", "chrome-devtools-mcp@latest", "--isolated"]);
+    expect(args).toEqual([
+      "-y",
+      "chrome-devtools-mcp@latest",
+      "--isolated",
+      "--chrome-arg=--use-mock-keychain",
+      "--chrome-arg=--password-store=basic",
+    ]);
   });
 
   it("forwards chrome args via --chrome-arg=", () => {
@@ -135,7 +158,12 @@ describe("buildTransportArgs", () => {
     expect(args).toContain("--chrome-arg=--flag-a");
     expect(args).toContain("--chrome-arg=--flag-b");
     expect(args).toContain("--chrome-arg=--flag-c");
-    expect(args.filter((a) => a.startsWith("--chrome-arg="))).toHaveLength(3);
+    expect(
+      args.filter(
+        (a) =>
+          a.startsWith("--chrome-arg=") && a.startsWith("--chrome-arg=--flag"),
+      ),
+    ).toHaveLength(3);
   });
 
   it("combines headed mode with chrome args", () => {
@@ -211,6 +239,55 @@ describe("buildTransportArgs", () => {
     expect(args).toContain("--isolated");
   });
 
+  it("omits --channel by default", () => {
+    const args = buildTransportArgs();
+    expect(args.some((a) => a.startsWith("--channel"))).toBe(false);
+  });
+
+  it("appends --channel to --autoConnect", () => {
+    process.env.CHROME_DEVTOOLS_AXI_AUTO_CONNECT = "1";
+    process.env.CHROME_DEVTOOLS_AXI_CHANNEL = "beta";
+    const args = buildTransportArgs();
+    expect(args).toContain("--autoConnect");
+    expect(args).toContain("--channel=beta");
+  });
+
+  it("appends --channel in the default launch mode", () => {
+    process.env.CHROME_DEVTOOLS_AXI_CHANNEL = "beta";
+    const args = buildTransportArgs();
+    expect(args).toContain("--channel=beta");
+    expect(args).toContain("--isolated");
+    expect(args).toContain("--headless");
+  });
+
+  it("appends --channel alongside --userDataDir", () => {
+    process.env.CHROME_DEVTOOLS_AXI_USER_DATA_DIR = "/path/to/.chrome-profile";
+    process.env.CHROME_DEVTOOLS_AXI_CHANNEL = "canary";
+    const args = buildTransportArgs();
+    expect(args).toContain("--userDataDir=/path/to/.chrome-profile");
+    expect(args).toContain("--channel=canary");
+  });
+
+  it("ignores --channel when connecting via --browserUrl", () => {
+    process.env.CHROME_DEVTOOLS_AXI_BROWSER_URL = "http://127.0.0.1:9222";
+    process.env.CHROME_DEVTOOLS_AXI_CHANNEL = "beta";
+    const args = buildTransportArgs();
+    expect(args).toContain("--browserUrl=http://127.0.0.1:9222");
+    expect(args.some((a) => a.startsWith("--channel"))).toBe(false);
+  });
+
+  it("trims surrounding whitespace from the channel", () => {
+    process.env.CHROME_DEVTOOLS_AXI_CHANNEL = "  beta  ";
+    const args = buildTransportArgs();
+    expect(args).toContain("--channel=beta");
+  });
+
+  it("ignores a blank channel", () => {
+    process.env.CHROME_DEVTOOLS_AXI_CHANNEL = "   ";
+    const args = buildTransportArgs();
+    expect(args.some((a) => a.startsWith("--channel"))).toBe(false);
+  });
+
   it("routes ws:// BROWSER_URL to --wsEndpoint", () => {
     process.env.CHROME_DEVTOOLS_AXI_BROWSER_URL =
       "ws://127.0.0.1:9222/devtools/browser/abc123";
@@ -267,6 +344,96 @@ describe("buildTransportArgs", () => {
     const args = buildTransportArgs();
     expect(args).toContain("--browserUrl=http://127.0.0.1:9222");
     expect(args.some((a) => a.startsWith("--wsHeaders="))).toBe(false);
+  });
+});
+
+/**
+ * Locks the transport contract that the operator-free session design depends on:
+ * when axis LAUNCHES the browser (isolated or persistent-profile), it must never
+ * ask for a TCP endpoint. chrome-devtools-mcp then drives Chrome over
+ * `--remote-debugging-pipe`, which is what makes port squatting (the 2026-07-30
+ * `127.0.0.1:9222` incident, where Ulaa held the port) structurally impossible.
+ *
+ * Verified end-to-end on 2026-07-30: a managed-mode Chrome ran with
+ * `--remote-debugging-pipe` and exposed no TCP LISTEN socket anywhere in its
+ * process tree. That transport is supplied by UPSTREAM, not by this repo, so these
+ * assertions exist to fail loudly if a change here (or an upstream flag rename we
+ * adopt) reintroduces a port. See docs/shared-session-design.md.
+ */
+describe("buildTransportArgs — launch modes claim no TCP endpoint", () => {
+  const PORTISH = ["--browserUrl", "--wsEndpoint", "--remote-debugging-port"];
+  const savedEnv: Record<string, string | undefined> = {};
+  const KEYS = [
+    "CHROME_DEVTOOLS_AXI_BROWSER_URL",
+    "CHROME_DEVTOOLS_AXI_USER_DATA_DIR",
+    "CHROME_DEVTOOLS_AXI_AUTO_CONNECT",
+    "CHROME_DEVTOOLS_AXI_HEADED",
+    "CHROME_DEVTOOLS_AXI_CHROME_ARGS",
+  ];
+
+  beforeEach(() => {
+    for (const k of KEYS) {
+      savedEnv[k] = process.env[k];
+      delete process.env[k];
+    }
+  });
+  afterEach(() => {
+    // Assigning an undefined savedEnv entry back sets the literal string
+    // "undefined" (Node coerces), which later suites then read as a *set* variable —
+    // e.g. --channel=undefined, or a USER_DATA_DIR of "undefined" flipping the mode.
+    for (const k of KEYS) {
+      const saved = savedEnv[k];
+      if (saved === undefined) delete process.env[k];
+      else process.env[k] = saved;
+    }
+  });
+
+  const claimsAnEndpoint = (args: string[]) =>
+    args.filter((a) => PORTISH.some((p) => a.startsWith(p)));
+
+  it("ephemeral mode requests no endpoint flag", () => {
+    expect(claimsAnEndpoint(buildTransportArgs())).toEqual([]);
+  });
+
+  it("managed mode (persistent profile) requests no endpoint flag", () => {
+    process.env.CHROME_DEVTOOLS_AXI_USER_DATA_DIR = "/tmp/axis-profile";
+    const args = buildTransportArgs();
+    expect(args).toContain("--userDataDir=/tmp/axis-profile");
+    expect(claimsAnEndpoint(args)).toEqual([]);
+  });
+
+  it("managed mode stays endpoint-free when headed", () => {
+    process.env.CHROME_DEVTOOLS_AXI_USER_DATA_DIR = "/tmp/axis-profile";
+    process.env.CHROME_DEVTOOLS_AXI_HEADED = "1";
+    expect(claimsAnEndpoint(buildTransportArgs())).toEqual([]);
+  });
+
+  it("a --chrome-arg cannot smuggle in a debug port", () => {
+    process.env.CHROME_DEVTOOLS_AXI_USER_DATA_DIR = "/tmp/axis-profile";
+    process.env.CHROME_DEVTOOLS_AXI_CHROME_ARGS =
+      "--remote-debugging-port=9222";
+    const args = buildTransportArgs();
+    // Forwarded args are prefixed, so they are inert as transport selection —
+    // assert the prefix is intact rather than that the string is absent.
+    expect(args).toContain("--chrome-arg=--remote-debugging-port=9222");
+    expect(claimsAnEndpoint(args)).toEqual([]);
+  });
+
+  it("keychain isolation is applied whenever axis launches the browser", () => {
+    for (const profile of [undefined, "/tmp/axis-profile"]) {
+      if (profile) process.env.CHROME_DEVTOOLS_AXI_USER_DATA_DIR = profile;
+      else delete process.env.CHROME_DEVTOOLS_AXI_USER_DATA_DIR;
+      const args = buildTransportArgs();
+      expect(args).toContain("--chrome-arg=--use-mock-keychain");
+      expect(args).toContain("--chrome-arg=--password-store=basic");
+    }
+  });
+
+  it("attach modes do NOT apply keychain isolation (that browser is not ours)", () => {
+    process.env.CHROME_DEVTOOLS_AXI_BROWSER_URL = "http://127.0.0.1:9333";
+    const args = buildTransportArgs();
+    expect(args).not.toContain("--chrome-arg=--use-mock-keychain");
+    expect(args).not.toContain("--chrome-arg=--password-store=basic");
   });
 });
 
@@ -494,10 +661,25 @@ describe("isBridgeTargetReachable", () => {
   });
 });
 
-function makeRequest(method: string, url: string): IncomingMessage {
+function makeRequest(
+  method: string,
+  url: string,
+  headers: Record<string, string> = {},
+  body?: string,
+): IncomingMessage {
   const req = new IncomingMessage(new Socket());
   req.method = method;
   req.url = url;
+  // Real requests always carry a Host header; the CLI client sends
+  // "127.0.0.1:<port>". Default to loopback so the anti-rebinding gate lets
+  // these through, and let callers override to exercise rejection.
+  req.headers = { host: "127.0.0.1:9224", ...headers };
+  // Feed a request body so handlers that read the stream (e.g. /call) don't
+  // hang waiting on EOF. Rejected requests short-circuit before reading it.
+  if (body !== undefined) {
+    req.push(body);
+    req.push(null);
+  }
   return req;
 }
 
@@ -541,6 +723,28 @@ describe("handleBridgeRequest /health", () => {
 
     expect(captured.statusCode).toBe(200);
     expect(JSON.parse(captured.body)).toEqual({ status: "ok" });
+  });
+
+  it("stamps the session name into the /health response when provided", async () => {
+    const client: BridgeClient = {
+      listTools: async () => ({ tools: [] }),
+      callTool: async () => ({ content: [] }),
+      close: async () => {},
+    };
+    const { res, captured } = makeResponse();
+
+    await handleBridgeRequest(
+      client,
+      makeRequest("GET", "/health"),
+      res,
+      "worker-1",
+    );
+
+    expect(captured.statusCode).toBe(200);
+    expect(JSON.parse(captured.body)).toEqual({
+      status: "ok",
+      session: "worker-1",
+    });
   });
 
   it("returns 503 when MCP server is disconnected", async () => {
@@ -623,5 +827,333 @@ describe("handleBridgeRequest /health", () => {
 
     expect(captured.statusCode).toBe(200);
     expect(callToolCalls).toBe(0);
+  });
+});
+
+describe("extractHostHeaderHostname", () => {
+  it("drops the :port suffix from a host:port value", () => {
+    expect(extractHostHeaderHostname("127.0.0.1:9224")).toBe("127.0.0.1");
+    expect(extractHostHeaderHostname("localhost:9224")).toBe("localhost");
+  });
+
+  it("returns the bare hostname when no port is present", () => {
+    expect(extractHostHeaderHostname("localhost")).toBe("localhost");
+  });
+
+  it("unwraps a bracketed IPv6 host, with or without a port", () => {
+    expect(extractHostHeaderHostname("[::1]:9224")).toBe("::1");
+    expect(extractHostHeaderHostname("[::1]")).toBe("::1");
+  });
+
+  it("keeps a bare unbracketed IPv6 literal intact", () => {
+    expect(extractHostHeaderHostname("::1")).toBe("::1");
+  });
+
+  it("rejects trailing garbage after a bracketed IPv6 host", () => {
+    // "[::1]evil.com" must not be read as the loopback literal "::1".
+    expect(extractHostHeaderHostname("[::1]evil.com")).toBeNull();
+    expect(extractHostHeaderHostname("[::1]:9224evil")).toBe("::1");
+    expect(isAllowedBridgeHost("[::1]evil.com")).toBe(false);
+  });
+
+  it("returns null for an empty or whitespace-only value", () => {
+    expect(extractHostHeaderHostname("")).toBeNull();
+    expect(extractHostHeaderHostname("   ")).toBeNull();
+  });
+});
+
+describe("isAllowedBridgeHost", () => {
+  it("accepts loopback hosts (with and without port, any case)", () => {
+    expect(isAllowedBridgeHost("127.0.0.1:9224")).toBe(true);
+    expect(isAllowedBridgeHost("localhost:9224")).toBe(true);
+    expect(isAllowedBridgeHost("LOCALHOST")).toBe(true);
+    expect(isAllowedBridgeHost("[::1]:9224")).toBe(true);
+    expect(isAllowedBridgeHost("::1")).toBe(true);
+  });
+
+  it("rejects a missing Host header", () => {
+    expect(isAllowedBridgeHost(undefined)).toBe(false);
+  });
+
+  it("rejects a rebound attacker domain", () => {
+    expect(isAllowedBridgeHost("evil.attacker.com")).toBe(false);
+    expect(isAllowedBridgeHost("evil.attacker.com:9224")).toBe(false);
+    // A hostname that merely embeds a loopback label must not pass.
+    expect(isAllowedBridgeHost("127.0.0.1.evil.com")).toBe(false);
+    expect(isAllowedBridgeHost("localhost.evil.com")).toBe(false);
+  });
+});
+
+describe("isRequestOriginAllowed", () => {
+  it("allows a missing Origin (the CLI client sends none)", () => {
+    expect(isRequestOriginAllowed(makeRequest("POST", "/call"))).toBe(true);
+  });
+
+  it("allows an Origin whose hostname is loopback", () => {
+    expect(
+      isRequestOriginAllowed(
+        makeRequest("POST", "/call", { origin: "http://127.0.0.1:9224" }),
+      ),
+    ).toBe(true);
+    expect(
+      isRequestOriginAllowed(
+        makeRequest("POST", "/call", { origin: "http://localhost" }),
+      ),
+    ).toBe(true);
+    expect(
+      isRequestOriginAllowed(
+        makeRequest("POST", "/call", { origin: "http://[::1]:9224" }),
+      ),
+    ).toBe(true);
+  });
+
+  it("rejects a present non-loopback Origin", () => {
+    expect(
+      isRequestOriginAllowed(
+        makeRequest("POST", "/call", {
+          origin: "https://evil.attacker.com",
+        }),
+      ),
+    ).toBe(false);
+  });
+
+  it("rejects an unparseable Origin", () => {
+    expect(
+      isRequestOriginAllowed(
+        makeRequest("POST", "/call", { origin: "not a url" }),
+      ),
+    ).toBe(false);
+  });
+});
+
+describe("handleBridgeRequest anti-rebinding gate", () => {
+  const client: BridgeClient = {
+    listTools: async () => ({ tools: [{ name: "take_snapshot" }] }),
+    callTool: async () => ({ content: [{ type: "text", text: "ok" }] }),
+    close: async () => {},
+  };
+
+  it("rejects a forged non-loopback Host with 403 on every route", async () => {
+    for (const [method, url] of [
+      ["GET", "/health"],
+      ["GET", "/tools"],
+      ["POST", "/call"],
+    ] as const) {
+      const { res, captured } = makeResponse();
+      await handleBridgeRequest(
+        client,
+        makeRequest(method, url, { host: "evil.attacker.com" }),
+        res,
+      );
+      expect(captured.statusCode).toBe(403);
+      expect(JSON.parse(captured.body)).toEqual({ error: "Forbidden host" });
+    }
+  });
+
+  it("rejects a request with no Host header", async () => {
+    const req = makeRequest("GET", "/health");
+    delete req.headers.host;
+    const { res, captured } = makeResponse();
+
+    await handleBridgeRequest(client, req, res);
+
+    expect(captured.statusCode).toBe(403);
+    expect(JSON.parse(captured.body)).toEqual({ error: "Forbidden host" });
+  });
+
+  it("rejects a forged non-loopback Origin even when Host is loopback", async () => {
+    const { res, captured } = makeResponse();
+
+    await handleBridgeRequest(
+      client,
+      makeRequest("POST", "/call", {
+        host: "127.0.0.1:9224",
+        origin: "https://evil.attacker.com",
+      }),
+      res,
+    );
+
+    expect(captured.statusCode).toBe(403);
+    expect(JSON.parse(captured.body)).toEqual({ error: "Forbidden host" });
+  });
+
+  it("does not invoke any CDP tool when a request is rejected", async () => {
+    let callToolCalls = 0;
+    const spyClient: BridgeClient = {
+      listTools: async () => ({ tools: [] }),
+      callTool: async () => {
+        callToolCalls++;
+        return { content: [] };
+      },
+      close: async () => {},
+    };
+    const { res } = makeResponse();
+
+    await handleBridgeRequest(
+      spyClient,
+      makeRequest("POST", "/call", { host: "evil.attacker.com" }),
+      res,
+    );
+
+    expect(callToolCalls).toBe(0);
+  });
+
+  it("allows a loopback Host with no Origin through to /call", async () => {
+    const { res, captured } = makeResponse();
+
+    await handleBridgeRequest(
+      client,
+      makeRequest(
+        "POST",
+        "/call",
+        { host: "127.0.0.1:9224" },
+        JSON.stringify({ name: "take_snapshot" }),
+      ),
+      res,
+    );
+
+    expect(captured.statusCode).toBe(200);
+    expect(JSON.parse(captured.body)).toEqual({ result: "ok" });
+  });
+
+  it("logs the refusal (host/origin/route) when a request is rejected", async () => {
+    const logs: string[] = [];
+    const { res } = makeResponse();
+
+    await handleBridgeRequest(
+      client,
+      makeRequest("POST", "/call", {
+        host: "evil.attacker.com",
+        origin: "https://evil.attacker.com",
+      }),
+      res,
+      undefined,
+      (message) => logs.push(message),
+    );
+
+    expect(logs).toHaveLength(1);
+    expect(logs[0]).toContain("evil.attacker.com");
+    expect(logs[0]).toContain("/call");
+  });
+
+  it("does not log when a request is allowed", async () => {
+    const logs: string[] = [];
+    const { res } = makeResponse();
+
+    await handleBridgeRequest(
+      client,
+      makeRequest("GET", "/tools", { host: "127.0.0.1:9224" }),
+      res,
+      undefined,
+      (message) => logs.push(message),
+    );
+
+    expect(logs).toHaveLength(0);
+  });
+
+  it("allows a loopback Host + loopback Origin through to /tools", async () => {
+    const { res, captured } = makeResponse();
+
+    await handleBridgeRequest(
+      client,
+      makeRequest("GET", "/tools", {
+        host: "localhost:9224",
+        origin: "http://localhost:9224",
+      }),
+      res,
+    );
+
+    expect(captured.statusCode).toBe(200);
+    expect(isRequestAllowed(makeRequest("GET", "/tools"))).toBe(true);
+  });
+});
+
+describe("handleBridgeServerError", () => {
+  function captureStderr<T>(fn: () => T): { result: T; stderr: string } {
+    const original = process.stderr.write.bind(process.stderr);
+    let stderr = "";
+    process.stderr.write = ((chunk: unknown) => {
+      stderr += typeof chunk === "string" ? chunk : String(chunk);
+      return true;
+    }) as typeof process.stderr.write;
+    try {
+      return { result: fn(), stderr };
+    } finally {
+      process.stderr.write = original;
+    }
+  }
+
+  it("exits with the distinct EADDRINUSE code so ensureBridge can attribute a collision", () => {
+    const exitCodes: number[] = [];
+    const { stderr } = captureStderr(() =>
+      handleBridgeServerError(
+        Object.assign(new Error("listen EADDRINUSE"), { code: "EADDRINUSE" }),
+        9225,
+        (code) => exitCodes.push(code),
+      ),
+    );
+
+    expect(exitCodes).toEqual([BRIDGE_PORT_IN_USE_EXIT_CODE]);
+    expect(BRIDGE_PORT_IN_USE_EXIT_CODE).not.toBe(1);
+    expect(stderr).toContain("9225");
+    expect(stderr).toContain("EADDRINUSE");
+    expect(stderr).toContain("CHROME_DEVTOOLS_AXI_PORT");
+  });
+
+  it("exits non-zero for other fatal server errors", () => {
+    const exitCodes: number[] = [];
+    const { stderr } = captureStderr(() =>
+      handleBridgeServerError(
+        Object.assign(new Error("boom"), { code: "EACCES" }),
+        9225,
+        (code) => exitCodes.push(code),
+      ),
+    );
+
+    expect(exitCodes).toEqual([1]);
+    expect(stderr).toContain("boom");
+  });
+});
+
+describe("removePidFile ownership", () => {
+  let dir: string;
+  let pidFile: string;
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), "cda-pid-"));
+    pidFile = join(dir, "bridge.pid");
+  });
+
+  afterEach(() => {
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("leaves the winner's PID file intact when a same-session loser exits", () => {
+    const winnerPid = process.pid + 1;
+    const loserPid = process.pid + 2;
+    writeFileSync(pidFile, JSON.stringify({ pid: winnerPid, port: 9224 }));
+
+    // The EADDRINUSE loser's exit handler must not delete the winner's handle.
+    removePidFile(pidFile, loserPid);
+
+    expect(existsSync(pidFile)).toBe(true);
+  });
+
+  it("removes the PID file when this process owns it", () => {
+    const ownerPid = process.pid + 3;
+    writeFileSync(pidFile, JSON.stringify({ pid: ownerPid, port: 9224 }));
+
+    removePidFile(pidFile, ownerPid);
+
+    expect(existsSync(pidFile)).toBe(false);
+  });
+
+  it("treats a missing or malformed PID file as nothing to remove", () => {
+    expect(() => removePidFile(pidFile, process.pid)).not.toThrow();
+    expect(existsSync(pidFile)).toBe(false);
+
+    writeFileSync(pidFile, "not json");
+    expect(() => removePidFile(pidFile, process.pid)).not.toThrow();
+    expect(existsSync(pidFile)).toBe(true);
   });
 });

@@ -40,17 +40,14 @@
 
       <section class="intro" aria-labelledby="page-title">
         <h1 id="page-title">The workflow: observe, act, prove.</h1>
-        <p>Start with the rendered browser. Decide shared or isolated mode, capture real state, then choose whether the task needs quick diagnostics, audited evidence, or a rerunnable script.</p>
+        <p>Start with the rendered browser. Let Axis launch and own it, capture real state, then choose whether the task needs quick diagnostics, audited evidence, or a rerunnable script.</p>
       </section>
 
       <section class="section" aria-labelledby="debug-flow">
-        <h2 id="debug-flow">Shared Chrome debugging</h2>
+        <h2 id="debug-flow">Browser debugging</h2>
         <p class="muted-lead">Use this for web apps, desktop apps with webviews, SaaS dashboards, internal tools, auth flows, and anything where real browser state matters.</p>
         <div class="feature-board">
-          <pre><span class="comment"># Point Axis Browser at the shared Chrome CDP endpoint.</span>
-export CHROME_DEVTOOLS_AXI_BROWSER_URL=http://127.0.0.1:9222
-axis-browser stop
-axis-browser pages
+          <pre><span class="comment"># Axis launches and owns the browser. No port to manage.</span>
 axis-browser open http://localhost:3000
 axis-browser snapshot
 axis-browser console --type error
@@ -62,7 +59,7 @@ axis-browser network --type fetch</pre>
             </article>
             <article class="phase-card">
               <strong>Inspect</strong>
-              <p>Snapshot shows accessible structure and `@gN:N` refs. Console and network show runtime causes.</p>
+              <p>Snapshot shows accessible structure and <code>@gN:N</code> refs. Console and network show runtime causes.</p>
             </article>
             <article class="phase-card">
               <strong>Interact</strong>
@@ -77,31 +74,26 @@ axis-browser network --type fetch</pre>
       </section>
 
       <section class="section" aria-labelledby="shared-baseline">
-        <h2 id="shared-baseline">Shared Chrome baseline</h2>
-        <p class="muted-lead">The standard shared-browser pattern is a dedicated Chrome profile exposing Chrome DevTools Protocol on port `9222`, with Axis Browser running its local bridge on port `9224`.</p>
+        <h2 id="shared-baseline">Persistent-login baseline</h2>
+        <p class="muted-lead">When a task needs a logged-in session, use managed mode: Axis launches and owns a Chrome on a profile that persists between runs, so you sign in once. Launch modes drive the browser over a pipe — there is no debugging port to manage or collide with. Only the local Axis bridge uses a port (<code>9224</code>).</p>
         <div class="feature-board">
-          <pre>"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" \
-  --remote-debugging-port=9222 \
-  --user-data-dir="$HOME/.axis-browser-data" \
-  --no-first-run \
-  --no-default-browser-check
+          <pre>export CHROME_DEVTOOLS_AXI_MODE=managed   <span class="comment"># profile: ~/.axis-browser-data</span>
 
-export CHROME_DEVTOOLS_AXI_BROWSER_URL=http://127.0.0.1:9222
-axis-browser stop
-axis-browser pages
+axis-browser login https://app.example.com <span class="comment"># one-time, interactive</span>
+axis-browser open https://app.example.com  <span class="comment"># silent from here on</span>
 axis-browser snapshot</pre>
           <div class="workflow-chain">
             <article class="phase-card">
               <strong>Dedicated profile</strong>
-              <p>`~/.axis-browser-data` keeps automation login state separate from the everyday browser profile.</p>
+              <p><code>~/.axis-browser-data</code> keeps automation login state separate from the everyday browser profile.</p>
             </article>
             <article class="phase-card">
               <strong>Bridge reset</strong>
-              <p>`axis-browser stop` clears the persistent bridge so the next command uses the current environment and target.</p>
+              <p><code>axis-browser stop</code> clears the persistent bridge so the next command uses the current environment and target.</p>
             </article>
             <article class="phase-card">
               <strong>Generation-tagged refs</strong>
-              <p>Refs such as `@g1:3` must be passed back exactly as printed. `STALE_REF` means the page changed and a new snapshot is required.</p>
+              <p>Refs such as <code>@g1:3</code> must be passed back exactly as printed. <code>STALE_REF</code> means the page changed and a new snapshot is required.</p>
             </article>
           </div>
         </div>
@@ -112,8 +104,8 @@ axis-browser snapshot</pre>
         <div class="feature-board">
           <ol class="step-list">
             <li><span>1</span><div><strong>Reproduce in the browser</strong><p>Open the target route or tab in the controlled shared browser session.</p></div></li>
-            <li><span>2</span><div><strong>Capture structure</strong><p>Run `axis-browser snapshot` and inspect the visible accessible state.</p></div></li>
-            <li><span>3</span><div><strong>Inspect runtime failures</strong><p>Run `axis-browser console` and `axis-browser network` before editing application code.</p></div></li>
+            <li><span>2</span><div><strong>Capture structure</strong><p>Run <code>axis-browser snapshot</code> and inspect the visible accessible state.</p></div></li>
+            <li><span>3</span><div><strong>Inspect runtime failures</strong><p>Run <code>axis-browser console</code> and <code>axis-browser network</code> before editing application code.</p></div></li>
             <li><span>4</span><div><strong>Identify the concrete failure</strong><p>Look for the failing request, exception, disabled control, missing DOM state, or auth/session mismatch.</p></div></li>
             <li><span>5</span><div><strong>Change code only after evidence</strong><p>Use browser observations to drive the implementation fix or the verified-run report.</p></div></li>
           </ol>
@@ -133,27 +125,32 @@ axis-browser snapshot</pre>
           <tbody>
             <tr>
               <td>Normal login state</td>
-              <td>Launch the dedicated profile, log in manually once, then keep reusing the same `--user-data-dir`.</td>
-              <td><code>~/.axis-browser-data</code></td>
+              <td>Run the one-time interactive login on the managed profile; every later run reuses it silently.</td>
+              <td><code>axis-browser login &lt;url&gt;</code></td>
             </tr>
             <tr>
               <td>SSO, MFA, or sensitive providers</td>
-              <td>Log in without remote debugging, quit Chrome fully, then relaunch the same profile with `--remote-debugging-port=9222`.</td>
-              <td>Use the same profile directory across both launches.</td>
+              <td>The managed profile is an ordinary Chrome profile on disk and no debugging port is involved, so sign in through <code>login</code> and the session persists like normal browsing.</td>
+              <td><code>~/.axis-browser-data</code></td>
+            </tr>
+            <tr>
+              <td>Named sessions start logged out</td>
+              <td>Chrome locks a profile to one process, so each named session gets its own (<code>&lt;dir&gt;/sessions/&lt;name&gt;</code>). Doctor reports this as <code>NEEDS_INTERACTIVE_LOGIN</code>.</td>
+              <td><code>axis-browser doctor --json</code></td>
+            </tr>
+            <tr>
+              <td>Your real browser profile</td>
+              <td>Refused outright. Chrome silently declines to bind a debugging socket on a default profile, and automation would fight your own browser for the lock.</td>
+              <td>Use a dedicated directory.</td>
             </tr>
             <tr>
               <td>Tab source of truth</td>
-              <td>Raw Chrome CDP is authoritative when tab selection looks wrong.</td>
-              <td><code>curl -s http://127.0.0.1:9222/json/list</code></td>
-            </tr>
-            <tr>
-              <td>Chrome CDP port</td>
-              <td>Default convention is `9222`. Change only when that port is already in use.</td>
-              <td><code>CHROME_DEVTOOLS_AXI_BROWSER_URL=http://127.0.0.1:9333</code></td>
+              <td>Ask the tool — launch modes expose no TCP endpoint to probe by hand.</td>
+              <td><code>axis-browser pages</code></td>
             </tr>
             <tr>
               <td>Axis bridge port</td>
-              <td>Default is `9224`. Change only when the local Axis bridge port conflicts.</td>
+              <td>Default is <code>9224</code>. Change only when the local Axis bridge port conflicts.</td>
               <td><code>CHROME_DEVTOOLS_AXI_PORT=9225</code></td>
             </tr>
           </tbody>
@@ -161,35 +158,38 @@ axis-browser snapshot</pre>
       </section>
 
       <section class="section" aria-labelledby="troubleshooting">
-        <h2 id="troubleshooting">Shared-browser troubleshooting</h2>
+        <h2 id="troubleshooting">Troubleshooting</h2>
+        <p class="muted-lead">Start with <code>axis-browser doctor --json</code>. It names the active mode, probes the endpoint, reports the profile and bridge state, and prints remedies that are syntactically runnable commands — which is not the same as safe to run unattended. Run the reversible ones (<code>unset …</code>) directly; confirm the destructive ones (<code>axis-browser reap</code>, <code>axis-browser stop</code>, <code>rm &lt;path&gt;</code>) with a human first. Escalate to a human outright only for <code>NEEDS_INTERACTIVE_LOGIN</code> or <code>PORT_HELD_BY_FOREIGN_PROCESS</code>. Local CDP has no authentication — never request credentials, tokens, or a <code>ws://</code> URL.</p>
         <div class="route-grid">
           <article class="route-card">
             <div class="route-head"><h3>Bridge feels stale</h3></div>
             <ul>
-              <li><span>reset</span> `axis-browser stop`</li>
-              <li><span>check</span> `axis-browser pages`</li>
+              <li><span>reset</span> <code>axis-browser stop</code></li>
+              <li><span>check</span> <code>axis-browser pages</code></li>
               <li><span>note</span> Deep health checks recycle most stale bridge states automatically.</li>
             </ul>
           </article>
           <article class="route-card">
             <div class="route-head"><h3>Bridge startup is slow</h3></div>
             <ul>
-              <li><span>fast</span> `npm install -g chrome-devtools-mcp`</li>
-              <li><span>timeout</span> `CHROME_DEVTOOLS_AXI_BRIDGE_TIMEOUT_MS=60000`</li>
+              <li><span>fast</span> <code>npm install -g chrome-devtools-mcp</code></li>
+              <li><span>timeout</span> <code>CHROME_DEVTOOLS_AXI_BRIDGE_TIMEOUT_MS=60000</code></li>
             </ul>
           </article>
           <article class="route-card">
-            <div class="route-head"><h3>Chrome CDP is unreachable</h3></div>
+            <div class="route-head"><h3>Bridges accumulating</h3></div>
             <ul>
-              <li><span>probe</span> `curl -s http://127.0.0.1:9222/json/version`</li>
-              <li><span>cause</span> Chrome was not launched with the expected debugging port or profile.</li>
+              <li><span>check</span> <code>axis-browser reap --dry-run</code></li>
+              <li><span>clean</span> <code>axis-browser reap</code></li>
+              <li><span>cause</span> A bridge lost to SIGKILL or a crash never runs its own cleanup and leaks a process group holding an invisible browser.</li>
             </ul>
           </article>
           <article class="route-card">
             <div class="route-head"><h3>Login state is missing</h3></div>
             <ul>
-              <li><span>profile</span> Confirm the same `--user-data-dir` was reused.</li>
-              <li><span>sso</span> For strict providers, log in without debugging first, then relaunch with debugging.</li>
+              <li><span>mode</span> Confirm <code>managed</code> — <code>ephemeral</code> has no profile at all.</li>
+              <li><span>session</span> A named session has its own profile and starts logged out.</li>
+              <li><span>fix</span> <code>axis-browser login &lt;url&gt;</code></li>
             </ul>
           </article>
         </div>
@@ -199,13 +199,31 @@ axis-browser snapshot</pre>
         <h2 id="verified-flow">Verified run workflow</h2>
         <p class="muted-lead">Use this when an operator, reviewer, or future agent needs checkable proof instead of a verbal claim.</p>
         <div class="feature-board">
-          <pre><span class="comment"># Scaffold a single-pass evidence bundle.</span>
-node "$BROWSER_SKILL_DIR/scripts/init-verified-run.mjs" \
+          <pre><span class="comment"># Resolve the skill directory first. Unset BROWSER_BAY_DIR would</span>
+<span class="comment"># otherwise run node "/scripts/..." and fail with a confusing path error.</span>
+BB=""
+c="${BROWSER_BAY_DIR:-${BROWSER_SKILL_DIR:-}}"
+[ -n "$c" ] &amp;&amp; [ -d "$c" ] &amp;&amp; BB="$c"
+for p in "${AXIS_BROWSER_HOME:+$AXIS_BROWSER_HOME/skills}" "${AXIS_PORTABLE_SKILLS_DIR:-}" \
+         ./skills "$HOME/.codex/skills" "$HOME/.config/agents/skills" \
+         "$HOME/.claude/skills" "$HOME/.config/opencode/skills" \
+         "$HOME/.pi/agent/skills" "$HOME/.agents/skills"; do
+  [ -n "$BB" ] &amp;&amp; break
+  [ -n "$p" ] || continue
+  for n in browser-bay browser-skill; do
+    if [ -d "$p/$n" ]; then BB="$p/$n"; break; fi
+  done
+done
+[ -d "$BB" ] || { echo "browser-bay not found; set BROWSER_BAY_DIR"; exit 2; }
+
+
+<span class="comment"># Scaffold a single-pass evidence bundle.</span>
+node "$BB/scripts/init-verified-run.mjs" \
   --task "Verify checkout renders an order confirmation" \
   --slug checkout-confirmation
 
 <span class="comment"># After filling plan.md and findings.md, validate it.</span>
-node "$BROWSER_SKILL_DIR/scripts/validate-verified-run.mjs" \
+node "$BB/scripts/validate-verified-run.mjs" \
   --run .tmp/verified-runs/checkout-confirmation</pre>
           <table class="decision-table">
             <thead>
@@ -245,7 +263,23 @@ node "$BROWSER_SKILL_DIR/scripts/validate-verified-run.mjs" \
               <strong>Start craft mode</strong>
               <p>Craft mode changes the scaffold instructions. It does not magically generate automation.</p>
             </article>
-            <pre>node "$BROWSER_SKILL_DIR/scripts/init-verified-run.mjs" \
+            <pre><span class="comment"># Resolve the skill directory first — this block is self-contained.</span>
+BB=""
+c="${BROWSER_BAY_DIR:-${BROWSER_SKILL_DIR:-}}"
+[ -n "$c" ] &amp;&amp; [ -d "$c" ] &amp;&amp; BB="$c"
+for p in "${AXIS_BROWSER_HOME:+$AXIS_BROWSER_HOME/skills}" "${AXIS_PORTABLE_SKILLS_DIR:-}" \
+         ./skills "$HOME/.codex/skills" "$HOME/.config/agents/skills" \
+         "$HOME/.claude/skills" "$HOME/.config/opencode/skills" \
+         "$HOME/.pi/agent/skills" "$HOME/.agents/skills"; do
+  [ -n "$BB" ] &amp;&amp; break
+  [ -n "$p" ] || continue
+  for n in browser-bay browser-skill; do
+    if [ -d "$p/$n" ]; then BB="$p/$n"; break; fi
+  done
+done
+[ -d "$BB" ] || { echo "browser-bay not found; set BROWSER_BAY_DIR"; exit 2; }
+
+node "$BB/scripts/init-verified-run.mjs" \
   --task "Search flights from SEA to JFK for supplied dates" \
   --slug flight-search \
   --mode craft</pre>
@@ -257,7 +291,7 @@ node "$BROWSER_SKILL_DIR/scripts/validate-verified-run.mjs" \
             </article>
             <article class="phase-card">
               <strong>Refactor</strong>
-              <p>Turn the working flow into `script.mjs` with explicit flags and defaults from `task.md`.</p>
+              <p>Turn the working flow into <code>script.mjs</code> with explicit flags and defaults from <code>task.md</code>.</p>
             </article>
             <article class="phase-card">
               <strong>Prefer Playwright</strong>

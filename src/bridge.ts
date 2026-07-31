@@ -1,14 +1,16 @@
 /**
- * Persistent MCP bridge server for chrome-devtools-axi.
+ * Persistent MCP bridge server for axis-browser.
  *
  * Spawns chrome-devtools-mcp as a child process and maintains a single
  * persistent MCP session. Exposes a simple HTTP API:
  *   POST /call  { name, args }  → { result }
  *   GET  /tools                 → [{ name, description }]
- *   GET  /health                → { status: "ok" } or 503 { status: "error", error }
+ *   GET  /health                → { status: "ok", session } or 503 { status: "error", error }
  *   GET  /health?deep=1         → also verifies the attached CDP target; 503 may include reason
  *
- * Writes a PID file to ~/.axis-browser/bridge.pid on startup.
+ * Writes a PID file to the active session's state dir on startup
+ * (~/.axis-browser/bridge.pid for the default session; named sessions
+ * nest under sessions/<name>/ - see src/sessions.ts).
  */
 
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
@@ -20,16 +22,20 @@ import {
   type Server,
   type ServerResponse,
 } from "node:http";
-import { existsSync, mkdirSync, unlinkSync, writeFileSync } from "node:fs";
-import { join, resolve } from "node:path";
-import { homedir } from "node:os";
-
-const DEFAULT_PORT = Number.parseInt(
-  process.env.CHROME_DEVTOOLS_AXI_PORT ?? "9224",
-  10,
-);
-const STATE_DIR = join(homedir(), ".axis-browser");
-const PID_FILE = join(STATE_DIR, "bridge.pid");
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  unlinkSync,
+  writeFileSync,
+} from "node:fs";
+import { dirname, join, resolve } from "node:path";
+import {
+  resolveSessionName,
+  resolveSessionPidFile,
+  resolveSessionPort,
+} from "./sessions.js";
+import { resolveMode, resolveUserDataDir } from "./mode.js";
 
 export interface BridgeContentBlock {
   type: string;
@@ -86,13 +92,35 @@ export async function isBridgeTargetReachable(
 }
 
 function writePidFile(port: number): void {
-  mkdirSync(STATE_DIR, { recursive: true });
-  writeFileSync(PID_FILE, JSON.stringify({ pid: process.pid, port }));
+  const pidFile = resolveSessionPidFile();
+  mkdirSync(dirname(pidFile), { recursive: true });
+  writeFileSync(pidFile, JSON.stringify({ pid: process.pid, port }));
 }
 
-function removePidFile(): void {
+/**
+ * Remove the session PID file, but only when this process owns it. On a
+ * same-session bind race the losing bridge exits via EADDRINUSE after the
+ * winning bridge has already written the shared PID file; an unconditional
+ * unlink would delete the still-running winner's handle and orphan it (later
+ * `stop`/reuse can no longer find it). A missing, unreadable, or malformed
+ * file — or one recording a different pid — is left untouched. `ownerPid` is
+ * injectable for tests.
+ */
+export function removePidFile(
+  pidFile: string = resolveSessionPidFile(),
+  ownerPid: number = process.pid,
+): void {
   try {
-    unlinkSync(PID_FILE);
+    const data = JSON.parse(readFileSync(pidFile, "utf-8")) as {
+      pid?: unknown;
+    };
+    if (data.pid !== ownerPid) return;
+  } catch {
+    // Missing, unreadable, or malformed — nothing we own to remove.
+    return;
+  }
+  try {
+    unlinkSync(pidFile);
   } catch {
     // Already gone — fine
   }
@@ -100,6 +128,97 @@ function removePidFile(): void {
 
 export function getErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+/**
+ * Hostnames that identify the loopback interface. The bridge is a persistent
+ * unauthenticated loopback service on a known port, so it is the target of
+ * DNS-rebinding: a malicious page rebinds its own domain to 127.0.0.1 and the
+ * browser then issues same-origin requests that hit the bridge. Binding to
+ * 127.0.0.1 does NOT stop this - the packets still arrive on loopback. The one
+ * thing a rebound request cannot hide is that it carries the attacker's own
+ * domain in the `Host` (and `Origin`) header, and those are forbidden headers
+ * page JavaScript cannot forge. Requiring both to name loopback is therefore
+ * THE anti-rebinding control (see GHSA-x439-jhfh-v9x2).
+ */
+const LOOPBACK_HOSTNAMES = new Set(["127.0.0.1", "localhost", "::1"]);
+
+function isLoopbackHostname(hostname: string): boolean {
+  // Node's URL parser keeps IPv6 hostnames bracketed (`[::1]`); strip the
+  // brackets so the bare literal matches LOOPBACK_HOSTNAMES.
+  const normalized = hostname
+    .replace(/^\[/, "")
+    .replace(/\]$/, "")
+    .toLowerCase();
+  return LOOPBACK_HOSTNAMES.has(normalized);
+}
+
+/**
+ * Extract the hostname from a `Host` header value, dropping any `:port` suffix.
+ * Handles bracketed IPv6 (`[::1]:9224` -> `::1`) and bare IPv6 literals
+ * (`::1`). Returns null for an empty/whitespace-only value.
+ */
+export function extractHostHeaderHostname(hostHeader: string): string | null {
+  const trimmed = hostHeader.trim();
+  if (trimmed.length === 0) return null;
+  if (trimmed.startsWith("[")) {
+    const end = trimmed.indexOf("]");
+    if (end === -1) return null;
+    // Anything after the closing bracket must be a `:port` suffix. Reject
+    // trailing garbage (e.g. "[::1]evil.com") instead of treating it as the
+    // loopback literal "::1" - this keeps the Host parser as strict as the
+    // Origin path (new URL(...).hostname), which already rejects the analogue.
+    const rest = trimmed.slice(end + 1);
+    if (rest.length > 0 && !rest.startsWith(":")) return null;
+    return trimmed.slice(1, end);
+  }
+  const firstColon = trimmed.indexOf(":");
+  if (firstColon === -1) return trimmed;
+  // A second colon means this is a bare (unbracketed) IPv6 literal with no
+  // port, not a host:port pair - keep the whole string as the hostname.
+  if (trimmed.indexOf(":", firstColon + 1) !== -1) return trimmed;
+  return trimmed.slice(0, firstColon);
+}
+
+/**
+ * True when the `Host` header is present and names the loopback interface.
+ * A missing Host, or one naming any other host (e.g. a rebound
+ * `evil.attacker.com`), is rejected.
+ */
+export function isAllowedBridgeHost(host: string | undefined): boolean {
+  if (host === undefined) return false;
+  const hostname = extractHostHeaderHostname(host);
+  if (hostname === null) return false;
+  return isLoopbackHostname(hostname);
+}
+
+/**
+ * True when the request carries no `Origin` (the CLI client sends none) or an
+ * `Origin` whose hostname is loopback. A present-but-non-loopback or
+ * unparseable Origin is rejected.
+ */
+export function isRequestOriginAllowed(req: IncomingMessage): boolean {
+  const rawOrigin = req.headers.origin;
+  if (rawOrigin === undefined) return true;
+  const origin = Array.isArray(rawOrigin) ? rawOrigin[0] : rawOrigin;
+  if (origin === undefined || origin.length === 0) return true;
+  let hostname: string;
+  try {
+    hostname = new URL(origin).hostname;
+  } catch {
+    return false;
+  }
+  return isLoopbackHostname(hostname);
+}
+
+/**
+ * Anti-rebinding gate: a request is allowed only when its `Host` header names
+ * loopback and any `Origin` header also names loopback. Checked FIRST on every
+ * route (health included) so a rebound request is refused before any CDP tool
+ * can run.
+ */
+export function isRequestAllowed(req: IncomingMessage): boolean {
+  return isAllowedBridgeHost(req.headers.host) && isRequestOriginAllowed(req);
 }
 
 export function extractToolText(content: BridgeContentBlock[]): string {
@@ -203,34 +322,57 @@ export async function handleBridgeRequest(
   client: BridgeClient,
   req: IncomingMessage,
   res: ServerResponse,
+  sessionName?: string,
+  logForbidden?: (message: string) => void,
 ): Promise<void> {
   res.setHeader("Content-Type", "application/json");
 
-  if (
-    req.method === "GET" &&
-    (req.url === "/health" || req.url?.startsWith("/health?"))
-  ) {
-    if (!(await isBridgeClientConnected(client))) {
-      writeJson(res, 503, { status: "error", error: "Not connected" });
-      return;
-    }
-    const deep = req.url.includes("deep=1");
-    if (deep) {
-      const probe = await isBridgeTargetReachable(client);
-      if (!probe.ok) {
-        writeJson(res, 503, {
-          status: "error",
-          error: "CDP target unreachable",
-          reason: probe.reason,
-        });
-        return;
-      }
-    }
-    writeJson(res, 200, { status: "ok" });
+  // Reject rebound requests before any routing — see isRequestAllowed and
+  // GHSA-x439-jhfh-v9x2. This gate covers /health, /tools, and /call alike. It
+  // sits ahead of the try below deliberately: a disallowed host must never reach
+  // routing, and a header check has nothing to throw.
+  if (!isRequestAllowed(req)) {
+    // Log the refusal so an operator can tell a mis-configured client apart
+    // from an actual rebinding attempt. Injected (not a direct
+    // logBridgeMessage call) so unit tests stay quiet unless they opt in.
+    const rawOrigin = req.headers.origin;
+    const origin = Array.isArray(rawOrigin) ? rawOrigin[0] : rawOrigin;
+    logForbidden?.(
+      `Rejected request with disallowed host: host=${req.headers.host ?? ""} ` +
+        `origin=${origin ?? ""} ${req.method ?? ""} ${req.url ?? ""}`,
+    );
+    writeJson(res, 403, { error: "Forbidden host" });
     return;
   }
 
+  // Every branch stays inside the try. The health probes catch internally
+  // today, so a throw here is not reachable — but this handler is dispatched
+  // without an awaiting caller, so anything that escaped would surface as an
+  // unhandled rejection and take the bridge down rather than fail one request.
   try {
+    if (
+      req.method === "GET" &&
+      (req.url === "/health" || req.url?.startsWith("/health?"))
+    ) {
+      if (!(await isBridgeClientConnected(client))) {
+        writeJson(res, 503, { status: "error", error: "Not connected" });
+        return;
+      }
+      if (req.url.includes("deep=1")) {
+        const probe = await isBridgeTargetReachable(client);
+        if (!probe.ok) {
+          writeJson(res, 503, {
+            status: "error",
+            error: "CDP target unreachable",
+            reason: probe.reason,
+          });
+          return;
+        }
+      }
+      writeJson(res, 200, { status: "ok", session: sessionName });
+      return;
+    }
+
     if (req.method === "GET" && req.url === "/tools") {
       await handleToolsRequest(client, res);
       return;
@@ -248,32 +390,111 @@ export async function handleBridgeRequest(
   writeJson(res, 404, { error: "not found" });
 }
 
-export function createBridgeServer(client: BridgeClient): Server {
+export function createBridgeServer(
+  client: BridgeClient,
+  sessionName?: string,
+): Server {
   return createServer((req, res) => {
-    void handleBridgeRequest(client, req, res);
+    // Backstop: one failed request must never kill the bridge. handleBridgeRequest
+    // already reports its own errors, so reaching here means the failure escaped
+    // even that — respond if we still can, and always close the socket.
+    // `logBridgeMessage` is passed as logForbidden so the anti-rebinding gate can
+    // report refusals; tests omit it to stay quiet.
+    handleBridgeRequest(client, req, res, sessionName, logBridgeMessage).catch(
+      (error) => {
+        logBridgeMessage(`Request handler error: ${getErrorMessage(error)}`);
+        if (!res.headersSent) {
+          writeJson(res, 500, { error: getErrorMessage(error) });
+        } else {
+          res.end();
+        }
+      },
+    );
   });
 }
 
 function logBridgeMessage(message: string): void {
-  process.stderr.write(`[chrome-devtools-axi] ${message}\n`);
+  process.stderr.write(`[axis-browser] ${message}\n`);
+}
+
+/**
+ * Distinct exit code the bridge uses for an EADDRINUSE bind failure. A generic
+ * non-zero exit is ambiguous (npx/MCP launch failures exit non-zero too), so
+ * `ensureBridge` keys on this sentinel to attribute an early death to a genuine
+ * port collision versus a startup failure and tailor its error accordingly.
+ */
+export const BRIDGE_PORT_IN_USE_EXIT_CODE = 48;
+
+/**
+ * Handle a fatal HTTP server error by logging it and exiting non-zero. An
+ * EADDRINUSE means another bridge already owns this port (typically because
+ * `CHROME_DEVTOOLS_AXI_PORT` was exported globally, forcing every session onto
+ * one port); it exits with {@link BRIDGE_PORT_IN_USE_EXIT_CODE} so `ensureBridge`
+ * can distinguish it from any other early death. Failing loudly prevents
+ * `ensureBridge` from silently attaching to the other session's bridge. `exit`
+ * is injectable for tests.
+ */
+export function handleBridgeServerError(
+  error: NodeJS.ErrnoException,
+  port: number,
+  exit: (code: number) => void = process.exit,
+): void {
+  if (error.code === "EADDRINUSE") {
+    logBridgeMessage(
+      `Port ${port} is already in use (EADDRINUSE) - another bridge is listening there. ` +
+        `Exporting CHROME_DEVTOOLS_AXI_PORT globally forces every session onto one port; ` +
+        `unset it so each session gets its own, or set it only per-session.`,
+    );
+    exit(BRIDGE_PORT_IN_USE_EXIT_CODE);
+    return;
+  }
+  logBridgeMessage(`Bridge server error: ${getErrorMessage(error)}`);
+  exit(1);
 }
 
 function writeReadySignal(): void {
   process.stdout.write("READY\n");
 }
 
+/**
+ * Chrome flags that keep a browser *we* launch away from the machine owner's
+ * login keychain.
+ *
+ * `--use-mock-keychain` makes Chromium's OSCrypt use an in-memory mock instead
+ * of the real `Chrome Safe Storage` keychain item; `--password-store=basic`
+ * keeps the password store off the platform secret service. Without them a
+ * launched Chrome calls `SecItemAdd` against the login keychain, and if that
+ * keychain is not resolvable for the browser process (for example because it
+ * was spawned with a redirected `HOME`) macOS answers `errSecNoDefaultKeychain`
+ * and raises the `system.keychain.create.loginkc` authorization panel -
+ * "Keychain Not Found ... Reset To Defaults" - on the machine owner's screen.
+ *
+ * Puppeteer happens to pass both flags in its own default set today, so this is
+ * currently belt-and-braces. It is stated explicitly because the isolation is a
+ * property we owe our users, not one we want to silently inherit from an
+ * upstream default that could change: an automation browser must never be able
+ * to reach - or offer to reset - the owner's password store.
+ */
+export const KEYCHAIN_ISOLATION_CHROME_ARGS = [
+  "--use-mock-keychain",
+  "--password-store=basic",
+] as const;
+
 export function buildTransportArgs(): string[] {
   const args = ["-y", "chrome-devtools-mcp@latest"];
 
-  const autoConnect = process.env.CHROME_DEVTOOLS_AXI_AUTO_CONNECT === "1";
+  // The mode is now resolved explicitly rather than inferred from whichever variable
+  // happened to be set first. resolveMode() falls back to the historical inference when
+  // CHROME_DEVTOOLS_AXI_MODE is unset, so this is behaviour-preserving by default.
+  const mode = resolveMode();
   const browserUrl = process.env.CHROME_DEVTOOLS_AXI_BROWSER_URL;
-  const userDataDir = process.env.CHROME_DEVTOOLS_AXI_USER_DATA_DIR;
+  const channel = process.env.CHROME_DEVTOOLS_AXI_CHANNEL?.trim();
 
-  if (autoConnect) {
+  if (mode === "autoconnect") {
     // Chrome 144+ built-in remote debugging via chrome://inspect/#remote-debugging.
     // Connects to the user's running Chrome - no separate browser launched.
     args.push("--autoConnect");
-  } else if (browserUrl) {
+  } else if (mode === "attach" && browserUrl) {
     // Connect to an existing Chrome instance - skip --isolated and --headless
     // since the user manages the browser lifecycle externally.
     // ws://|wss:// route to --wsEndpoint (direct WebSocket), http(s):// to --browserUrl
@@ -304,6 +525,11 @@ export function buildTransportArgs(): string[] {
       args.push(`--browserUrl=${browserUrl}`);
     }
   } else {
+    const userDataDir = resolveUserDataDir(
+      mode,
+      process.env,
+      resolveSessionName(),
+    );
     if (userDataDir) {
       // Persistent profile — skip --isolated so the profile is preserved.
       args.push(`--userDataDir=${userDataDir}`);
@@ -313,6 +539,27 @@ export function buildTransportArgs(): string[] {
     if (process.env.CHROME_DEVTOOLS_AXI_HEADED !== "1") {
       args.push("--headless");
     }
+    // Launch modes only: pinning an executable is meaningless when attaching to a
+    // browser somebody else started — that browser already exists.
+    const executablePath =
+      process.env.CHROME_DEVTOOLS_AXI_EXECUTABLE_PATH?.trim();
+    if (executablePath) {
+      args.push(`--executablePath=${executablePath}`);
+    }
+    // Launch modes only: `--chrome-arg` is ignored when chrome-devtools-mcp
+    // attaches to a browser somebody else started, and that browser's keychain
+    // policy is its owner's to decide, not ours.
+    for (const arg of KEYCHAIN_ISOLATION_CHROME_ARGS) {
+      args.push(`--chrome-arg=${arg}`);
+    }
+  }
+
+  // --channel selects which installed Chrome distribution chrome-devtools-mcp
+  // targets: the running instance --autoConnect attaches to, or the one launched
+  // by default. It is irrelevant when attaching to an explicit endpoint, so it is
+  // omitted in attach mode. Validation is left to chrome-devtools-mcp.
+  if (channel && mode !== "attach") {
+    args.push(`--channel=${channel}`);
   }
 
   const extraChromeArgs = process.env.CHROME_DEVTOOLS_AXI_CHROME_ARGS;
@@ -417,7 +664,13 @@ function createBridgeClient(): Client {
 async function closeServer(server: Server): Promise<void> {
   await new Promise<void>((resolve, reject) => {
     server.close((error) => {
-      if (error) {
+      // A stop signal can land before listen() completes — runBridge boots
+      // Chrome before binding, so that window is seconds wide. An unbound
+      // server is already closed for our purposes, not a failure.
+      if (
+        error &&
+        (error as NodeJS.ErrnoException).code !== "ERR_SERVER_NOT_RUNNING"
+      ) {
         reject(error);
       } else {
         resolve();
@@ -426,13 +679,23 @@ async function closeServer(server: Server): Promise<void> {
   });
 }
 
-export async function runBridge(port = DEFAULT_PORT): Promise<void> {
+export async function runBridge(port = resolveSessionPort()): Promise<void> {
+  // Connect the MCP transport (which spawns chrome-devtools-mcp and launches
+  // Chrome) before binding the port. A same-session bind race then self-heals:
+  // both racers finish booting before listen(), so the loser's EADDRINUSE exit
+  // finds the winner already deep-healthy and reuses it instead of failing. The
+  // trade-off is one wasted Chrome launch on a genuine cross-session collision,
+  // a rare and self-correcting path.
   const transport = createTransport();
   const client = createBridgeClient();
   await client.connect(transport);
   logBridgeMessage("Connected to chrome-devtools-mcp");
 
-  const server = createBridgeServer(client);
+  const sessionName = resolveSessionName();
+  const server = createBridgeServer(client, sessionName);
+  server.on("error", (error: NodeJS.ErrnoException) => {
+    handleBridgeServerError(error, port);
+  });
   server.listen(port, "127.0.0.1", () => {
     writePidFile(port);
     logBridgeMessage(`Listening on http://127.0.0.1:${port}`);
@@ -444,9 +707,24 @@ export async function runBridge(port = DEFAULT_PORT): Promise<void> {
     if (shuttingDown) return;
     shuttingDown = true;
     removePidFile();
-    await closeServer(server);
-    await client.close();
-    await transport.close();
+    // Each resource is torn down independently: one failure must not skip the
+    // rest, or a server close error would leave the MCP client and transport
+    // open. Failures are logged, never rethrown — an escaping rejection exits
+    // 1, which ensureBridge reports as a *startup* failure with misleading
+    // Chrome guidance. The exit handler below still reaps the process group,
+    // so a stop that got this far is a clean stop.
+    const close = async (name: string, fn: () => Promise<void>) => {
+      try {
+        await fn();
+      } catch (error) {
+        logBridgeMessage(
+          `Shutdown warning (${name}): ${getErrorMessage(error)}`,
+        );
+      }
+    };
+    await close("server", () => closeServer(server));
+    await close("client", () => client.close());
+    await close("transport", () => transport.close());
     process.exit(0);
   };
 
@@ -462,10 +740,9 @@ export async function runBridge(port = DEFAULT_PORT): Promise<void> {
     }
   });
 
-  process.on("SIGTERM", () => {
-    void shutdown();
-  });
-  process.on("SIGINT", () => {
-    void shutdown();
-  });
+  const onStopSignal = () => {
+    shutdown().catch(() => process.exit(0));
+  };
+  process.on("SIGTERM", onStopSignal);
+  process.on("SIGINT", onStopSignal);
 }

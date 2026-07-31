@@ -10,13 +10,10 @@ import {
   getSessionSnapshotIfRunning,
   stopBridge,
 } from "./client.js";
-import { bumpGeneration, getCurrentGeneration } from "./generation.js";
-import {
-  parseEvalOutput,
-  readStdin,
-  runScript,
-  wrapJsExpression,
-} from "./run.js";
+import { isRecoverableOpenError } from "./errors.js";
+import { bumpGeneration } from "./generation.js";
+import { readStdin, runScript, wrapJsExpression } from "./run.js";
+import { PAGE_GENERATION_KEY, parseUidFresh, type ToolCaller } from "./refs.js";
 import {
   formatSetupReport,
   parseSetupArgs,
@@ -24,40 +21,43 @@ import {
   type ParsedSetupArgs,
 } from "./setup.js";
 
-export { wrapJsExpression };
 import {
-  checkUidGeneration,
   countRefs,
   extractTitle,
-  parseStampedUid,
+  parseEvalOutput,
   stampSnapshotGeneration,
+  stripSnapshotHeader,
   truncateSnapshot,
   truncateText,
 } from "./snapshot.js";
 import { getSuggestions } from "./suggestions.js";
+import { buildDoctorReport, renderDoctorReport } from "./doctor.js";
+import { resolveUserDataDir } from "./mode.js";
+import {
+  DEFAULT_REAP_MIN_AGE_MS,
+  findOrphanBridges,
+  reapBridges,
+  scanSessionPidFiles,
+} from "./reap.js";
+import { resolveSessionName } from "./sessions.js";
 import { installHooksOrThrow } from "./hooks.js";
+import { resolveOutputPath } from "./paths.js";
 
 const HOME_DESCRIPTION =
-  "Axis Browser is a fast, agent-first CLI for Chrome automation and shared CDP workflows. Compatible with `axib` and `chrome-devtools-axi`.";
+  "Axis Browser is a fast, agent-first CLI for Chrome automation and shared CDP workflows. Also runs as the `axib` shorthand.";
 
 const VERSION = readPackageVersion();
 const RAW_STDOUT_MARKER = "__CHROME_DEVTOOLS_AXI_RAW__";
-const PAGE_GENERATION_KEY = "__chromeDevtoolsAxiSnapshotGeneration";
 
 type CliStdout = Pick<NodeJS.WriteStream, "write">;
-
-type ToolCaller = (
-  name: string,
-  args?: Record<string, unknown>,
-) => Promise<string>;
 
 export type MainOptions = {
   argv?: string[];
   stdout?: CliStdout;
 };
 
-export const TOP_HELP = `usage: chrome-devtools-axi [command] [args] [flags]
-commands[36]:
+export const TOP_HELP = `usage: axis-browser [command] [args] [flags]
+commands[39]:
   open <url>, snapshot, screenshot <path>, click @<uid>, fill @<uid> <text>,
   type <text>, press <key>, scroll <dir>, back, wait <ms|text>, eval <js>,
   run,
@@ -65,20 +65,54 @@ commands[36]:
   upload @<uid> <path>, pages, newpage <url>, selectpage <id>, closepage <id>,
   resize <w> <h>, emulate, console, console-get <id>, network,
   network-get [id], lighthouse, perf-start, perf-stop,
-  perf-insight <set> <name>, heap <path>, start, stop, setup, setup hooks, update
+  perf-insight <set> <name>, heap <path>, start, stop, setup, setup hooks, update,
+  doctor [--json], reap [--dry-run] [--min-age-hours N], login <url>
 
 flags[2]:
   --help, -v/-V/--version
 
+preflight:
+  Run \`axis-browser doctor --json\` before a browser task. It reports the active mode,
+  the endpoint/profile/bridge state, and a list of REMEDIES that are runnable commands.
+  Execute them. Escalate to a human only for NEEDS_INTERACTIVE_LOGIN (run
+  \`axis-browser login <url>\`) or PORT_HELD_BY_FOREIGN_PROCESS (killing someone's
+  browser is their call). Local CDP has no authentication — never request credentials,
+  tokens, or a ws:// URL to reach it.
+
 environment:
+  CHROME_DEVTOOLS_AXI_MODE          Connection mode, stated explicitly instead of inferred:
+                                    ephemeral (throwaway profile), managed (persistent profile
+                                    axis owns), attach (a browser someone else runs), or
+                                    autoconnect (your running Chrome via chrome://inspect).
+                                    Unset = inferred from the variables below, as before.
+  CHROME_DEVTOOLS_AXI_EXECUTABLE_PATH
+                                    Absolute path to the Chrome/Chromium binary to launch.
+                                    Launch modes only — ignored when attaching to a browser
+                                    somebody else started.
+  CHROME_DEVTOOLS_AXI_AUTO_REAP     Set to 0 to disable automatic cleanup of orphaned bridges
+                                    (>4h old, claimed by no session) on bridge startup.
   CHROME_DEVTOOLS_AXI_AUTO_CONNECT  Set to 1 to connect to the user's running Chrome (144+)
                                     via chrome://inspect/#remote-debugging instead of launching
                                     a new browser. Requires remote debugging enabled in Chrome.
+  CHROME_DEVTOOLS_AXI_CHANNEL       Chrome release channel to target: stable (default), beta,
+                                    canary, or dev. Selects which installed Chrome --autoConnect
+                                    attaches to, and which one is launched in ephemeral and
+                                    managed modes. Ignored only in attach mode. When MODE is
+                                    unset and the mode is inferred, AUTO_CONNECT outranks
+                                    BROWSER_URL, so that combination infers autoconnect and
+                                    still applies the channel; an explicit MODE=attach does
+                                    not, and is authoritative.
   CHROME_DEVTOOLS_AXI_HEADED        Set to 1 to run Chrome in headed (visible) mode
   CHROME_DEVTOOLS_AXI_CHROME_ARGS   Whitespace-separated Chrome flags forwarded to the browser
                                     (no shell-style quoting; flags with spaces are not supported)
                                     e.g. "--enable-gpu --ignore-gpu-blocklist"
   CHROME_DEVTOOLS_AXI_PORT          Bridge server port (default: 9224)
+  CHROME_DEVTOOLS_AXI_SESSION       Named session for concurrent isolation. Each session name gets
+                                    its own bridge process, port (auto-derived from the name, or set
+                                    CHROME_DEVTOOLS_AXI_PORT), and on-disk state, so multiple sessions
+                                    run at once without colliding. Connection mode and profile are
+                                    unchanged. Defaults to "default" (port 9224, legacy state paths).
+                                    e.g. CHROME_DEVTOOLS_AXI_SESSION=worker-1
   CHROME_DEVTOOLS_AXI_BROWSER_URL   Connect to an existing Chrome instance instead of launching one.
                                     http(s):// uses --browserUrl (fetches /json/version).
                                     ws(s):// uses --wsEndpoint (direct WebSocket).
@@ -109,7 +143,7 @@ tips:
 `;
 
 const COMMAND_HELP: Record<string, string> = {
-  open: `usage: chrome-devtools-axi open <url> [--full]
+  open: `usage: axis-browser open <url> [--full]
 Navigate to a URL and capture an accessibility snapshot.
 
 args:
@@ -119,14 +153,17 @@ flags:
   --full  Show complete snapshot without truncation
 
 examples:
-  chrome-devtools-axi open https://example.com
-  chrome-devtools-axi open https://example.com --full`,
+  axis-browser open https://example.com
+  axis-browser open https://example.com --full`,
 
-  screenshot: `usage: chrome-devtools-axi screenshot <path> [--uid @<uid>] [--full-page] [--format png|jpeg|webp]
+  screenshot: `usage: axis-browser screenshot <path> [--uid @<uid>] [--full-page] [--format png|jpeg|webp]
 Save a screenshot to a file.
 
 args:
   <path>  File path to save the screenshot (required)
+
+Relative output paths resolve against the directory where you run the CLI.
+Output reports the resolved absolute path.
 
 flags:
   --uid @<uid>    Capture a specific element instead of the full viewport.
@@ -136,21 +173,21 @@ flags:
   --format <fmt>  Image format: png (default), jpeg, or webp
 
 examples:
-  chrome-devtools-axi screenshot ./page.png
-  chrome-devtools-axi screenshot ./element.png --uid @g1:3
-  chrome-devtools-axi screenshot ./full.png --full-page --format jpeg`,
+  axis-browser screenshot ./page.png
+  axis-browser screenshot ./element.png --uid @g1:3
+  axis-browser screenshot ./full.png --full-page --format jpeg`,
 
-  snapshot: `usage: chrome-devtools-axi snapshot [--full]
+  snapshot: `usage: axis-browser snapshot [--full]
 Capture the current page accessibility snapshot.
 
 flags:
   --full  Show complete snapshot without truncation
 
 examples:
-  chrome-devtools-axi snapshot
-  chrome-devtools-axi snapshot --full`,
+  axis-browser snapshot
+  axis-browser snapshot --full`,
 
-  click: `usage: chrome-devtools-axi click @<uid> [--full]
+  click: `usage: axis-browser click @<uid> [--full]
 Click an interactive element by its ref from the snapshot.
 
 args:
@@ -162,10 +199,10 @@ flags:
   --full  Show complete snapshot without truncation
 
 examples:
-  chrome-devtools-axi click @g1:1
-  chrome-devtools-axi click @g2:12 --full`,
+  axis-browser click @g1:1
+  axis-browser click @g2:12 --full`,
 
-  fill: `usage: chrome-devtools-axi fill @<uid> <text> [--full]
+  fill: `usage: axis-browser fill @<uid> <text> [--full]
 Fill a form field with text.
 
 args:
@@ -178,10 +215,10 @@ flags:
   --full  Show complete snapshot without truncation
 
 examples:
-  chrome-devtools-axi fill @g1:3 "hello world"
-  chrome-devtools-axi fill @g2:3 "search query" --full`,
+  axis-browser fill @g1:3 "hello world"
+  axis-browser fill @g2:3 "search query" --full`,
 
-  type: `usage: chrome-devtools-axi type <text> [--full]
+  type: `usage: axis-browser type <text> [--full]
 Type text at the currently focused element.
 
 args:
@@ -191,10 +228,10 @@ flags:
   --full  Show complete snapshot without truncation
 
 examples:
-  chrome-devtools-axi type "hello"
-  chrome-devtools-axi type "search query" --full`,
+  axis-browser type "hello"
+  axis-browser type "search query" --full`,
 
-  press: `usage: chrome-devtools-axi press <key> [--full]
+  press: `usage: axis-browser press <key> [--full]
 Press a keyboard key.
 
 args:
@@ -204,10 +241,10 @@ flags:
   --full  Show complete snapshot without truncation
 
 examples:
-  chrome-devtools-axi press Enter
-  chrome-devtools-axi press Tab --full`,
+  axis-browser press Enter
+  axis-browser press Tab --full`,
 
-  scroll: `usage: chrome-devtools-axi scroll <direction> [--full]
+  scroll: `usage: axis-browser scroll <direction> [--full]
 Scroll the page in a direction.
 
 args:
@@ -217,20 +254,20 @@ flags:
   --full  Show complete snapshot without truncation
 
 examples:
-  chrome-devtools-axi scroll down
-  chrome-devtools-axi scroll top --full`,
+  axis-browser scroll down
+  axis-browser scroll top --full`,
 
-  back: `usage: chrome-devtools-axi back [--full]
+  back: `usage: axis-browser back [--full]
 Navigate back in browser history.
 
 flags:
   --full  Show complete snapshot without truncation
 
 examples:
-  chrome-devtools-axi back
-  chrome-devtools-axi back --full`,
+  axis-browser back
+  axis-browser back --full`,
 
-  wait: `usage: chrome-devtools-axi wait <ms|text>
+  wait: `usage: axis-browser wait <ms|text>
 Wait for a duration or for text to appear on the page.
 
 args:
@@ -238,10 +275,10 @@ args:
   <text>  Text to wait for (string)
 
 examples:
-  chrome-devtools-axi wait 2000
-  chrome-devtools-axi wait "Submit"`,
+  axis-browser wait 2000
+  axis-browser wait "Submit"`,
 
-  eval: `usage: chrome-devtools-axi eval <js>
+  eval: `usage: axis-browser eval <js> [--full]
 Evaluate a JavaScript expression in the page context and return the result.
 A bare expression is wrapped as () => (<js>); pass a function (arrow or
 function-keyword) for multi-statement logic. No-arg IIFE form (...)() is
@@ -250,12 +287,15 @@ also accepted and unwrapped automatically.
 args:
   <js>  JavaScript expression (required)
 
-examples:
-  chrome-devtools-axi eval "document.title"
-  chrome-devtools-axi eval "document.querySelectorAll('a').length"
-  chrome-devtools-axi eval "() => { const rows = [...document.querySelectorAll('tr')]; return rows.map(r => r.textContent) }"`,
+flags:
+  --full  Show complete output without truncation
 
-  run: `usage: chrome-devtools-axi run <<'EOF'
+examples:
+  axis-browser eval "document.title"
+  axis-browser eval "document.querySelectorAll('a').length"
+  axis-browser eval "() => { const rows = [...document.querySelectorAll('tr')]; return rows.map(r => r.textContent) }"`,
+
+  run: `usage: axis-browser run <<'EOF'
   ...script...
   EOF
 
@@ -282,43 +322,43 @@ click and fill accept either @uid refs (from snapshot) or CSS selectors.
 page.eval accepts functions, arrow functions, and bare expression strings; no-arg IIFE strings are unwrapped automatically.
 
 examples:
-  chrome-devtools-axi run <<'EOF'
+  axis-browser run <<'EOF'
   await page.open("https://example.com");
   console.log(await page.eval(() => document.title));
   EOF
 
-  chrome-devtools-axi run <<'EOF'
+  axis-browser run <<'EOF'
   await page.open("https://en.wikipedia.org/wiki/Ada_Lovelace");
   await page.click("a[href='/wiki/Charles_Babbage']");
   await page.wait(".mw-page-title-main");
   console.log(await page.eval(() => document.title));
   EOF
 
-  chrome-devtools-axi run <<'EOF'
+  axis-browser run <<'EOF'
   const { status } = await page.open("https://httpbin.org/status/404");
   console.log("status:", status);
   EOF`,
 
-  start: `usage: chrome-devtools-axi start
+  start: `usage: axis-browser start
 Start the bridge server (launches headless Chrome).
 
 examples:
-  chrome-devtools-axi start`,
+  axis-browser start`,
 
-  stop: `usage: chrome-devtools-axi stop
+  stop: `usage: axis-browser stop
 Stop the bridge server and close the browser.
 
 examples:
-  chrome-devtools-axi stop`,
+  axis-browser stop`,
 
   // Page management
-  pages: `usage: chrome-devtools-axi pages
+  pages: `usage: axis-browser pages
 List all open pages/tabs in the browser.
 
 examples:
-  chrome-devtools-axi pages`,
+  axis-browser pages`,
 
-  newpage: `usage: chrome-devtools-axi newpage <url> [--background] [--full]
+  newpage: `usage: axis-browser newpage <url> [--background] [--full]
 Open a new tab and navigate to a URL.
 
 args:
@@ -329,10 +369,10 @@ flags:
   --full        Show complete snapshot without truncation
 
 examples:
-  chrome-devtools-axi newpage https://example.com
-  chrome-devtools-axi newpage https://example.com --background`,
+  axis-browser newpage https://example.com
+  axis-browser newpage https://example.com --background`,
 
-  selectpage: `usage: chrome-devtools-axi selectpage <id> [--full]
+  selectpage: `usage: axis-browser selectpage <id> [--full]
 Switch to a tab by page ID.
 
 args:
@@ -342,18 +382,18 @@ flags:
   --full  Show complete snapshot without truncation
 
 examples:
-  chrome-devtools-axi selectpage 1`,
+  axis-browser selectpage 1`,
 
-  closepage: `usage: chrome-devtools-axi closepage <id>
+  closepage: `usage: axis-browser closepage <id>
 Close a tab by page ID. The last open page cannot be closed.
 
 args:
   <id>  Page ID from the pages command (required)
 
 examples:
-  chrome-devtools-axi closepage 2`,
+  axis-browser closepage 2`,
 
-  resize: `usage: chrome-devtools-axi resize <width> <height>
+  resize: `usage: axis-browser resize <width> <height>
 Resize the browser viewport.
 
 args:
@@ -361,11 +401,11 @@ args:
   <height>  Height in pixels (required)
 
 examples:
-  chrome-devtools-axi resize 1280 720
-  chrome-devtools-axi resize 390 844`,
+  axis-browser resize 1280 720
+  axis-browser resize 390 844`,
 
   // Interaction
-  hover: `usage: chrome-devtools-axi hover @<uid> [--full]
+  hover: `usage: axis-browser hover @<uid> [--full]
 Hover over an element to trigger hover states.
 
 args:
@@ -377,9 +417,9 @@ flags:
   --full  Show complete snapshot without truncation
 
 examples:
-  chrome-devtools-axi hover @g1:5`,
+  axis-browser hover @g1:5`,
 
-  drag: `usage: chrome-devtools-axi drag @<from> @<to> [--full]
+  drag: `usage: axis-browser drag @<from> @<to> [--full]
 Drag an element onto another element.
 
 args:
@@ -390,9 +430,9 @@ flags:
   --full  Show complete snapshot without truncation
 
 examples:
-  chrome-devtools-axi drag @g1:3 @g1:7`,
+  axis-browser drag @g1:3 @g1:7`,
 
-  fillform: `usage: chrome-devtools-axi fillform @<uid>=<value>... [--full]
+  fillform: `usage: axis-browser fillform @<uid>=<value>... [--full]
 Fill multiple form fields at once.
 
 args:
@@ -403,10 +443,10 @@ flags:
   --full  Show complete snapshot without truncation
 
 examples:
-  chrome-devtools-axi fillform @g1:1="hello" @g1:2="world"
-  chrome-devtools-axi fillform @g2:3="user@email.com" @g2:4="password123"`,
+  axis-browser fillform @g1:1="hello" @g1:2="world"
+  axis-browser fillform @g2:3="user@email.com" @g2:4="password123"`,
 
-  dialog: `usage: chrome-devtools-axi dialog <accept|dismiss> [text]
+  dialog: `usage: axis-browser dialog <accept|dismiss> [text]
 Handle a browser dialog (alert, confirm, prompt).
 
 args:
@@ -414,11 +454,11 @@ args:
   [text]    Optional text to enter into a prompt dialog
 
 examples:
-  chrome-devtools-axi dialog accept
-  chrome-devtools-axi dialog dismiss
-  chrome-devtools-axi dialog accept "confirmed"`,
+  axis-browser dialog accept
+  axis-browser dialog dismiss
+  axis-browser dialog accept "confirmed"`,
 
-  upload: `usage: chrome-devtools-axi upload @<uid> <path> [--full]
+  upload: `usage: axis-browser upload @<uid> <path> [--full]
 Upload a file through a file input element.
 
 args:
@@ -430,10 +470,10 @@ flags:
   --full  Show complete snapshot without truncation
 
 examples:
-  chrome-devtools-axi upload @g1:5 ./photo.jpg`,
+  axis-browser upload @g1:5 ./photo.jpg`,
 
   // Emulation
-  emulate: `usage: chrome-devtools-axi emulate [flags]
+  emulate: `usage: axis-browser emulate [flags]
 Emulate device features on the selected page.
 
 flags:
@@ -445,11 +485,11 @@ flags:
   --user-agent <string>      Custom user agent string
 
 examples:
-  chrome-devtools-axi emulate --viewport "390x844x3,mobile" --color-scheme dark
-  chrome-devtools-axi emulate --network "Slow 3G" --cpu 4`,
+  axis-browser emulate --viewport "390x844x3,mobile" --color-scheme dark
+  axis-browser emulate --network "Slow 3G" --cpu 4`,
 
   // DevTools debugging
-  console: `usage: chrome-devtools-axi console [--type <type>] [--limit <n>] [--page <n>]
+  console: `usage: axis-browser console [--type <type>] [--limit <n>] [--page <n>]
 List console messages for the current page.
 
 flags:
@@ -462,20 +502,20 @@ flags:
   --page <n>     Page number (0-based)
 
 examples:
-  chrome-devtools-axi console
-  chrome-devtools-axi console --type error --limit 50
-  chrome-devtools-axi console --type all`,
+  axis-browser console
+  axis-browser console --type error --limit 50
+  axis-browser console --type all`,
 
-  "console-get": `usage: chrome-devtools-axi console-get <id>
+  "console-get": `usage: axis-browser console-get <id>
 Get a specific console message by ID.
 
 args:
   <id>  Message ID from the console command (required)
 
 examples:
-  chrome-devtools-axi console-get 3`,
+  axis-browser console-get 3`,
 
-  network: `usage: chrome-devtools-axi network [--type <type>] [--limit <n>] [--page <n>]
+  network: `usage: axis-browser network [--type <type>] [--limit <n>] [--page <n>]
 List network requests for the current page.
 
 flags:
@@ -489,11 +529,11 @@ flags:
   --page <n>     Page number (0-based)
 
 examples:
-  chrome-devtools-axi network
-  chrome-devtools-axi network --type fetch --limit 50
-  chrome-devtools-axi network --type all`,
+  axis-browser network
+  axis-browser network --type fetch --limit 50
+  axis-browser network --type all`,
 
-  "network-get": `usage: chrome-devtools-axi network-get [id] [--response-file <path>] [--request-file <path>]
+  "network-get": `usage: axis-browser network-get [id] [--response-file <path>] [--request-file <path>]
 Get a specific network request. If id is omitted, gets the selected request.
 
 args:
@@ -503,12 +543,14 @@ flags:
   --response-file <path>  Save response body to file
   --request-file <path>   Save request body to file
 
+Relative output paths resolve against the directory where you run the CLI.
+
 examples:
-  chrome-devtools-axi network-get 42
-  chrome-devtools-axi network-get 42 --response-file ./response.json`,
+  axis-browser network-get 42
+  axis-browser network-get 42 --response-file ./response.json`,
 
   // Performance
-  lighthouse: `usage: chrome-devtools-axi lighthouse [--device <device>] [--mode <mode>] [--output-dir <path>]
+  lighthouse: `usage: axis-browser lighthouse [--device <device>] [--mode <mode>] [--output-dir <path>]
 Run a Lighthouse audit for accessibility, SEO, and best practices.
 
 flags:
@@ -516,11 +558,13 @@ flags:
   --mode <mode>          navigation (default) or snapshot
   --output-dir <path>    Directory for reports
 
-examples:
-  chrome-devtools-axi lighthouse
-  chrome-devtools-axi lighthouse --device mobile --output-dir ./reports`,
+Relative output paths resolve against the directory where you run the CLI.
 
-  "perf-start": `usage: chrome-devtools-axi perf-start [--no-reload] [--no-auto-stop] [--file <path>]
+examples:
+  axis-browser lighthouse
+  axis-browser lighthouse --device mobile --output-dir ./reports`,
+
+  "perf-start": `usage: axis-browser perf-start [--no-reload] [--no-auto-stop] [--file <path>]
 Start a performance trace recording.
 
 flags:
@@ -528,21 +572,26 @@ flags:
   --no-auto-stop  Don't automatically stop the trace
   --file <path>   Save raw trace data to file
 
-examples:
-  chrome-devtools-axi perf-start
-  chrome-devtools-axi perf-start --no-reload --file trace.json.gz`,
+Relative output paths resolve against the directory where you run the CLI.
+Output reports the resolved absolute path.
 
-  "perf-stop": `usage: chrome-devtools-axi perf-stop [--file <path>]
+examples:
+  axis-browser perf-start
+  axis-browser perf-start --no-reload --file trace.json.gz`,
+
+  "perf-stop": `usage: axis-browser perf-stop [--file <path>]
 Stop the active performance trace recording.
 
 flags:
   --file <path>  Save raw trace data to file
 
-examples:
-  chrome-devtools-axi perf-stop
-  chrome-devtools-axi perf-stop --file trace.json.gz`,
+Relative output paths resolve against the directory where you run the CLI.
 
-  "perf-insight": `usage: chrome-devtools-axi perf-insight <set-id> <insight-name>
+examples:
+  axis-browser perf-stop
+  axis-browser perf-stop --file trace.json.gz`,
+
+  "perf-insight": `usage: axis-browser perf-insight <set-id> <insight-name>
 Analyze a specific performance insight from a trace.
 
 args:
@@ -550,22 +599,25 @@ args:
   <insight-name>  Insight name, e.g. "DocumentLatency" (required)
 
 examples:
-  chrome-devtools-axi perf-insight set1 DocumentLatency
-  chrome-devtools-axi perf-insight set1 LCPBreakdown`,
+  axis-browser perf-insight set1 DocumentLatency
+  axis-browser perf-insight set1 LCPBreakdown`,
 
-  heap: `usage: chrome-devtools-axi heap <path>
+  heap: `usage: axis-browser heap <path>
 Capture a heap snapshot for memory leak debugging.
 
 args:
   <path>  File path to save the .heapsnapshot file (required)
 
+Relative output paths resolve against the directory where you run the CLI.
+Output reports the resolved absolute path.
+
 examples:
-  chrome-devtools-axi heap ./snapshot.heapsnapshot`,
+  axis-browser heap ./snapshot.heapsnapshot`,
 
-  setup: `usage: chrome-devtools-axi setup [--install] [--project <path>] [--json] [--yes]
-       chrome-devtools-axi setup hooks
+  setup: `usage: axis-browser setup [--install] [--project <path>] [--json] [--yes]
+       axis-browser setup hooks
 
-Report Axis Browser workflow readiness, detect the optional browser-skill
+Report Axis Browser workflow readiness, detect the optional browser-bay
 router, and optionally run permission-gated project setup.
 
 Default setup is read-only. In non-interactive contexts, --install previews
@@ -582,16 +634,16 @@ actions:
   hooks             Install or repair Claude Code and Codex SessionStart hooks
 
 examples:
-  chrome-devtools-axi setup
-  chrome-devtools-axi setup --json
-  chrome-devtools-axi setup --install --project .
-  chrome-devtools-axi setup hooks`,
+  axis-browser setup
+  axis-browser setup --json
+  axis-browser setup --install --project .
+  axis-browser setup hooks`,
 
-  update: `usage: chrome-devtools-axi update [--check]
+  update: `usage: axis-browser update [--check]
 Axis Browser is distributed from GitHub, not the upstream npm package.
 
-This fork disables the SDK npm self-updater because npm package
-\`chrome-devtools-axi\` resolves to upstream, not Nirmantix/axis-browser.
+This fork disables the SDK npm self-updater because the npm package it would
+target (\`chrome-devtools-axi\`, the upstream base) is not this fork.
 
 Update with:
   npm install -g github:Nirmantix/axis-browser
@@ -896,7 +948,7 @@ function readPackageVersion(): string {
     }
   }
 
-  throw new Error("Could not determine chrome-devtools-axi package version");
+  throw new Error("Could not determine axis-browser package version");
 }
 
 function splitFullFlag(args: string[]): { args: string[]; full: boolean } {
@@ -942,7 +994,7 @@ function wrapStdout(
 function renderUnknownCommand(command: string): string {
   return (
     renderError(`Unknown command: ${command}`, "VALIDATION_ERROR", [
-      "Run `chrome-devtools-axi --help` to see available commands",
+      "Run `axis-browser --help` to see available commands",
     ]) + "\n"
   );
 }
@@ -1014,7 +1066,7 @@ function formatPageOutput(
   const suggestions = getSuggestions({ command, url, snapshot });
   if (tr.truncated) {
     suggestions.push(
-      `Run \`chrome-devtools-axi ${command}${url ? " " + url : ""} --full\` to see complete snapshot`,
+      `Run \`axis-browser ${command}${url ? " " + url : ""} --full\` to see complete snapshot`,
     );
   }
   if (suggestions.length > 0) {
@@ -1024,51 +1076,11 @@ function formatPageOutput(
   return renderOutput(blocks);
 }
 
-/** Strip everything before the actual accessibility tree (MCP may prepend status lines and headers). */
-function stripSnapshotHeader(text: string): string {
-  // Find the first line that looks like a tree node (uid= or RootWebArea)
-  const lines = text.split("\n");
-  const treeStart = lines.findIndex((l) => /\bRootWebArea\b|\buid=/.test(l));
-  if (treeStart > 0) return lines.slice(treeStart).join("\n");
-  // Fallback: strip known headers
-  return text.replace(/^[\s\S]*?##\s+Latest page snapshot\s*\n/, "");
-}
-
-/**
- * Strip the `@` prefix and any generation tag from a uid ref, validating
- * that the tag (if present) matches the current snapshot generation. A
- * stale tag throws a loud STALE_REF error rather than letting a silent
- * no-op fall through to upstream MCP.
- */
-export function parseUid(arg: string): string {
-  const current = getCurrentGeneration();
-  const check = checkUidGeneration(arg, current);
-  if (check.stale) {
-    throwStaleRef(arg, check.refGeneration, current);
-  }
-  return check.uid;
-}
-
 /** Tag a freshly captured snapshot with a bumped generation marker. */
 async function stampFresh(snapshot: string): Promise<string> {
   const generation = bumpGeneration();
   await markPageSnapshotGeneration(generation);
   return stampSnapshotGeneration(snapshot, generation);
-}
-
-function throwStaleRef(
-  arg: string,
-  refGeneration: number | null,
-  currentGeneration: number,
-): never {
-  const refRaw = arg.startsWith("@") ? arg.slice(1) : arg;
-  throw new CdpError(
-    `Stale ref @${refRaw}: from snapshot generation ${refGeneration}, current is ${currentGeneration}. Re-snapshot to get fresh refs.`,
-    "STALE_REF",
-    [
-      "Run `chrome-devtools-axi snapshot` to capture current refs, then retry the action",
-    ],
-  );
 }
 
 async function markPageSnapshotGeneration(generation: number): Promise<void> {
@@ -1079,60 +1091,14 @@ async function markPageSnapshotGeneration(generation: number): Promise<void> {
   const key = ${key};
   const previous = globalThis[key];
   if (previous && previous.observer) previous.observer.disconnect();
-  const state = { generation: ${generation}, mutations: 0, observer: null };
-  const observer = new MutationObserver(() => { state.mutations += 1; });
-  observer.observe(document.documentElement || document, { childList: true, subtree: true, attributes: true, characterData: true });
-  state.observer = observer;
-  globalThis[key] = state;
-  return state.generation;
+  globalThis[key] = { generation: ${generation} };
+  return ${generation};
 }`,
     });
-  } catch {}
-}
-
-async function getPageRefGeneration(caller: ToolCaller): Promise<number> {
-  const key = JSON.stringify(PAGE_GENERATION_KEY);
-  const fallback = getCurrentGeneration();
-  try {
-    const output = await caller("evaluate_script", {
-      function: `() => {
-  const state = globalThis[${key}];
-  if (!state || typeof state.generation !== 'number') return ${fallback};
-  const mutations = typeof state.mutations === 'number' ? state.mutations : 0;
-  return state.generation + mutations;
-}`,
-    });
-    const parsed = parseEvalOutput(output);
-    return typeof parsed === "number" && Number.isFinite(parsed)
-      ? parsed
-      : fallback;
   } catch {
-    return fallback;
+    // Best-effort: getPageRefGeneration falls back to the session-wide file
+    // counter, which costs per-page precision but never blocks the command.
   }
-}
-
-export async function parseUidFresh(
-  arg: string,
-  caller: ToolCaller = callTool,
-): Promise<string> {
-  const { generation } = parseStampedUid(arg);
-  const current =
-    generation === null
-      ? getCurrentGeneration()
-      : await getPageRefGeneration(caller);
-  const check = checkUidGeneration(arg, current);
-  if (check.stale) {
-    throwStaleRef(arg, check.refGeneration, current);
-  }
-  return check.uid;
-}
-
-function isRecoverableOpenError(error: unknown): error is CdpError {
-  if (!(error instanceof CdpError)) return false;
-  if (error.code !== "BROWSER_ERROR") return false;
-  return /not connected|session (?:closed|not found)|no page/i.test(
-    error.message,
-  );
 }
 
 /**
@@ -1163,7 +1129,7 @@ async function handleOpen(args: string[], full: boolean): Promise<string> {
   const url = args[0];
   if (!url) {
     throw new CdpError("Missing URL", "VALIDATION_ERROR", [
-      "Run `chrome-devtools-axi open https://example.com` to navigate to a page",
+      "Run `axis-browser open https://example.com` to navigate to a page",
     ]);
   }
 
@@ -1192,24 +1158,25 @@ async function handleScreenshot(args: string[]): Promise<string> {
   const parsed = parseScreenshotArgs(args);
   if (!parsed.filePath) {
     throw new CdpError("Missing file path", "VALIDATION_ERROR", [
-      "Run `chrome-devtools-axi screenshot ./page.png` to save a screenshot",
+      "Run `axis-browser screenshot ./page.png` to save a screenshot",
     ]);
   }
 
-  const toolArgs: Record<string, unknown> = { filePath: parsed.filePath };
+  const filePath = resolveOutputPath(parsed.filePath);
+  const toolArgs: Record<string, unknown> = { filePath };
   if (parsed.uid) toolArgs.uid = await parseUidFresh(parsed.uid);
   if (parsed.fullPage) toolArgs.fullPage = true;
   if (parsed.format) toolArgs.format = parsed.format;
 
   await callTool("take_screenshot", toolArgs);
-  return formatScreenshotOutput(parsed.filePath);
+  return formatScreenshotOutput(filePath);
 }
 
 async function handleClick(args: string[], full: boolean): Promise<string> {
   const uid = args[0];
   if (!uid) {
     throw new CdpError("Missing element ref", "VALIDATION_ERROR", [
-      "Run `chrome-devtools-axi click @<uid>` — get uid from snapshot",
+      "Run `axis-browser click @<uid>` — get uid from snapshot",
     ]);
   }
 
@@ -1224,12 +1191,12 @@ async function handleFill(args: string[], full: boolean): Promise<string> {
   const value = args.slice(1).join(" ");
   if (!uid) {
     throw new CdpError("Missing element ref", "VALIDATION_ERROR", [
-      'Run `chrome-devtools-axi fill @<uid> "text"` — get uid from snapshot',
+      'Run `axis-browser fill @<uid> "text"` — get uid from snapshot',
     ]);
   }
   if (!value) {
     throw new CdpError("Missing fill text", "VALIDATION_ERROR", [
-      'Run `chrome-devtools-axi fill @<uid> "text"` to fill the field',
+      'Run `axis-browser fill @<uid> "text"` to fill the field',
     ]);
   }
 
@@ -1244,7 +1211,7 @@ async function handlePress(args: string[], full: boolean): Promise<string> {
   const key = args[0];
   if (!key) {
     throw new CdpError("Missing key name", "VALIDATION_ERROR", [
-      "Run `chrome-devtools-axi press Enter` to press a key",
+      "Run `axis-browser press Enter` to press a key",
     ]);
   }
 
@@ -1256,7 +1223,7 @@ async function handleType(args: string[], full: boolean): Promise<string> {
   const text = args.join(" ");
   if (!text) {
     throw new CdpError("Missing text", "VALIDATION_ERROR", [
-      'Run `chrome-devtools-axi type "hello"` to type text',
+      'Run `axis-browser type "hello"` to type text',
     ]);
   }
 
@@ -1272,7 +1239,7 @@ async function handleScroll(args: string[], full: boolean): Promise<string> {
   const fn = SCROLL_FUNCTIONS[dir];
   if (!fn) {
     throw new CdpError(`Unknown scroll direction: ${dir}`, "VALIDATION_ERROR", [
-      "Run `chrome-devtools-axi scroll down` — directions: up, down, top, bottom",
+      "Run `axis-browser scroll down` — directions: up, down, top, bottom",
     ]);
   }
 
@@ -1298,8 +1265,8 @@ async function handleWait(args: string[]): Promise<string> {
       "Missing wait target (milliseconds or text)",
       "VALIDATION_ERROR",
       [
-        "Run `chrome-devtools-axi wait 2000` to wait 2 seconds",
-        'Run `chrome-devtools-axi wait "Submit"` to wait for text to appear',
+        "Run `axis-browser wait 2000` to wait 2 seconds",
+        'Run `axis-browser wait "Submit"` to wait for text to appear',
       ],
     );
   }
@@ -1336,7 +1303,7 @@ async function handleEval(args: string[], full: boolean): Promise<string> {
   const js = args.join(" ");
   if (!js) {
     throw new CdpError("Missing JavaScript expression", "VALIDATION_ERROR", [
-      'Run `chrome-devtools-axi eval "document.title"` to evaluate JavaScript',
+      'Run `axis-browser eval "document.title"` to evaluate JavaScript',
     ]);
   }
 
@@ -1365,6 +1332,153 @@ async function handleStart(): Promise<string> {
   return encode({ status: "ready", port });
 }
 
+async function handleDoctor(args: string[]): Promise<string> {
+  const json = args.includes("--json");
+  const report = await buildDoctorReport();
+  return json ? JSON.stringify(report, null, 2) : renderDoctorReport(report);
+}
+
+async function handleReap(args: string[]): Promise<string> {
+  const dryRun = args.includes("--dry-run");
+  const hoursIndex = args.indexOf("--min-age-hours");
+  const hours =
+    hoursIndex >= 0
+      ? Number(args[hoursIndex + 1])
+      : DEFAULT_REAP_MIN_AGE_MS / 3_600_000;
+  if (!Number.isFinite(hours) || hours < 0) {
+    throw new Error("--min-age-hours expects a non-negative number");
+  }
+
+  const orphans = findOrphanBridges(hours * 3_600_000);
+  const outcome = reapBridges(orphans, { dryRun });
+  // Manual reap still acts on these, but the operator should know automatic reaping
+  // is currently suppressed and why.
+  const malformed = scanSessionPidFiles().malformed;
+  return encode({
+    ...(malformed.length > 0
+      ? { malformedPidFiles: malformed, autoReapSuppressed: true }
+      : {}),
+    orphans: orphans.map((o) => ({
+      pid: o.pid,
+      ageMinutes: Math.round(o.ageMs / 60_000),
+    })),
+    reaped: outcome.reaped,
+    failed: outcome.failed,
+    ...(dryRun ? { dryRun: true, wouldReap: outcome.skipped } : {}),
+  });
+}
+
+/** Wait for the operator to press Enter. Resolves immediately when stdin is not a TTY
+ *  (defensive — handleLogin refuses non-TTY first), and also resolves if stdin closes
+ *  before any data, so the bridge and profile lock are never left dangling on a closed
+ *  pipe. (new Promise rather than Promise.withResolvers: the project tsconfig targets
+ *  ES2022 and withResolvers needs ES2024 libs — bumping lib is a separate config pass.) */
+function waitForEnter(): Promise<void> {
+  return new Promise((resolve) => {
+    if (!process.stdin.isTTY) {
+      resolve();
+      return;
+    }
+    const done = () => {
+      process.stdin.off("data", onData);
+      process.stdin.off("end", done);
+      process.stdin.off("error", done);
+      process.stdin.pause();
+      resolve();
+    };
+    const onData = () => done();
+    process.stdin.resume();
+    process.stdin.once("data", onData);
+    process.stdin.once("end", done);
+    process.stdin.once("error", done);
+  });
+}
+
+/**
+ * `axis-browser login <url>` — the one sanctioned operator touchpoint.
+ *
+ * Opens the managed profile headed, hands the browser to the human, and waits. Every run
+ * after this one is silent, because the cookies live in the profile on disk. The bridge is
+ * stopped on the way out so the profile lock is released and Chrome flushes its state —
+ * leaving it running would both leak a browser and block the next session.
+ */
+async function handleLogin(args: string[]): Promise<string> {
+  const url = args.find((a) => !a.startsWith("-"));
+  if (!url) {
+    throw new Error(
+      "usage: axis-browser login <url>  (opens the managed profile headed for a one-time interactive login)",
+    );
+  }
+  if (!process.stdin.isTTY) {
+    throw new Error(
+      "axis-browser login is interactive and needs a terminal: it hands you a visible browser and waits for you to sign in. " +
+        "Run it yourself in a terminal, then re-run the original command — every later run reuses the saved profile silently.",
+    );
+  }
+
+  // Force the mode for this invocation: login is meaningless in a mode that owns no
+  // persistent profile, and silently logging into a throwaway profile would be worse
+  // than refusing.
+  process.env.CHROME_DEVTOOLS_AXI_MODE = "managed";
+  process.env.CHROME_DEVTOOLS_AXI_HEADED = "1";
+
+  const profileDir = resolveUserDataDir(
+    "managed",
+    process.env,
+    resolveSessionName(),
+  );
+
+  await ensureBridge();
+  let cookieCount = 0;
+  try {
+    try {
+      await callTool("navigate_page", { type: "url", url });
+    } catch (error) {
+      if (!isRecoverableOpenError(error)) throw error;
+      await callTool("new_page", { url });
+    }
+
+    process.stderr.write(
+      `\nA browser window is open on ${url} using the profile at:\n  ${profileDir}\n\n` +
+        "Sign in there, then press Enter here to save and close.\n",
+    );
+    await waitForEnter();
+
+    // Verify something actually landed rather than reporting a success we did not check.
+    //
+    // The count is tagged and the parse anchored to that tag. `callTool` returns MCP
+    // prose wrapped in a response envelope, so matching the first digit run anywhere in
+    // the serialized result could latch onto an unrelated number (a page id, a
+    // timestamp) and report a confidently wrong cookie count. No tag match means the
+    // probe told us nothing — which is "unverified", not "zero".
+    try {
+      const result = await callTool("evaluate_script", {
+        function:
+          "() => 'AXIS_COOKIE_COUNT=' + document.cookie.split(';').filter((c) => c.trim()).length",
+      });
+      const match = JSON.stringify(result).match(/AXIS_COOKIE_COUNT=(\d+)/);
+      cookieCount = match ? Number(match[1]) : -1;
+    } catch {
+      // A failed probe is not a failed login; report it as unknown rather than zero.
+      cookieCount = -1;
+    }
+  } finally {
+    // stopBridge runs on every path (including throw) so a failed login never leaves a
+    // browser holding the profile's SingletonLock — which would block the next session.
+    await stopBridge();
+  }
+
+  return encode({
+    status: "saved",
+    profile: profileDir ?? "(none)",
+    cookies: cookieCount < 0 ? "unverified" : cookieCount,
+    note:
+      cookieCount === 0
+        ? "No cookies were visible on that page — if the site stores its session elsewhere this may still be fine, but re-run and check if the next command is not authenticated."
+        : "Later runs reuse this profile silently.",
+  });
+}
+
 export function formatStopOutput(wasStopped: boolean): string {
   return encode({ status: wasStopped ? "stopped" : "stopped (no-op)" });
 }
@@ -1388,8 +1502,8 @@ async function handlePages(): Promise<string> {
   blocks.push(`${header}\n${rows.join("\n")}`);
   blocks.push(
     renderHelp([
-      "Run `chrome-devtools-axi selectpage <id>` to switch tabs",
-      "Run `chrome-devtools-axi newpage <url>` to open a new tab",
+      "Run `axis-browser selectpage <id>` to switch tabs",
+      "Run `axis-browser newpage <url>` to open a new tab",
     ]),
   );
   return renderOutput(blocks);
@@ -1399,7 +1513,7 @@ async function handleNewPage(args: string[], full: boolean): Promise<string> {
   const url = args.filter((a) => !a.startsWith("--"))[0];
   if (!url) {
     throw new CdpError("Missing URL", "VALIDATION_ERROR", [
-      "Run `chrome-devtools-axi newpage https://example.com` to open a new tab",
+      "Run `axis-browser newpage https://example.com` to open a new tab",
     ]);
   }
   const background = args.includes("--background");
@@ -1419,13 +1533,13 @@ async function handleSelectPage(
   const id = args[0];
   if (!id) {
     throw new CdpError("Missing page ID", "VALIDATION_ERROR", [
-      "Run `chrome-devtools-axi selectpage <id>` — get ID from `pages` command",
+      "Run `axis-browser selectpage <id>` — get ID from `pages` command",
     ]);
   }
   const pageId = parseInt(id, 10);
   if (isNaN(pageId)) {
     throw new CdpError(`Invalid page ID: ${id}`, "VALIDATION_ERROR", [
-      "Run `chrome-devtools-axi pages` to list available page IDs",
+      "Run `axis-browser pages` to list available page IDs",
     ]);
   }
   await callTool("select_page", { pageId });
@@ -1439,13 +1553,13 @@ async function handleClosePage(args: string[]): Promise<string> {
   const id = args[0];
   if (!id) {
     throw new CdpError("Missing page ID", "VALIDATION_ERROR", [
-      "Run `chrome-devtools-axi closepage <id>` — get ID from `pages` command",
+      "Run `axis-browser closepage <id>` — get ID from `pages` command",
     ]);
   }
   const pageId = parseInt(id, 10);
   if (isNaN(pageId)) {
     throw new CdpError(`Invalid page ID: ${id}`, "VALIDATION_ERROR", [
-      "Run `chrome-devtools-axi pages` to list available page IDs",
+      "Run `axis-browser pages` to list available page IDs",
     ]);
   }
   // Check page count before closing — last page can't be closed
@@ -1457,8 +1571,8 @@ async function handleClosePage(args: string[]): Promise<string> {
     ];
     blocks.push(
       renderHelp([
-        "Run `chrome-devtools-axi newpage <url>` to open another tab first",
-        "Run `chrome-devtools-axi stop` to shut down the browser entirely",
+        "Run `axis-browser newpage <url>` to open another tab first",
+        "Run `axis-browser stop` to shut down the browser entirely",
       ]),
     );
     return renderOutput(blocks);
@@ -1471,14 +1585,14 @@ async function handleResize(args: string[]): Promise<string> {
   const [widthStr, heightStr] = args;
   if (!widthStr || !heightStr) {
     throw new CdpError("Missing width and/or height", "VALIDATION_ERROR", [
-      "Run `chrome-devtools-axi resize 1280 720` to resize the viewport",
+      "Run `axis-browser resize 1280 720` to resize the viewport",
     ]);
   }
   const width = parseInt(widthStr, 10);
   const height = parseInt(heightStr, 10);
   if (isNaN(width) || isNaN(height)) {
     throw new CdpError("Width and height must be numbers", "VALIDATION_ERROR", [
-      "Run `chrome-devtools-axi resize 1280 720` to resize the viewport",
+      "Run `axis-browser resize 1280 720` to resize the viewport",
     ]);
   }
   await callTool("resize_page", { width, height });
@@ -1491,7 +1605,7 @@ async function handleHover(args: string[], full: boolean): Promise<string> {
   const uid = args[0];
   if (!uid) {
     throw new CdpError("Missing element ref", "VALIDATION_ERROR", [
-      "Run `chrome-devtools-axi hover @<uid>` — get uid from snapshot",
+      "Run `axis-browser hover @<uid>` — get uid from snapshot",
     ]);
   }
   const snapshot = await callWithSnapshot("hover", {
@@ -1505,7 +1619,7 @@ async function handleDrag(args: string[], full: boolean): Promise<string> {
   const to = args[1];
   if (!from || !to) {
     throw new CdpError("Missing element refs", "VALIDATION_ERROR", [
-      "Run `chrome-devtools-axi drag @<from> @<to>` — get uids from snapshot",
+      "Run `axis-browser drag @<from> @<to>` — get uids from snapshot",
     ]);
   }
   const snapshot = await callWithSnapshot("drag", {
@@ -1519,7 +1633,7 @@ async function handleFillForm(args: string[], full: boolean): Promise<string> {
   const { entries } = parseFillFormArgs(args);
   if (entries.length === 0) {
     throw new CdpError("No valid field entries", "VALIDATION_ERROR", [
-      'Run `chrome-devtools-axi fillform @g1:1="hello" @g1:2="world"` to fill multiple fields',
+      'Run `axis-browser fillform @g1:1="hello" @g1:2="world"` to fill multiple fields',
     ]);
   }
   const validated = await Promise.all(
@@ -1536,7 +1650,7 @@ async function handleDialog(args: string[]): Promise<string> {
   const action = args[0];
   if (!action || (action !== "accept" && action !== "dismiss")) {
     throw new CdpError("Missing or invalid action", "VALIDATION_ERROR", [
-      "Run `chrome-devtools-axi dialog accept` or `chrome-devtools-axi dialog dismiss`",
+      "Run `axis-browser dialog accept` or `axis-browser dialog dismiss`",
     ]);
   }
   const params: Record<string, unknown> = { action };
@@ -1551,12 +1665,12 @@ async function handleUpload(args: string[], full: boolean): Promise<string> {
   const filePath = args[1];
   if (!uid) {
     throw new CdpError("Missing element ref", "VALIDATION_ERROR", [
-      "Run `chrome-devtools-axi upload @<uid> <path>` — get uid from snapshot",
+      "Run `axis-browser upload @<uid> <path>` — get uid from snapshot",
     ]);
   }
   if (!filePath) {
     throw new CdpError("Missing file path", "VALIDATION_ERROR", [
-      "Run `chrome-devtools-axi upload @<uid> /path/to/file` to upload a file",
+      "Run `axis-browser upload @<uid> /path/to/file` to upload a file",
     ]);
   }
   const snapshot = await callWithSnapshot("upload_file", {
@@ -1580,8 +1694,8 @@ async function handleConsole(args: string[]): Promise<string> {
   const parsed = parseConsoleArgs(args);
   const result = await callTool("list_console_messages", parsed);
   return formatMcpResult("console", result, [
-    "Run `chrome-devtools-axi console-get <id>` to see a specific message",
-    "Run `chrome-devtools-axi console --type error` to filter by type",
+    "Run `axis-browser console-get <id>` to see a specific message",
+    "Run `axis-browser console --type error` to filter by type",
   ]);
 }
 
@@ -1589,7 +1703,7 @@ async function handleConsoleGet(args: string[]): Promise<string> {
   const id = args[0];
   if (!id) {
     throw new CdpError("Missing console message id", "VALIDATION_ERROR", [
-      "Run `chrome-devtools-axi console-get <id>` — get id from `chrome-devtools-axi console`",
+      "Run `axis-browser console-get <id>` — get id from `axis-browser console`",
     ]);
   }
   const msgid = parseOptionalInteger(id);
@@ -1597,7 +1711,7 @@ async function handleConsoleGet(args: string[]): Promise<string> {
     throw new CdpError(
       `Invalid console message id: ${id}`,
       "VALIDATION_ERROR",
-      ["Run `chrome-devtools-axi console` to list available message ids"],
+      ["Run `axis-browser console` to list available message ids"],
     );
   }
   const result = await callTool("get_console_message", { msgid });
@@ -1608,14 +1722,21 @@ async function handleNetwork(args: string[]): Promise<string> {
   const parsed = parseNetworkArgs(args);
   const result = await callTool("list_network_requests", parsed);
   return formatMcpResult("network", result, [
-    "Run `chrome-devtools-axi network-get <id>` to see request details",
-    "Run `chrome-devtools-axi network --type fetch` to filter by type",
+    "Run `axis-browser network-get <id>` to see request details",
+    "Run `axis-browser network --type fetch` to filter by type",
   ]);
 }
 
 async function handleNetworkGet(args: string[]): Promise<string> {
   const parsed = parseNetworkGetArgs(args);
-  const result = await callTool("get_network_request", parsed);
+  const toolArgs = { ...parsed };
+  if (toolArgs.responseFilePath) {
+    toolArgs.responseFilePath = resolveOutputPath(toolArgs.responseFilePath);
+  }
+  if (toolArgs.requestFilePath) {
+    toolArgs.requestFilePath = resolveOutputPath(toolArgs.requestFilePath);
+  }
+  const result = await callTool("get_network_request", toolArgs);
   return formatMcpResult("request", result, []);
 }
 
@@ -1623,12 +1744,16 @@ async function handleNetworkGet(args: string[]): Promise<string> {
 
 async function handleLighthouse(args: string[]): Promise<string> {
   const opts = parseLighthouseArgs(args);
+  if (opts.outputDirPath) {
+    opts.outputDirPath = resolveOutputPath(opts.outputDirPath);
+  }
   const result = await callTool("lighthouse_audit", opts);
   return formatMcpResult("lighthouse", result, []);
 }
 
 async function handlePerfStart(args: string[]): Promise<string> {
   const opts = parsePerfStartArgs(args);
+  if (opts.filePath) opts.filePath = resolveOutputPath(opts.filePath);
   await callTool("performance_start_trace", opts);
   return encode({ trace: "started", ...opts });
 }
@@ -1636,11 +1761,13 @@ async function handlePerfStart(args: string[]): Promise<string> {
 async function handlePerfStop(args: string[]): Promise<string> {
   const toolArgs: Record<string, unknown> = {};
   for (let i = 0; i < args.length; i++) {
-    if (args[i] === "--file") toolArgs.filePath = args[++i];
+    if (args[i] === "--file" && i + 1 < args.length) {
+      toolArgs.filePath = resolveOutputPath(args[++i]);
+    }
   }
   const result = await callTool("performance_stop_trace", toolArgs);
   return formatMcpResult("trace", result, [
-    "Run `chrome-devtools-axi perf-insight <set-id> <insight-name>` to analyze insights",
+    "Run `axis-browser perf-insight <set-id> <insight-name>` to analyze insights",
   ]);
 }
 
@@ -1648,7 +1775,7 @@ async function handlePerfInsight(args: string[]): Promise<string> {
   const [setId, insightName] = args;
   if (!setId || !insightName) {
     throw new CdpError("Missing required arguments", "VALIDATION_ERROR", [
-      "Run `chrome-devtools-axi perf-insight <set-id> <insight-name>` to analyze an insight",
+      "Run `axis-browser perf-insight <set-id> <insight-name>` to analyze an insight",
     ]);
   }
   const result = await callTool("performance_analyze_insight", {
@@ -1659,12 +1786,13 @@ async function handlePerfInsight(args: string[]): Promise<string> {
 }
 
 async function handleHeap(args: string[]): Promise<string> {
-  const filePath = args[0];
-  if (!filePath) {
+  const rawPath = args[0];
+  if (!rawPath) {
     throw new CdpError("Missing file path", "VALIDATION_ERROR", [
-      "Run `chrome-devtools-axi heap ./snapshot.heapsnapshot` to take a heap snapshot",
+      "Run `axis-browser heap ./snapshot.heapsnapshot` to take a heap snapshot",
     ]);
   }
+  const filePath = resolveOutputPath(rawPath);
   await callTool("take_memory_snapshot", { filePath });
   return encode({ heap: filePath });
 }
@@ -1672,13 +1800,13 @@ async function handleHeap(args: string[]): Promise<string> {
 async function handleRun(): Promise<string> {
   if (process.stdin.isTTY) {
     throw new CdpError("No script provided on stdin", "VALIDATION_ERROR", [
-      "Pipe a script: chrome-devtools-axi run <<'EOF'\\n...\\nEOF",
+      "Pipe a script: axis-browser run <<'EOF'\\n...\\nEOF",
     ]);
   }
   const content = await readStdin();
   if (!content.trim()) {
     throw new CdpError("Empty script on stdin", "VALIDATION_ERROR", [
-      "Pipe a script: chrome-devtools-axi run <<'EOF'\\n...\\nEOF",
+      "Pipe a script: axis-browser run <<'EOF'\\n...\\nEOF",
     ]);
   }
   const result = await runScript(content, callTool);
@@ -1694,8 +1822,8 @@ async function handleSetup(args: string[]): Promise<string> {
       error instanceof Error ? error.message : "Unknown setup option",
       "VALIDATION_ERROR",
       [
-        "Run `chrome-devtools-axi setup` for a read-only report",
-        "Run `chrome-devtools-axi setup hooks` to install agent hooks",
+        "Run `axis-browser setup` for a read-only report",
+        "Run `axis-browser setup hooks` to install agent hooks",
       ],
     );
   }
@@ -1706,7 +1834,7 @@ async function handleSetup(args: string[]): Promise<string> {
     return renderOutput([
       "hooks:\n  status: installed\n  integrations: Claude Code, Codex",
       renderHelp([
-        "Restart your agent session to receive chrome-devtools-axi ambient context",
+        "Restart your agent session to receive axis-browser ambient context",
       ]),
     ]);
   }
@@ -1724,7 +1852,7 @@ async function handleUpdate(args: string[]): Promise<string> {
     (args.length === 1 && (args[0] === "--check" || args[0] === "--help"));
   if (!valid) {
     throw new CdpError("Unknown update option", "VALIDATION_ERROR", [
-      "Run `chrome-devtools-axi update --help`",
+      "Run `axis-browser update --help`",
     ]);
   }
 
@@ -1736,7 +1864,7 @@ async function handleUpdate(args: string[]): Promise<string> {
     renderHelp([
       "Run `npm install -g github:Nirmantix/axis-browser` to update with npm",
       "Run `bun add -g github:Nirmantix/axis-browser` to update with Bun",
-      "`bun add -g chrome-devtools-axi` and `npx -y chrome-devtools-axi` resolve to upstream, not this fork",
+      "Installing `chrome-devtools-axi` from npm gets the upstream base tool, not this fork",
     ]),
   ]);
 }
@@ -1746,7 +1874,7 @@ async function handleHome(_full: boolean): Promise<string> {
   if (!result) {
     return renderOutput([
       encode({ browser: "no active session" }),
-      renderHelp(["Run `chrome-devtools-axi open <url>` to start browsing"]),
+      renderHelp(["Run `axis-browser open <url>` to start browsing"]),
     ]);
   }
   const snapshot = await stampFresh(stripSnapshotHeader(result));
@@ -1756,9 +1884,9 @@ async function handleHome(_full: boolean): Promise<string> {
   if (title) page.title = title;
   page.refs = refs;
   const help: string[] = [
-    "Run `chrome-devtools-axi snapshot` to see page content",
-    "Run `chrome-devtools-axi open <url>` to navigate to a URL",
-    "Run `chrome-devtools-axi --help` to see full command list",
+    "Run `axis-browser snapshot` to see page content",
+    "Run `axis-browser open <url>` to navigate to a URL",
+    "Run `axis-browser --help` to see full command list",
   ];
   return renderOutput([encode({ page }), renderHelp(help)]);
 }
@@ -1814,6 +1942,9 @@ const COMMANDS: Record<string, CommandFn> = {
   "perf-insight": withoutFullFlag(handlePerfInsight),
   heap: withoutFullFlag(handleHeap),
   start: async () => handleStart(),
+  doctor: withoutFullFlag(handleDoctor),
+  reap: withoutFullFlag(handleReap),
+  login: withoutFullFlag(handleLogin),
   stop: async () => handleStop(),
   setup: withoutFullFlag(handleSetup),
   update: withoutFullFlag(handleUpdate),

@@ -1,8 +1,7 @@
 import { readFileSync } from "node:fs";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-const { installHooks, installHooksOrThrow, runAxiCli } = vi.hoisted(() => ({
-  installHooks: vi.fn(),
+const { installHooksOrThrow, runAxiCli } = vi.hoisted(() => ({
   installHooksOrThrow: vi.fn(),
   runAxiCli: vi.fn(),
 }));
@@ -21,7 +20,6 @@ vi.mock("../src/hooks.js", async () => {
     await vi.importActual<typeof import("../src/hooks.js")>("../src/hooks.js");
   return {
     ...actual,
-    installHooks,
     installHooksOrThrow,
   };
 });
@@ -87,7 +85,7 @@ describe("main CLI runtime", () => {
     expect(runAxiCli).toHaveBeenCalledWith(
       expect.objectContaining({
         description:
-          "Axis Browser is a fast, agent-first CLI for Chrome automation and shared CDP workflows. Compatible with `axib` and `chrome-devtools-axi`.",
+          "Axis Browser is a fast, agent-first CLI for Chrome automation and shared CDP workflows. Also runs as the `axib` shorthand.",
         version: packageVersion.version,
         topLevelHelp: TOP_HELP,
       }),

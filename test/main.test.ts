@@ -1,3 +1,4 @@
+import { resolve } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AxiError } from "axi-sdk-js";
 
@@ -41,11 +42,9 @@ describe("main", () => {
     const output = String(write.mock.calls[0]?.[0]);
     expect(output).toContain("bin:");
     expect(output).toContain(
-      'description: "Axis Browser is a fast, agent-first CLI for Chrome automation and shared CDP workflows. Compatible with `axib` and `chrome-devtools-axi`."',
+      'description: "Axis Browser is a fast, agent-first CLI for Chrome automation and shared CDP workflows. Also runs as the `axib` shorthand."',
     );
-    expect(output).toContain(
-      "browser: no active session",
-    );
+    expect(output).toContain("browser: no active session");
   });
 
   it("home view with active session shows metadata but not page content", async () => {
@@ -101,7 +100,7 @@ describe("main", () => {
       const output = String(write.mock.calls[0]?.[0]);
       expect(output).toContain("update: disabled");
       expect(output).toContain("github:Nirmantix/axis-browser");
-      expect(output).toContain("upstream, not this fork");
+      expect(output).toContain("not this fork");
       expect(output).not.toContain("latest published npm version");
       expect(callTool).not.toHaveBeenCalled();
       expect(process.exitCode).toBeUndefined();
@@ -117,7 +116,7 @@ describe("main", () => {
 
     const output = String(write.mock.calls[0]?.[0]);
     expect(output).toContain("github:Nirmantix/axis-browser");
-    expect(output).toContain("upstream, not Nirmantix/axis-browser");
+    expect(output).toContain("upstream base");
     expect(output).not.toContain("latest published npm version");
     expect(callTool).not.toHaveBeenCalled();
     expect(process.exitCode).toBeUndefined();
@@ -166,5 +165,124 @@ describe("main", () => {
       'url: "https://airlockhq.com"',
     );
     expect(process.exitCode).toBeUndefined();
+  });
+
+  it("resolves relative screenshot path against caller cwd before calling MCP", async () => {
+    vi.spyOn(process, "cwd").mockReturnValue("/caller/dir");
+    const write = vi
+      .spyOn(process.stdout, "write")
+      .mockImplementation(() => true);
+    callTool.mockResolvedValueOnce("");
+
+    await main(["screenshot", "./shot.png"]);
+
+    const expected = resolve("/caller/dir", "./shot.png");
+    expect(callTool).toHaveBeenCalledWith("take_screenshot", {
+      filePath: expected,
+    });
+    expect(String(write.mock.calls[0]?.[0])).toContain(expected);
+  });
+
+  it("passes absolute screenshot paths through unchanged", async () => {
+    vi.spyOn(process, "cwd").mockReturnValue("/caller/dir");
+    const write = vi
+      .spyOn(process.stdout, "write")
+      .mockImplementation(() => true);
+    callTool.mockResolvedValueOnce("");
+
+    await main(["screenshot", "/tmp/shot.png"]);
+
+    expect(callTool).toHaveBeenCalledWith("take_screenshot", {
+      filePath: "/tmp/shot.png",
+    });
+    expect(String(write.mock.calls[0]?.[0])).toContain("/tmp/shot.png");
+  });
+
+  it("resolves relative heap path against caller cwd before calling MCP", async () => {
+    vi.spyOn(process, "cwd").mockReturnValue("/caller/dir");
+    const write = vi
+      .spyOn(process.stdout, "write")
+      .mockImplementation(() => true);
+    callTool.mockResolvedValueOnce("");
+
+    await main(["heap", "./snapshot.heapsnapshot"]);
+
+    const expected = resolve("/caller/dir", "./snapshot.heapsnapshot");
+    expect(callTool).toHaveBeenCalledWith("take_memory_snapshot", {
+      filePath: expected,
+    });
+    expect(String(write.mock.calls[0]?.[0])).toContain(expected);
+  });
+
+  it("resolves relative network-get output paths against caller cwd", async () => {
+    vi.spyOn(process, "cwd").mockReturnValue("/caller/dir");
+    vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    callTool.mockResolvedValueOnce("saved");
+
+    await main([
+      "network-get",
+      "42",
+      "--response-file",
+      "./resp.json",
+      "--request-file",
+      "./req.json",
+    ]);
+
+    expect(callTool).toHaveBeenCalledWith("get_network_request", {
+      reqid: 42,
+      responseFilePath: resolve("/caller/dir", "./resp.json"),
+      requestFilePath: resolve("/caller/dir", "./req.json"),
+    });
+  });
+
+  it("resolves relative lighthouse output dir against caller cwd", async () => {
+    vi.spyOn(process, "cwd").mockReturnValue("/caller/dir");
+    vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    callTool.mockResolvedValueOnce("report saved");
+
+    await main(["lighthouse", "--device", "mobile", "--output-dir", "reports"]);
+
+    expect(callTool).toHaveBeenCalledWith("lighthouse_audit", {
+      device: "mobile",
+      outputDirPath: resolve("/caller/dir", "reports"),
+    });
+  });
+
+  it("resolves relative perf-start --file path against caller cwd", async () => {
+    vi.spyOn(process, "cwd").mockReturnValue("/caller/dir");
+    const write = vi
+      .spyOn(process.stdout, "write")
+      .mockImplementation(() => true);
+    callTool.mockResolvedValueOnce("");
+
+    await main(["perf-start", "--file", "trace.json.gz"]);
+
+    const expected = resolve("/caller/dir", "trace.json.gz");
+    expect(callTool).toHaveBeenCalledWith("performance_start_trace", {
+      filePath: expected,
+    });
+    expect(String(write.mock.calls[0]?.[0])).toContain(expected);
+  });
+
+  it("resolves relative perf-stop --file path against caller cwd", async () => {
+    vi.spyOn(process, "cwd").mockReturnValue("/caller/dir");
+    vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    callTool.mockResolvedValueOnce("trace data");
+
+    await main(["perf-stop", "--file", "./trace.json.gz"]);
+
+    expect(callTool).toHaveBeenCalledWith("performance_stop_trace", {
+      filePath: resolve("/caller/dir", "./trace.json.gz"),
+    });
+  });
+
+  it("handles perf-stop --file without a value without resolving it", async () => {
+    vi.spyOn(process, "cwd").mockReturnValue("/caller/dir");
+    vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    callTool.mockResolvedValueOnce("trace data");
+
+    await main(["perf-stop", "--file"]);
+
+    expect(callTool).toHaveBeenCalledWith("performance_stop_trace", {});
   });
 });

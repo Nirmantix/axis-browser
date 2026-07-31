@@ -34,7 +34,7 @@ function tempDir(): string {
 }
 
 function makeBrowserSkill(root: string): string {
-  const skillDir = join(root, "browser-skill");
+  const skillDir = join(root, "browser-bay");
   const scripts = join(skillDir, "scripts");
   mkdirSync(scripts, { recursive: true });
   writeFileSync(
@@ -42,7 +42,7 @@ function makeBrowserSkill(root: string): string {
     [
       "#!/usr/bin/env bash",
       'printf \'check:%s:%s\\n\' "$PWD" "$*"',
-      'printf \'env:%s\\n\' "${AXIS_TEST_ENV:-}"',
+      "printf 'env:%s\\n' \"${AXIS_TEST_ENV:-}\"",
       "exit 0",
       "",
     ].join("\n"),
@@ -52,7 +52,7 @@ function makeBrowserSkill(root: string): string {
     [
       "#!/usr/bin/env bash",
       'printf \'setup:%s:%s\\n\' "$PWD" "$*"',
-      'printf \'env:%s\\n\' "${AXIS_TEST_ENV:-}"',
+      "printf 'env:%s\\n' \"${AXIS_TEST_ENV:-}\"",
       "exit 0",
       "",
     ].join("\n"),
@@ -114,8 +114,10 @@ describe("resolveBrowserSkillDir", () => {
     makeBrowserSkill(portable);
     makeBrowserSkill(standard);
 
-    const env = {
-      BROWSER_SKILL_DIR: envSkill,
+    // Typed as the real Env (NodeJS.ProcessEnv, all-optional) so the delete
+    // calls below — which walk the resolution precedence chain — typecheck.
+    const env: NodeJS.ProcessEnv = {
+      BROWSER_BAY_DIR: envSkill,
       AXIS_BROWSER_HOME: axisHome,
       AXIS_PORTABLE_SKILLS_DIR: portable,
     };
@@ -124,23 +126,116 @@ describe("resolveBrowserSkillDir", () => {
       resolve(envSkill),
     );
 
-    delete env.BROWSER_SKILL_DIR;
+    delete env.BROWSER_BAY_DIR;
     expect(resolveBrowserSkillDir({ env, home, cwd }).path).toBe(
-      resolve(join(axisHome, "skills", "browser-skill")),
+      resolve(join(axisHome, "skills", "browser-bay")),
     );
 
     delete env.AXIS_BROWSER_HOME;
     expect(resolveBrowserSkillDir({ env, home, cwd }).path).toBe(
-      resolve(join(portable, "browser-skill")),
+      resolve(join(portable, "browser-bay")),
     );
 
     delete env.AXIS_PORTABLE_SKILLS_DIR;
     expect(resolveBrowserSkillDir({ env, home, cwd }).path).toBe(
-      resolve(join(standard, "browser-skill")),
+      resolve(join(standard, "browser-bay")),
     );
   });
 
-  it("reports source not configured unless BROWSER_SKILL_SOURCE_URL is set", () => {
+  it.each([
+    [".codex", "skills"],
+    [".config", "agents", "skills"],
+    [".claude", "skills"],
+    [".config", "opencode", "skills"],
+    [".pi", "agent", "skills"],
+    [".agents", "skills"],
+  ])("resolves a skill installed under ~/%s/%s", (...parent) => {
+    const root = tempDir();
+    const home = join(root, "home");
+    const cwd = join(root, "project");
+    const installed = makeBrowserSkill(join(home, ...parent));
+
+    const resolution = resolveBrowserSkillDir({ env: {}, home, cwd });
+
+    expect(resolution.status).toBe("found");
+    expect(resolution.path).toBe(resolve(installed));
+  });
+
+  it("accepts the legacy browser-skill folder name", () => {
+    const root = tempDir();
+    const home = join(root, "home");
+    const cwd = join(root, "project");
+    const legacy = join(home, ".claude", "skills", "browser-skill");
+    mkdirSync(legacy, { recursive: true });
+    writeFileSync(join(legacy, "SKILL.md"), "# legacy\n");
+
+    expect(resolveBrowserSkillDir({ env: {}, home, cwd }).path).toBe(
+      resolve(legacy),
+    );
+  });
+
+  it("prefers browser-bay over browser-skill under the same parent", () => {
+    const root = tempDir();
+    const home = join(root, "home");
+    const cwd = join(root, "project");
+    const parent = join(home, ".claude", "skills");
+    const legacy = join(parent, "browser-skill");
+    mkdirSync(legacy, { recursive: true });
+    writeFileSync(join(legacy, "SKILL.md"), "# legacy\n");
+    const current = makeBrowserSkill(parent);
+
+    expect(resolveBrowserSkillDir({ env: {}, home, cwd }).path).toBe(
+      resolve(current),
+    );
+  });
+
+  it.each([
+    [".codex/skills", [".codex", "skills"]],
+    [".config/agents/skills", [".config", "agents", "skills"]],
+    [".claude/skills", [".claude", "skills"]],
+    [".config/opencode/skills", [".config", "opencode", "skills"]],
+    // pi nests its skills root under ~/.pi/agent/ — a bare ~/.pi/skills is not
+    // a location pi ever reads, so looking there finds nothing.
+    [".pi/agent/skills", [".pi", "agent", "skills"]],
+  ])("discovers a skill installed at the %s host location", (_label, parts) => {
+    const root = tempDir();
+    const home = join(root, "home");
+    const cwd = join(root, "project");
+    const installed = makeBrowserSkill(join(home, ...(parts as string[])));
+
+    expect(resolveBrowserSkillDir({ env: {}, home, cwd }).path).toBe(
+      resolve(installed),
+    );
+  });
+
+  it("accepts legacy BROWSER_SKILL_DIR and browser-skill folder names", () => {
+    const root = tempDir();
+    const home = join(root, "home");
+    const cwd = join(root, "project");
+    const legacyEnv = join(root, "legacy-env", "browser-skill");
+    mkdirSync(join(legacyEnv, "scripts"), { recursive: true });
+    const axisHome = join(root, "axis-home");
+    const legacyUnderAxis = join(axisHome, "skills", "browser-skill");
+    mkdirSync(join(legacyUnderAxis, "scripts"), { recursive: true });
+
+    expect(
+      resolveBrowserSkillDir({
+        env: { BROWSER_SKILL_DIR: legacyEnv },
+        home,
+        cwd,
+      }).path,
+    ).toBe(resolve(legacyEnv));
+
+    expect(
+      resolveBrowserSkillDir({
+        env: { AXIS_BROWSER_HOME: axisHome },
+        home,
+        cwd,
+      }).path,
+    ).toBe(resolve(legacyUnderAxis));
+  });
+
+  it("reports source not configured unless BROWSER_BAY_SOURCE_URL is set", () => {
     const root = tempDir();
     const missing = resolveBrowserSkillDir({
       env: {},
@@ -153,15 +248,15 @@ describe("resolveBrowserSkillDir", () => {
     });
 
     const configured = resolveBrowserSkillDir({
-      env: { BROWSER_SKILL_SOURCE_URL: "https://example.test/skill.git" },
+      env: { BROWSER_BAY_SOURCE_URL: "https://example.test/skill.git" },
       home: join(root, "home"),
       cwd: join(root, "project"),
     });
-    expect(configured.source).toBe("BROWSER_SKILL_SOURCE_URL");
+    expect(configured.source).toBe("BROWSER_BAY_SOURCE_URL");
     expect(configured.sourceUrl).toBe("https://example.test/skill.git");
   });
 
-  it("does not discover project-local browser-skill outside the approved resolver order", () => {
+  it("does not discover project-local browser-bay outside the approved resolver order", () => {
     const root = tempDir();
     const project = join(root, "project");
     makeBrowserSkill(join(project, "skills"));
@@ -180,7 +275,7 @@ describe("resolveBrowserSkillDir", () => {
 });
 
 describe("runSetupWorkflow", () => {
-  it("returns a read-only report when browser-skill is absent", () => {
+  it("returns a read-only report when browser-bay is absent", () => {
     const root = tempDir();
     const report = runSetupWorkflow(workflowArgs([]), {
       cwd: root,
@@ -193,17 +288,17 @@ describe("runSetupWorkflow", () => {
     expect(report.browserSkill.status).toBe("missing");
     expect(report.router.status).toBe("absent");
     expect(report.browserSkill.source).toBe("not configured");
-    expect(report.nextSteps.join("\n")).toContain("BROWSER_SKILL_SOURCE_URL");
+    expect(report.nextSteps.join("\n")).toContain("BROWSER_BAY_SOURCE_URL");
   });
 
-  it("delegates read-only checks to browser-skill when present", () => {
+  it("delegates read-only checks to browser-bay when present", () => {
     const root = tempDir();
     const project = join(root, "project");
     mkdirSync(project);
     const skillDir = makeBrowserSkill(join(root, "skill"));
     const report = runSetupWorkflow(workflowArgs([]), {
       cwd: root,
-      env: { AXIS_TEST_ENV: "from-runtime", BROWSER_SKILL_DIR: skillDir },
+      env: { AXIS_TEST_ENV: "from-runtime", BROWSER_BAY_DIR: skillDir },
       home: join(root, "home"),
       isTTY: false,
     });
@@ -222,7 +317,7 @@ describe("runSetupWorkflow", () => {
     const skillDir = makeBrowserSkill(join(root, "skill"));
     const report = runSetupWorkflow(workflowArgs(["--install"]), {
       cwd: root,
-      env: { BROWSER_SKILL_DIR: skillDir },
+      env: { BROWSER_BAY_DIR: skillDir },
       home: join(root, "home"),
       isTTY: false,
     });
@@ -238,7 +333,7 @@ describe("runSetupWorkflow", () => {
     const skillDir = makeBrowserSkill(join(root, "skill"));
     const report = runSetupWorkflow(workflowArgs(["--install", "--yes"]), {
       cwd: root,
-      env: { BROWSER_SKILL_DIR: skillDir },
+      env: { BROWSER_BAY_DIR: skillDir },
       home: join(root, "home"),
       isTTY: false,
     });
@@ -260,7 +355,7 @@ describe("runSetupWorkflow", () => {
       workflowArgs(["--install", "--yes", "--project", project]),
       {
         cwd: root,
-        env: { BROWSER_SKILL_DIR: skillDir },
+        env: { BROWSER_BAY_DIR: skillDir },
         home: join(root, "home"),
         isTTY: false,
       },
@@ -275,8 +370,7 @@ describe("runSetupWorkflow", () => {
 
 describe("chromeCheck", () => {
   it("detects Windows Chrome install locations", () => {
-    const chrome =
-      "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe";
+    const chrome = "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe";
     const result = chromeCheck("win32", (path) => path === chrome);
     expect(result).toEqual({ status: "ok", path: chrome });
   });
@@ -308,7 +402,6 @@ describe("chromeCheck", () => {
       }
     }
   });
-
 });
 
 describe("setup docs and source portability", () => {

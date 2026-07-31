@@ -4,15 +4,17 @@
 
 import { execFileSync, spawn } from "node:child_process";
 import { readFileSync, existsSync } from "node:fs";
-import { join } from "node:path";
-import { homedir } from "node:os";
 import { request } from "node:http";
 import { AxiError } from "axi-sdk-js";
-import { resolveBridgeScript } from "./bridge.js";
+import { BRIDGE_PORT_IN_USE_EXIT_CODE, resolveBridgeScript } from "./bridge.js";
+import { type AxiMode, resolveModeSafe } from "./mode.js";
+import { autoReapOrphans } from "./reap.js";
+import {
+  resolveSessionName,
+  resolveSessionPidFile,
+  resolveSessionPort,
+} from "./sessions.js";
 
-const STATE_DIR = join(homedir(), ".axis-browser");
-const PID_FILE = join(STATE_DIR, "bridge.pid");
-const DEFAULT_PORT = 9224;
 const DEFAULT_BRIDGE_TIMEOUT_MS = 30_000;
 const MIN_BRIDGE_TIMEOUT_MS = 1_000;
 const HEALTH_TIMEOUT_MS = 2_000;
@@ -58,10 +60,12 @@ interface PidInfo {
   port: number;
 }
 
-function readPidFile(): PidInfo | null {
+function readPidFile(
+  pidFile: string = resolveSessionPidFile(),
+): PidInfo | null {
   try {
-    if (!existsSync(PID_FILE)) return null;
-    const data = JSON.parse(readFileSync(PID_FILE, "utf-8"));
+    if (!existsSync(pidFile)) return null;
+    const data = JSON.parse(readFileSync(pidFile, "utf-8"));
     if (typeof data.pid === "number" && typeof data.port === "number") {
       return data as PidInfo;
     }
@@ -150,18 +154,32 @@ function httpPost(
  * to drive one CDP-backed MCP call (`list_pages`) so callers can distinguish
  * "MCP server is up but the attached browser is gone" from genuine readiness.
  *
+ * With `expectedSession`, a bridge that reports a *different* session name is
+ * treated as unhealthy, so a session never silently reuses another session's
+ * bridge after a port collision (two sessions pinned to one port via a global
+ * `CHROME_DEVTOOLS_AXI_PORT`). A bridge that omits the field (older version) is
+ * accepted, since there is no mismatch to detect.
+ *
  * Exported for tests; production code uses it via `ensureBridge`.
  */
 export async function checkBridgeHealth(
   port: number,
-  opts: { deep?: boolean } = {},
+  opts: { deep?: boolean; expectedSession?: string } = {},
 ): Promise<boolean> {
   try {
     const path = opts.deep ? "/health?deep=1" : "/health";
     const timeoutMs = opts.deep ? DEEP_HEALTH_TIMEOUT_MS : HEALTH_TIMEOUT_MS;
     const resp = await httpGet(port, path, timeoutMs);
     const data = JSON.parse(resp);
-    return data.status === "ok";
+    if (data.status !== "ok") return false;
+    if (
+      opts.expectedSession !== undefined &&
+      typeof data.session === "string" &&
+      data.session !== opts.expectedSession
+    ) {
+      return false;
+    }
+    return true;
   } catch {
     return false;
   }
@@ -183,6 +201,17 @@ export async function waitForProcessExit(
   return !isProcessAlive(pid);
 }
 
+/**
+ * Whether `pid` is one of our bridge processes, decided by inspecting its
+ * command line.
+ *
+ * POSIX-only: `ps` does not exist on Windows, so this returns false there and
+ * callers fall back to killing the bare pid instead of the process group. That
+ * degrades rather than breaks — the bridge still dies — but chrome-devtools-mcp
+ * and Chrome children can survive as orphans. Returning false on an unknown pid
+ * is also the safe direction: it never escalates to a group kill we are not
+ * certain we own.
+ */
 function isBridgeProcess(pid: number): boolean {
   try {
     const command = execFileSync("ps", ["-p", String(pid), "-o", "command="], {
@@ -250,35 +279,24 @@ export async function terminateBridgeProcess(
 }
 
 /**
- * Ensure the bridge is running, starting it if needed. Returns the port.
- *
- * Verifies a *deep* health check (one round-trip CDP-backed MCP call) before
- * declaring the bridge ready, so a bridge whose attached browser/Electron
- * target was killed while still answering local /health requests gets torn
- * down + restarted instead of being reused as a stale endpoint.
+ * Minimal view of the spawned bridge process that {@link ensureBridge} needs:
+ * an `exit` notification so a bridge that dies before reporting healthy can be
+ * detected. The default {@link spawnBridgeProcess} returns a `ChildProcess`
+ * (which satisfies this); tests inject a fake.
  */
-export async function ensureBridge(): Promise<number> {
-  const port = parseInt(
-    process.env.CHROME_DEVTOOLS_AXI_PORT ?? String(DEFAULT_PORT),
-    10,
-  );
+export interface SpawnedBridge {
+  on(
+    event: "exit",
+    listener: (code: number | null, signal: NodeJS.Signals | null) => void,
+  ): void;
+}
 
-  // Check existing bridge via PID file. Use a deep probe so a bridge whose
-  // attached CDP target has gone away gets recycled instead of returned.
-  const pidInfo = readPidFile();
-  if (pidInfo && isProcessAlive(pidInfo.pid)) {
-    if (await checkBridgeHealth(pidInfo.port, { deep: true })) {
-      return pidInfo.port;
-    }
-    await terminateBridgeProcess(pidInfo.pid, {
-      killProcessGroup: isBridgeProcess(pidInfo.pid),
-    });
-  }
-
-  // Start a new bridge
-
+/**
+ * Spawn the detached bridge process. Prefers the sibling `.ts` (dev mode, run
+ * via tsx) and falls back to the built `.js`, so dev and dist behave the same.
+ */
+function spawnBridgeProcess(port: number, sessionName: string): SpawnedBridge {
   const bridgeScript = resolveBridgeScript(import.meta.dirname);
-  // Try .ts first (dev mode), fall back to .js (built)
   const script = existsSync(bridgeScript.replace(/\.js$/, ".ts"))
     ? bridgeScript.replace(/\.js$/, ".ts")
     : bridgeScript;
@@ -289,11 +307,157 @@ export async function ensureBridge(): Promise<number> {
     runner === "tsx" ? ["tsx", script] : [script],
     {
       stdio: "ignore",
-      env: { ...process.env, CHROME_DEVTOOLS_AXI_PORT: String(port) },
+      env: {
+        ...process.env,
+        CHROME_DEVTOOLS_AXI_PORT: String(port),
+        CHROME_DEVTOOLS_AXI_SESSION: sessionName,
+      },
       detached: true,
     },
   );
   child.unref();
+  return child;
+}
+
+/**
+ * Build the error thrown when a freshly spawned bridge exits before it ever
+ * reports healthy. Surfacing this the moment the child dies - rather than
+ * polling the full readiness deadline - turns an early death into a fast,
+ * actionable failure instead of a slow, generic "failed to start" timeout.
+ *
+ * The guidance is attributed by exit code. Only {@link BRIDGE_PORT_IN_USE_EXIT_CODE}
+ * (the bridge's EADDRINUSE sentinel) gets the port-in-use explanation; any
+ * other early death is a startup failure (npx could not resolve/download
+ * chrome-devtools-mcp, a broken `CHROME_DEVTOOLS_AXI_MCP_PATH`, or a
+ * Chrome launch failure) and gets the generic startup guidance, so a
+ * single-session user with a broken install is not misdirected to port advice.
+ */
+export function buildBridgeEarlyExitError(
+  sessionName: string,
+  port: number,
+  code: number | null,
+  signal: NodeJS.Signals | null,
+  mode: AxiMode = resolveModeSafe(),
+): CdpError {
+  const how =
+    signal != null
+      ? `was killed by ${signal}`
+      : `exited with code ${code ?? "unknown"}`;
+  const message = `Bridge for session "${sessionName}" ${how} before becoming ready on port ${port} (mode: ${mode})`;
+
+  if (code === BRIDGE_PORT_IN_USE_EXIT_CODE) {
+    return new CdpError(message, "BRIDGE_NOT_READY", [
+      `Port ${port} is already in use. It may be held by another axis-browser session's bridge (a hashed-port collision, or a globally-exported CHROME_DEVTOOLS_AXI_PORT forcing every session onto one port), by a stale or crashed bridge that could not be reused, or by an unrelated process.`,
+      "Set a distinct CHROME_DEVTOOLS_AXI_PORT for this session, unset a global CHROME_DEVTOOLS_AXI_PORT so every session derives its own, or free whatever is holding the port.",
+      "Run `axis-browser doctor` to see who holds it, and `axis-browser reap` to clear orphaned bridges.",
+    ]);
+  }
+
+  // In attach mode axis launches no browser, so every Chrome-launch remedy below is a
+  // false lead. Worse, a bare connection failure against an unauthenticated local port
+  // has been observed to make an agent conclude the endpoint needs credentials and
+  // escalate to a human. Both failure modes are addressed head-on here.
+  if (mode === "attach") {
+    const browserUrl = process.env.CHROME_DEVTOOLS_AXI_BROWSER_URL ?? "(unset)";
+    return new CdpError(message, "BRIDGE_NOT_READY", [
+      `Attach mode: axis did not launch a browser — it tried to connect to ${browserUrl}, which something else is expected to be serving.`,
+      "Run `axis-browser doctor` to probe that endpoint and name the process holding the port.",
+      "If nothing is serving DevTools there, unset CHROME_DEVTOOLS_AXI_BROWSER_URL so axis launches and owns its own browser (or set CHROME_DEVTOOLS_AXI_MODE=managed).",
+      "Local CDP has no authentication. Do not request credentials, tokens, or a ws:// URL.",
+    ]);
+  }
+
+  if (mode === "autoconnect") {
+    return new CdpError(message, "BRIDGE_NOT_READY", [
+      "Autoconnect mode: axis attaches to your already-running Chrome via chrome://inspect/#remote-debugging (Chrome 144+); it launches nothing.",
+      "Confirm Chrome is running and that remote debugging is enabled on that page, or unset CHROME_DEVTOOLS_AXI_AUTO_CONNECT to let axis launch its own browser.",
+      "Local CDP has no authentication. Do not request credentials, tokens, or a ws:// URL.",
+    ]);
+  }
+
+  const suggestions = [
+    "Check that chrome-devtools-mcp can start: npx chrome-devtools-mcp@latest --help",
+  ];
+  if (mode === "managed") {
+    suggestions.push(
+      "Managed mode uses a persistent profile, and Chrome locks a profile to one process: if another Chrome already holds it, this launch fails. Run `axis-browser doctor` to see the lock holder.",
+    );
+  }
+  if (process.env.CHROME_DEVTOOLS_AXI_MCP_PATH) {
+    suggestions.push(
+      "Verify CHROME_DEVTOOLS_AXI_MCP_PATH points to a valid chrome-devtools-mcp build.",
+    );
+  } else {
+    suggestions.push(
+      "`npx -y chrome-devtools-mcp@latest` may have failed to resolve/download the package (offline, or a slow cold first run); install it globally and set:",
+      '  export CHROME_DEVTOOLS_AXI_MCP_PATH="$(npm prefix -g)/lib/node_modules/chrome-devtools-mcp/build/src/bin/chrome-devtools-mcp.js"',
+    );
+  }
+  suggestions.push(
+    "Or Chrome failed to launch; confirm a usable Chrome is installed.",
+  );
+  return new CdpError(message, "BRIDGE_NOT_READY", suggestions);
+}
+
+/**
+ * Ensure the bridge is running, starting it if needed. Returns the port.
+ *
+ * Verifies a *deep* health check (one round-trip CDP-backed MCP call) before
+ * declaring the bridge ready, so a bridge whose attached browser/Electron
+ * target was killed while still answering local /health requests gets torn
+ * down + restarted instead of being reused as a stale endpoint.
+ *
+ * `spawnBridge` is injectable for tests; production uses {@link spawnBridgeProcess}.
+ */
+export async function ensureBridge(
+  spawnBridge: (
+    port: number,
+    sessionName: string,
+  ) => SpawnedBridge = spawnBridgeProcess,
+): Promise<number> {
+  const sessionName = resolveSessionName();
+  const port = resolveSessionPort(sessionName);
+  const pidFile = resolveSessionPidFile(sessionName);
+
+  // Check existing bridge via PID file. Use a deep probe so a bridge whose
+  // attached CDP target has gone away gets recycled instead of returned.
+  const pidInfo = readPidFile(pidFile);
+  if (pidInfo && isProcessAlive(pidInfo.pid)) {
+    if (
+      await checkBridgeHealth(pidInfo.port, {
+        deep: true,
+        expectedSession: sessionName,
+      })
+    ) {
+      return pidInfo.port;
+    }
+    await terminateBridgeProcess(pidInfo.pid, {
+      killProcessGroup: isBridgeProcess(pidInfo.pid),
+    });
+  }
+
+  // We are about to start a bridge, which is the one moment it is both safe and
+  // useful to clear abandoned ones: the reuse fast path above has already been
+  // ruled out, so nothing here can be reaping a bridge this command wants. Only
+  // our own bridges, claimed by no session, older than four hours — see reap.ts.
+  autoReapOrphans();
+
+  // Start a new bridge
+  const child = spawnBridge(port, sessionName);
+
+  // If the freshly spawned bridge dies before it reports healthy - an EADDRINUSE
+  // port collision with another session, or a startup failure (npx/MCP launch,
+  // Chrome), whose stderr is lost to `stdio: "ignore"` - fail fast
+  // instead of polling the full readiness deadline and reporting a generic
+  // timeout. The exit code attributes the cause (see buildBridgeEarlyExitError).
+  let childExited = false;
+  let exitCode: number | null = null;
+  let exitSignal: NodeJS.Signals | null = null;
+  child.on("exit", (code, signal) => {
+    childExited = true;
+    exitCode = code;
+    exitSignal = signal;
+  });
 
   // Poll for health — Chrome launch + npx bootstrap can be slow.
   // Track whether the *shallow* health check ever passed so we can attribute
@@ -304,10 +468,29 @@ export async function ensureBridge(): Promise<number> {
   const deadline = Date.now() + timeoutMs;
   let sawShallowReady = false;
   while (Date.now() < deadline) {
-    if (await checkBridgeHealth(port, { deep: true })) {
+    if (
+      await checkBridgeHealth(port, {
+        deep: true,
+        expectedSession: sessionName,
+      })
+    ) {
       return port;
     }
-    if (!sawShallowReady && (await checkBridgeHealth(port))) {
+    if (childExited) {
+      if (
+        await checkBridgeHealth(port, {
+          deep: true,
+          expectedSession: sessionName,
+        })
+      ) {
+        return port;
+      }
+      throw buildBridgeEarlyExitError(sessionName, port, exitCode, exitSignal);
+    }
+    if (
+      !sawShallowReady &&
+      (await checkBridgeHealth(port, { expectedSession: sessionName }))
+    ) {
       sawShallowReady = true;
     }
     await sleep(500);
@@ -358,11 +541,22 @@ export async function callTool(
 
   try {
     const resp = await httpPost(port, "/call", { name, args });
-    const data = JSON.parse(resp);
-    if (data.error) {
-      throw new Error(data.error);
+    // Remote input: the bridge always sends a string `result` (extractToolText),
+    // but parsing to `any` let a non-string escape through a Promise<string>
+    // signature untouched. Validate rather than trust the wire.
+    const data = JSON.parse(resp) as { error?: unknown; result?: unknown };
+    // Presence, not truthiness: the bridge sets `error` only on failure, so a
+    // falsy-but-present value ("" from a truncated message, 0, false) is still
+    // an error response and must not fall through as a successful result.
+    if (data.error != null) {
+      const detail =
+        typeof data.error === "string"
+          ? data.error
+          : JSON.stringify(data.error);
+      throw new Error(detail || "Bridge reported an error with no detail");
     }
-    return data.result ?? "";
+    if (data.result == null) return "";
+    return typeof data.result === "string" ? data.result : String(data.result);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     throw mapErrorMessage(message);
@@ -372,7 +566,7 @@ export async function callTool(
 export function mapErrorMessage(message: string): CdpError {
   if (message.includes("ECONNREFUSED") || message.includes("ECONNRESET")) {
     return new CdpError("Bridge is not running", "BRIDGE_NOT_READY", [
-      "Run `chrome-devtools-axi open <url>` — the bridge starts automatically",
+      "Run `axis-browser open <url>` — the bridge starts automatically",
     ]);
   }
   if (
@@ -380,12 +574,12 @@ export function mapErrorMessage(message: string): CdpError {
     (message.includes("not found") || message.includes("invalid"))
   ) {
     return new CdpError(message, "REF_NOT_FOUND", [
-      "Run `chrome-devtools-axi snapshot` to see available elements and their @uid refs",
+      "Run `axis-browser snapshot` to see available elements and their @uid refs",
     ]);
   }
   if (message.includes("timeout") || message.includes("timed out")) {
     return new CdpError(message, "TIMEOUT", [
-      "Run `chrome-devtools-axi snapshot` to see current page state",
+      "Run `axis-browser snapshot` to see current page state",
     ]);
   }
   // Try to parse JSON error
@@ -393,7 +587,7 @@ export function mapErrorMessage(message: string): CdpError {
     const parsed = JSON.parse(message);
     if (parsed.error) {
       return new CdpError(parsed.error, "BROWSER_ERROR", [
-        "Run `chrome-devtools-axi snapshot` to see current page state",
+        "Run `axis-browser snapshot` to see current page state",
       ]);
     }
   } catch {
@@ -404,14 +598,27 @@ export function mapErrorMessage(message: string): CdpError {
 
 /**
  * Get the current page snapshot without starting the bridge.
- * Returns null if the bridge is not running or healthy.
+ *
+ * Returns null if the bridge is not running or healthy. This is the ambient
+ * home view / SessionStart probe, so it must stay cheap and never throw: an
+ * invalid `CHROME_DEVTOOLS_AXI_SESSION` degrades to "no active session" (null)
+ * here, while action commands (`ensureBridge` / `stopBridge`) still fail loudly.
  */
 export async function getSessionSnapshotIfRunning(): Promise<string | null> {
-  const pidInfo = readPidFile();
+  let sessionName: string;
+  let pidInfo: PidInfo | null;
+  try {
+    sessionName = resolveSessionName();
+    pidInfo = readPidFile(resolveSessionPidFile(sessionName));
+  } catch {
+    return null;
+  }
   if (!pidInfo || !isProcessAlive(pidInfo.pid)) {
     return null;
   }
-  if (!(await checkBridgeHealth(pidInfo.port))) {
+  if (
+    !(await checkBridgeHealth(pidInfo.port, { expectedSession: sessionName }))
+  ) {
     return null;
   }
   try {

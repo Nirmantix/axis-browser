@@ -8,7 +8,7 @@ logic is not overwritten by upstream defaults.
 
 - Fork repository: `Nirmantix/axis-browser`
 - Upstream repository: `kunchenguid/chrome-devtools-axi`
-- Current synced upstream version: `0.1.25`
+- Current synced upstream version: `0.1.26`
 - Integration strategy: merge upstream into the fork branch; do not rebase
   public fork history.
 
@@ -17,7 +17,7 @@ logic is not overwritten by upstream defaults.
 `package.json` must keep:
 
 - `"name": "chrome-devtools-axi"`
-- `"version": "0.1.25"` for this sync
+- `"version": "0.1.26"` for this sync
 - `bin.chrome-devtools-axi`
 - `bin.axis-browser`
 - `bin.axib`
@@ -32,13 +32,19 @@ must still point users to `github:Nirmantix/axis-browser`, not npm
 
 ## Fork Runtime State
 
-Keep the Axis state directory:
+Keep the Axis state directory. There is exactly one definition to guard:
 
-- `src/bridge.ts`: `STATE_DIR = join(homedir(), ".axis-browser")`
-- `src/client.ts`: `STATE_DIR = join(homedir(), ".axis-browser")`
-- `src/generation.ts`: `STATE_DIR = join(homedir(), ".axis-browser")`
+- `src/sessions.ts`: `STATE_DIR_NAME = ".axis-browser"`
+
+`src/bridge.ts`, `src/client.ts`, and `src/generation.ts` do **not** define a
+state path of their own — they resolve it through `resolveSessionStateDir()` /
+`resolveSessionPidFile()` in `src/sessions.ts`. Guarding that one constant
+covers all three.
 
 Do not restore upstream `~/.chrome-devtools-axi` paths.
+
+Named sessions (`CHROME_DEVTOOLS_AXI_SESSION`) live under
+`~/.axis-browser/sessions/<name>/`, also derived from `STATE_DIR_NAME`.
 
 ## Fork-Owned Update Command
 
@@ -106,14 +112,14 @@ Required setup behavior:
   unless the operator explicitly passes `--yes`.
 - Setup must never write secrets, `.env` files, shell rc files, MCP credential
   files, or user credential stores.
-- Resolve `browser-skill` in this order:
-  `BROWSER_SKILL_DIR`, `AXIS_BROWSER_HOME/skills/browser-skill`,
-  `AXIS_PORTABLE_SKILLS_DIR/browser-skill`, then standard agent skill
+- Resolve `browser-bay` in this order:
+  `BROWSER_BAY_DIR`, `AXIS_BROWSER_HOME/skills/browser-bay`,
+  `AXIS_PORTABLE_SKILLS_DIR/browser-bay`, then standard agent skill
   locations.
 - Do not hardcode personal workstation paths.
 - If the router is absent, report core Axis status and say the router source is
-  not configured unless `BROWSER_SKILL_SOURCE_URL` is set.
-- Do not assume a public `browser-skill` repository URL until one exists.
+  not configured unless `BROWSER_BAY_SOURCE_URL` is set.
+- Do not assume a public `browser-bay` repository URL until one exists.
 
 ## Rejected Upstream Skill And Infra
 
@@ -183,5 +189,5 @@ node dist/bin/chrome-devtools-axi.js update --help
 Expected version output for this sync:
 
 ```text
-0.1.25
+0.1.26
 ```

@@ -3,11 +3,40 @@ Task Shortcode: ;abuse
 Purpose: use the Axis Browser workflow for a browser-related task.
 
 Associated skill:
-- ./skills/browser-skill when run from the axis-browser checkout, BROWSER_SKILL_DIR when set, or AXIS_BROWSER_HOME/skills/browser-skill when AXIS_BROWSER_HOME is set
+- Resolved in this order, explicit configuration before implicit location: BROWSER_BAY_DIR (or legacy BROWSER_SKILL_DIR), then $AXIS_BROWSER_HOME/skills, $AXIS_PORTABLE_SKILLS_DIR, ./skills when run from the axis-browser checkout, then the standard agent skill locations. The snippet below is the authority; this line only summarises it
+
+
+Resolve the skill directory first — the discovery sources above are only useful if the
+commands actually use them. `BROWSER_BAY_DIR` may be unset on a fallback or legacy install,
+and an unresolved path would then run `bash "/scripts/..."` and fail with
+a confusing path error:
+
+```bash
+BB=""
+c="${BROWSER_BAY_DIR:-${BROWSER_SKILL_DIR:-}}"
+[ -n "$c" ] && [ -d "$c" ] && BB="$c"
+for p in "${AXIS_BROWSER_HOME:+$AXIS_BROWSER_HOME/skills}" "${AXIS_PORTABLE_SKILLS_DIR:-}" \
+         ./skills "$HOME/.codex/skills" "$HOME/.config/agents/skills" \
+         "$HOME/.claude/skills" "$HOME/.config/opencode/skills" \
+         "$HOME/.pi/agent/skills" "$HOME/.agents/skills"; do
+  [ -n "$BB" ] && break
+  [ -n "$p" ] || continue
+  for n in browser-bay browser-skill; do
+    if [ -d "$p/$n" ]; then BB="$p/$n"; break; fi
+  done
+done
+[ -d "$BB" ] || { echo "browser-bay not found; set BROWSER_BAY_DIR"; exit 2; }
+
+```
+
+Use `"$BB"` in place of `"$BROWSER_BAY_DIR"` in the commands below.
 
 Launcher rules:
-- Resolve BROWSER_SKILL_DIR.
-- Load "$BROWSER_SKILL_DIR/SKILL.md".
+- Resolve "$BB" with the snippet above.
+- Load "$BB/SKILL.md".
+- Ensure cwd is the target product project (not $HOME).
+- Run bash "$BB/scripts/ensure-project-ready.sh" before browser work.
+  If exit 2, stop and ask the operator to approve setup.sh in that project first.
 - Pass the operator's browser task through verbatim.
 - Follow SKILL.md for all routing, tools, references, fallbacks, safety rules, and reporting.
 

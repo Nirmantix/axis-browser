@@ -4,14 +4,14 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Setup — Axis Browser</title>
-    <meta name="description" content="Install Axis Browser, initialize browser-skill artifacts, and verify browser tooling for any project.">
+    <meta name="description" content="Install Axis Browser, initialize browser-bay artifacts, and verify browser tooling for any project.">
     <meta property="og:title" content="Setup — Axis Browser">
-    <meta property="og:description" content="Install Axis Browser, initialize browser-skill artifacts, and verify browser tooling for any project.">
+    <meta property="og:description" content="Install Axis Browser, initialize browser-bay artifacts, and verify browser tooling for any project.">
     <meta property="og:image" content="./og-image.png">
     <meta property="og:type" content="website">
     <meta name="twitter:card" content="summary_large_image">
     <meta name="twitter:title" content="Setup — Axis Browser">
-    <meta name="twitter:description" content="Install Axis Browser, initialize browser-skill artifacts, and verify browser tooling for any project.">
+    <meta name="twitter:description" content="Install Axis Browser, initialize browser-bay artifacts, and verify browser tooling for any project.">
     <meta name="twitter:image" content="./og-image.png">
     <link rel="icon" type="image/svg+xml" href="./favicon.svg">
     <link rel="icon" sizes="any" href="./favicon.ico">
@@ -40,7 +40,7 @@
 
       <section class="intro" aria-labelledby="page-title">
         <h1 id="page-title">Two setup routes: current workstation or fresh machine.</h1>
-        <p>The browser-skill folder is portable. Installed browser tools are machine-local. Each target project still needs `.tmp/` artifact setup, and Playwright stays project-local for deterministic scripts, traces, or CI.</p>
+        <p>The browser-bay folder is portable. Installed browser tools are machine-local. Each target project still needs <code>.tmp/</code> artifact setup, and Playwright stays project-local for deterministic scripts, traces, or CI.</p>
       </section>
 
       <section class="section" aria-labelledby="portability">
@@ -50,7 +50,7 @@
             <thead>
               <tr>
                 <th>Thing</th>
-                <th>Portable by pointing at a browser-skill checkout?</th>
+                <th>Portable by pointing at a browser-bay checkout?</th>
                 <th>Still needed per project or machine?</th>
               </tr>
             </thead>
@@ -58,7 +58,7 @@
               <tr>
                 <td>Workflow brain</td>
                 <td>Yes. The skill router, references, and scripts can be reused from this checkout.</td>
-                <td>The agent must know the path through `BROWSER_SKILL_DIR`, `AXIS_BROWSER_HOME`, or an agent-supported skill location.</td>
+                <td>The agent must know the path through <code>BROWSER_BAY_DIR</code>, <code>AXIS_BROWSER_HOME</code>, or an agent-supported skill location.</td>
               </tr>
               <tr>
                 <td>Axis Browser CLI</td>
@@ -68,12 +68,12 @@
               <tr>
                 <td>Browser Harness, optional CLIs, Playwright browsers</td>
                 <td>No. These are machine/project dependencies, not bundled inside the skill.</td>
-                <td>Use `axis-browser setup` to see what is available; install Playwright inside target projects only when needed.</td>
+                <td>Use <code>axis-browser setup</code> to see what is available; install Playwright inside target projects only when needed.</td>
               </tr>
               <tr>
                 <td>Project artifacts</td>
-                <td>No. `.tmp/` belongs to the target project.</td>
-                <td>Run `axis-browser setup --install --project &lt;path&gt;` for each project where browser evidence will be saved.</td>
+                <td>No. <code>.tmp/</code> belongs to the target project.</td>
+                <td>Run <code>axis-browser setup --install --project &lt;path&gt;</code> for each project where browser evidence will be saved.</td>
               </tr>
             </tbody>
           </table>
@@ -103,7 +103,7 @@ axis-browser setup --json --project .</pre>
           </article>
           <article class="phase-card">
             <strong>Best for team repos</strong>
-            <p>Copy the skill to `.agents/skills/browser-skill/` or the host-specific project path when the repo should carry the workflow with it.</p>
+            <p>Copy the skill to <code>.agents/skills/browser-bay/</code> or the host-specific project path when the repo should carry the workflow with it.</p>
           </article>
           <article class="phase-card">
             <strong>Still project-local</strong>
@@ -129,31 +129,31 @@ axis-browser --version
 axib --version
 chrome-devtools-axi --version
 
-<span class="comment"># 3. Optional: install browser-skill somewhere setup can find it.</span>
+<span class="comment"># 3. Optional: install browser-bay somewhere setup can find it.</span>
 mkdir -p "$HOME/.config/agents/skills"
 
-<span class="comment"># Copy browser-skill from a trusted checkout, shared archive, or internal repo.</span>
-cp -R /path/to/browser-skill "$HOME/.config/agents/skills/browser-skill"
+<span class="comment"># Copy browser-bay from a trusted checkout, shared archive, or internal repo.</span>
+cp -R /path/to/browser-bay "$HOME/.config/agents/skills/browser-bay"
 
-export BROWSER_SKILL_DIR="$HOME/.config/agents/skills/browser-skill"
+export BROWSER_BAY_DIR="$HOME/.config/agents/skills/browser-bay"
 
 <span class="comment"># 4. Review workflow readiness.</span>
 axis-browser setup
 
 <span class="comment"># 5. In each target project, run permission-gated setup.</span>
 axis-browser setup --install --project /path/to/target-project</pre>
-          <p class="muted-lead">`npx -y chrome-devtools-axi` resolves the upstream npm package, not the Axis Browser GitHub fork. Use the GitHub install path for this fork.</p>
+          <p class="muted-lead"><code>npx -y chrome-devtools-axi</code> resolves the upstream npm package, not the Axis Browser GitHub fork. Use the GitHub install path for this fork.</p>
         </div>
         <div class="feature-board">
-          <p class="muted-lead">Setup resolver order: `BROWSER_SKILL_DIR`, `$AXIS_BROWSER_HOME/skills/browser-skill`, `$AXIS_PORTABLE_SKILLS_DIR/browser-skill`, then standard agent skill locations.</p>
+          <p class="muted-lead">Setup resolver order: <code>BROWSER_BAY_DIR</code>, <code>$AXIS_BROWSER_HOME/skills/browser-bay</code>, <code>$AXIS_PORTABLE_SKILLS_DIR/browser-bay</code>, then standard agent skill locations.</p>
           <div class="workflow-chain">
             <article class="phase-card">
               <strong>macOS</strong>
-              <p>Use Homebrew or standard installers for Node.js, `uv`, `jq`, ImageMagick, and optional CLIs. Axis Browser itself is a Node global install.</p>
+              <p>Use Homebrew or standard installers for Node.js, <code>uv</code>, <code>jq</code>, ImageMagick, and optional CLIs. Axis Browser itself is a Node global install.</p>
             </article>
             <article class="phase-card">
               <strong>Linux</strong>
-              <p>The core CLI and browser-skill work. Use the distro package manager for Node.js 20+, Chromium/Chrome, `uv`, and optional utilities.</p>
+              <p>The core CLI and browser-bay work. Use the distro package manager for Node.js 20+, Chromium/Chrome, <code>uv</code>, and optional utilities.</p>
             </article>
             <article class="phase-card">
               <strong>Windows</strong>
@@ -186,7 +186,7 @@ axis-browser setup --install --project /path/to/target-project</pre>
             </tr>
             <tr>
               <td>Interactive browser work</td>
-              <td><code>uv --version</code><br><code>git clone https://github.com/browser-use/browser-harness "$HOME/Developer/browser-harness"</code><br><code>(cd "$HOME/Developer/browser-harness" &amp;&amp; uv tool install -e .)</code></td>
+              <td><code>uv --version</code><br><code>export BROWSER_HARNESS_DIR="${BROWSER_HARNESS_DIR:-${AXIS_BROWSER_HOME:-$HOME/Developer}/browser-harness}"</code><br><code>git clone https://github.com/browser-use/browser-harness "$BROWSER_HARNESS_DIR"</code><br><code>(cd "$BROWSER_HARNESS_DIR" &amp;&amp; uv tool install -e .)</code></td>
               <td>Browser Harness is the default high-capability browser control path in the skill router.</td>
             </tr>
             <tr>
@@ -205,9 +205,14 @@ axis-browser setup --install --project /path/to/target-project</pre>
 axis-browser setup --json
 axis-browser setup --project /path/to/project
 axis-browser setup --install --project /path/to/project
+
+<span class="comment"># Runtime readiness is a separate question from install readiness:</span>
+axis-browser doctor --json
+
 axis-browser open https://example.com
 axis-browser snapshot</pre>
           <p class="muted-lead">Default setup is read-only. Install mode is permission-gated, keeps credentials out of files, and never installs project-local libraries globally.</p>
+          <p class="muted-lead"><code>setup</code> reports whether the machine is installed correctly; <code>doctor</code> reports whether a browser command will work <em>right now</em> — active connection mode, endpoint, profile and lock state, bridges — with a <code>remedies</code> array of syntactically runnable commands — not all of them safe to run unattended. Run the reversible ones (<code>unset …</code>) directly; confirm the destructive ones (<code>axis-browser reap</code>, <code>axis-browser stop</code>, <code>rm &lt;path&gt;</code>) with a human first. Escalate outright only for <code>NEEDS_INTERACTIVE_LOGIN</code> or <code>PORT_HELD_BY_FOREIGN_PROCESS</code>. Local CDP has no authentication, so a failed local connection is never a missing token.</p>
         </div>
       </section>
 
@@ -225,12 +230,12 @@ axis-browser snapshot</pre>
             <tr>
               <td><code>;absetup</code></td>
               <td>Machine setup audit</td>
-              <td><code>prompts/absetup.md</code> (browser-skill machine-setup workflow)</td>
+              <td><code>prompts/absetup.md</code> (browser-bay machine-setup workflow)</td>
             </tr>
             <tr>
               <td><code>;abcheck</code></td>
               <td>Target-project readiness</td>
-              <td><code>prompts/abcheck.md</code> (browser-skill project-readiness workflow)</td>
+              <td><code>prompts/abcheck.md</code> (browser-bay project-readiness workflow)</td>
             </tr>
             <tr>
               <td><code>;abuse</code></td>
