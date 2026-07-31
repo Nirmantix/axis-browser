@@ -109,7 +109,14 @@ release history.
   directory does not exist. A stale export therefore made every documented command
   exit 2 for a skill `axis-browser setup` resolves fine. All eight copies now accept
   `BROWSER_BAY_DIR` (and the legacy `BROWSER_SKILL_DIR`) only when it exists, then
-  fall through — verified against the CLI across six scenarios
+  fall through — verified against the CLI across six scenarios. The two variables
+  *shadow* rather than chain, matching `BROWSER_BAY_DIR || BROWSER_SKILL_DIR` in
+  the CLI: a set-but-missing `BROWSER_BAY_DIR` suppresses the legacy name and
+  continues to discovery, it does not fall back to it
+* the CI workflow declared no `permissions`, so every job ran with the
+  repository's default `GITHUB_TOKEN` scope. No job writes to the repository, so
+  it now declares `contents: read` (CodeQL: "Workflow does not contain
+  permissions")
 * `resolveSessionName` read `process.env` directly while `buildDoctorReport` is
   parameterised on `env`, so a session name passed to `doctor` was silently ignored
   and the report described a different environment than the one it was handed. It

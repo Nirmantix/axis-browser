@@ -98,9 +98,8 @@
           </div>
           <div class="trigger-row">
             <div><strong>Resolve skill path</strong><pre>BB=""
-for c in "${BROWSER_BAY_DIR:-}" "${BROWSER_SKILL_DIR:-}"; do
-  [ -z "$BB" ] &amp;&amp; [ -n "$c" ] &amp;&amp; [ -d "$c" ] &amp;&amp; BB="$c"
-done
+c="${BROWSER_BAY_DIR:-${BROWSER_SKILL_DIR:-}}"
+[ -n "$c" ] &amp;&amp; [ -d "$c" ] &amp;&amp; BB="$c"
 for p in "${AXIS_BROWSER_HOME:+$AXIS_BROWSER_HOME/skills}" "${AXIS_PORTABLE_SKILLS_DIR:-}" \
          ./skills "$HOME/.codex/skills" "$HOME/.config/agents/skills" \
          "$HOME/.claude/skills" "$HOME/.config/opencode/skills" \

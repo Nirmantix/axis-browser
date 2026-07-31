@@ -5,8 +5,7 @@ import { fileURLToPath } from "node:url";
 
 const repoRoot = fileURLToPath(new URL("..", import.meta.url));
 
-const RESOLVER_HEAD =
-  'for c in "${BROWSER_BAY_DIR:-}" "${BROWSER_SKILL_DIR:-}"';
+const RESOLVER_HEAD = 'c="${BROWSER_BAY_DIR:-${BROWSER_SKILL_DIR:-}}"';
 
 /**
  * `"$BB/` is not the only way a snippet can expand the resolved directory:

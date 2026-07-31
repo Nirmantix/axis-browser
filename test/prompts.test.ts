@@ -64,9 +64,9 @@ describe("Axis Browser workflow prompts", () => {
 
       // The discovery sources are only useful if the commands resolve them.
       // An unset BROWSER_BAY_DIR must fall back, not degrade to "/scripts/...".
-      expect(body).toContain(
-        'for c in "${BROWSER_BAY_DIR:-}" "${BROWSER_SKILL_DIR:-}"',
-      );
+      // Mirrors `env.BROWSER_BAY_DIR || env.BROWSER_SKILL_DIR` in the CLI:
+      // BROWSER_BAY_DIR shadows the legacy name rather than chaining to it.
+      expect(body).toContain('c="${BROWSER_BAY_DIR:-${BROWSER_SKILL_DIR:-}}"');
       expect(body).toContain("for p in");
       expect(body).toContain('[ -d "$BB" ] ||');
       // Both the bare and braced forms — `${BROWSER_BAY_DIR}/scripts/...` fails
@@ -179,6 +179,65 @@ describe("Axis Browser workflow prompts", () => {
 
           expect(code).toBe(0);
           expect(bb).toBe(legacy);
+        } finally {
+          rmSync(root, { recursive: true, force: true });
+        }
+      });
+
+      it(`${name} lets BROWSER_BAY_DIR shadow BROWSER_SKILL_DIR`, async () => {
+        // The CLI uses `BROWSER_BAY_DIR || BROWSER_SKILL_DIR`, so a *set*
+        // BROWSER_BAY_DIR suppresses the legacy name entirely — even when it
+        // points nowhere. Resolution then continues to discovery rather than
+        // falling back to the legacy variable. Chaining them instead would
+        // silently pick a different directory than `axis-browser setup` does.
+        const root = mkdtempSync(join(tmpdir(), "prompt-resolver-shadow-"));
+        try {
+          const home = join(root, "home");
+          const legacy = join(root, "legacy-skill");
+          const discovered = join(home, ".claude", "skills", "browser-bay");
+          mkdirSync(legacy, { recursive: true });
+          mkdirSync(discovered, { recursive: true });
+
+          const { bb, code } = await resolveWith(
+            resolverBlock(await promptBody(name)),
+            {
+              HOME: home,
+              BROWSER_BAY_DIR: join(root, "missing"),
+              BROWSER_SKILL_DIR: legacy,
+            },
+            root,
+          );
+
+          expect(code).toBe(0);
+          expect(bb).toBe(discovered);
+          expect(bb).not.toBe(legacy);
+        } finally {
+          rmSync(root, { recursive: true, force: true });
+        }
+      });
+
+      it(`${name} prefers AXIS_BROWSER_HOME over the checkout's ./skills`, async () => {
+        // Explicit configuration outranks implicit location. Without this pinned,
+        // the prose and the snippet drifted: the prompt described ./skills as
+        // winning while the snippet checked AXIS_BROWSER_HOME first. Someone with
+        // AXIS_BROWSER_HOME pointed at a maintained checkout should keep getting
+        // it, not silently switch skills by changing directory.
+        const root = mkdtempSync(join(tmpdir(), "prompt-resolver-order-"));
+        try {
+          const axisHome = join(root, "axis-home");
+          const fromHome = join(axisHome, "skills", "browser-bay");
+          const fromCwd = join(root, "skills", "browser-bay");
+          mkdirSync(fromHome, { recursive: true });
+          mkdirSync(fromCwd, { recursive: true });
+
+          const { bb, code } = await resolveWith(
+            resolverBlock(await promptBody(name)),
+            { HOME: join(root, "home"), AXIS_BROWSER_HOME: axisHome },
+            root,
+          );
+
+          expect(code).toBe(0);
+          expect(bb).toBe(fromHome);
         } finally {
           rmSync(root, { recursive: true, force: true });
         }

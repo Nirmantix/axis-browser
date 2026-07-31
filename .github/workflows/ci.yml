@@ -7,6 +7,14 @@ on:
     branches: [main]
   workflow_dispatch:
 
+# Least privilege for GITHUB_TOKEN. No job here writes to the repository — they
+# check out, install, build, and test — so read access to contents is all any of
+# them needs. Without this the token carries the repository's default scope,
+# which for a fork of a write-enabled repo is far more than CI requires
+# (CodeQL: "Workflow does not contain permissions").
+permissions:
+  contents: read
+
 jobs:
   quality:
     runs-on: ubuntu-latest

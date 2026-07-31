@@ -202,9 +202,8 @@ axis-browser snapshot</pre>
           <pre><span class="comment"># Resolve the skill directory first. Unset BROWSER_BAY_DIR would</span>
 <span class="comment"># otherwise run node "/scripts/..." and fail with a confusing path error.</span>
 BB=""
-for c in "${BROWSER_BAY_DIR:-}" "${BROWSER_SKILL_DIR:-}"; do
-  [ -z "$BB" ] &amp;&amp; [ -n "$c" ] &amp;&amp; [ -d "$c" ] &amp;&amp; BB="$c"
-done
+c="${BROWSER_BAY_DIR:-${BROWSER_SKILL_DIR:-}}"
+[ -n "$c" ] &amp;&amp; [ -d "$c" ] &amp;&amp; BB="$c"
 for p in "${AXIS_BROWSER_HOME:+$AXIS_BROWSER_HOME/skills}" "${AXIS_PORTABLE_SKILLS_DIR:-}" \
          ./skills "$HOME/.codex/skills" "$HOME/.config/agents/skills" \
          "$HOME/.claude/skills" "$HOME/.config/opencode/skills" \
@@ -266,9 +265,8 @@ node "$BB/scripts/validate-verified-run.mjs" \
             </article>
             <pre><span class="comment"># Resolve the skill directory first — this block is self-contained.</span>
 BB=""
-for c in "${BROWSER_BAY_DIR:-}" "${BROWSER_SKILL_DIR:-}"; do
-  [ -z "$BB" ] &amp;&amp; [ -n "$c" ] &amp;&amp; [ -d "$c" ] &amp;&amp; BB="$c"
-done
+c="${BROWSER_BAY_DIR:-${BROWSER_SKILL_DIR:-}}"
+[ -n "$c" ] &amp;&amp; [ -d "$c" ] &amp;&amp; BB="$c"
 for p in "${AXIS_BROWSER_HOME:+$AXIS_BROWSER_HOME/skills}" "${AXIS_PORTABLE_SKILLS_DIR:-}" \
          ./skills "$HOME/.codex/skills" "$HOME/.config/agents/skills" \
          "$HOME/.claude/skills" "$HOME/.config/opencode/skills" \

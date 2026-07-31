@@ -3,7 +3,7 @@ Task Shortcode: ;abcheck
 Purpose: recurring target-project readiness check for the Axis Browser workflow.
 
 Associated skill:
-- ./skills/browser-bay when run from the axis-browser checkout, BROWSER_BAY_DIR when set, or AXIS_BROWSER_HOME/skills/browser-bay when AXIS_BROWSER_HOME is set
+- Resolved in this order, explicit configuration before implicit location: BROWSER_BAY_DIR (or legacy BROWSER_SKILL_DIR), then $AXIS_BROWSER_HOME/skills, $AXIS_PORTABLE_SKILLS_DIR, ./skills when run from the axis-browser checkout, then the standard agent skill locations. The snippet below is the authority; this line only summarises it
 
 Run this from the target project where browser work will happen:
 
@@ -23,9 +23,8 @@ a confusing path error:
 
 ```bash
 BB=""
-for c in "${BROWSER_BAY_DIR:-}" "${BROWSER_SKILL_DIR:-}"; do
-  [ -z "$BB" ] && [ -n "$c" ] && [ -d "$c" ] && BB="$c"
-done
+c="${BROWSER_BAY_DIR:-${BROWSER_SKILL_DIR:-}}"
+[ -n "$c" ] && [ -d "$c" ] && BB="$c"
 for p in "${AXIS_BROWSER_HOME:+$AXIS_BROWSER_HOME/skills}" "${AXIS_PORTABLE_SKILLS_DIR:-}" \
          ./skills "$HOME/.codex/skills" "$HOME/.config/agents/skills" \
          "$HOME/.claude/skills" "$HOME/.config/opencode/skills" \

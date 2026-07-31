@@ -92,9 +92,8 @@ Portability note:
 
   ```bash
   BB=""
-  for c in "${BROWSER_BAY_DIR:-}" "${BROWSER_SKILL_DIR:-}"; do
-    [ -z "$BB" ] && [ -n "$c" ] && [ -d "$c" ] && BB="$c"
-  done
+  c="${BROWSER_BAY_DIR:-${BROWSER_SKILL_DIR:-}}"
+  [ -n "$c" ] && [ -d "$c" ] && BB="$c"
   for p in "${AXIS_BROWSER_HOME:+$AXIS_BROWSER_HOME/skills}" "${AXIS_PORTABLE_SKILLS_DIR:-}" \
            ./skills "$HOME/.codex/skills" "$HOME/.config/agents/skills" \
            "$HOME/.claude/skills" "$HOME/.config/opencode/skills" \
