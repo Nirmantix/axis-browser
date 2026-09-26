@@ -34,7 +34,7 @@ const DEEP_HEALTH_TIMEOUT_MS = 5_000;
 /**
  * Resolve the bridge readiness deadline in milliseconds.
  *
- * Honors `CHROME_DEVTOOLS_AXI_BRIDGE_TIMEOUT_MS` for systems where npx
+ * Honors `CHROME_DEVTOOLS_AXI_BRIDGE_TIMEOUT_MS` for systems where the MCP
  * bootstrap or Chrome launch is slow (>30s). Values below 1s are clamped to
  * 1s to avoid pathological retries.
  */
@@ -402,7 +402,7 @@ function sharedMcpSuggestions(mode: Exclude<SharedMcpMode, null>): string[] {
  * (the bridge's EADDRINUSE sentinel) gets the port-in-use explanation; any
  * other early death is a startup failure. Direct shared-MCP configuration gets
  * endpoint-specific guidance; proxy configuration gets `MCP_PATH`/`--serverUrl`
- * prerequisites; local mode covers npx resolution, a broken
+ * prerequisites; local mode covers MCP resolution, a broken
  * `CHROME_DEVTOOLS_AXI_MCP_PATH`, or a Chrome launch failure. In either mode, a
  * single-session user with a broken install is not misdirected to port advice.
  */
@@ -458,7 +458,8 @@ export function buildBridgeEarlyExitError(
   }
 
   const suggestions = [
-    "Check that chrome-devtools-mcp can start: npx chrome-devtools-mcp@latest --help",
+    "Axis starts the chrome-devtools-mcp it pins as its own dependency — it does not download chrome-devtools-mcp@latest and no longer scans for a global install. Reinstall Axis Browser to restore that dependency:",
+    "  npm install -g github:Nirmantix/axis-browser",
   ];
   if (mode === "managed") {
     suggestions.push(
@@ -467,12 +468,7 @@ export function buildBridgeEarlyExitError(
   }
   if (process.env.CHROME_DEVTOOLS_AXI_MCP_PATH?.trim()) {
     suggestions.push(
-      "Verify CHROME_DEVTOOLS_AXI_MCP_PATH points to a valid chrome-devtools-mcp build.",
-    );
-  } else {
-    suggestions.push(
-      "`npx -y chrome-devtools-mcp@latest` may have failed to resolve/download the package (offline, or a slow cold first run); install it globally and set:",
-      '  export CHROME_DEVTOOLS_AXI_MCP_PATH="$(npm prefix -g)/lib/node_modules/chrome-devtools-mcp/build/src/bin/chrome-devtools-mcp.js"',
+      "CHROME_DEVTOOLS_AXI_MCP_PATH is set, so that build runs instead of the pinned one: verify it exists and starts, or unset it to use the pinned dependency.",
     );
   }
   suggestions.push(
@@ -542,7 +538,7 @@ export async function ensureBridge(
   const child = spawnBridge(port, sessionName);
 
   // If the freshly spawned bridge dies before it reports healthy - an EADDRINUSE
-  // port collision with another session, or a startup failure (npx/MCP launch,
+  // port collision with another session, or a startup failure (MCP launch,
   // Chrome), whose stderr is lost to `stdio: "ignore"` - fail fast
   // instead of polling the full readiness deadline and reporting a generic
   // timeout. The exit code attributes the cause (see buildBridgeEarlyExitError).
@@ -555,7 +551,7 @@ export async function ensureBridge(
     exitSignal = signal;
   });
 
-  // Poll for health — Chrome launch + npx bootstrap can be slow.
+  // Poll for health — Chrome launch can be slow on a cold profile.
   // Track whether the *shallow* health check ever passed so we can attribute
   // the failure correctly: shallow-but-no-deep means the MCP server came up
   // but the attached CDP target is dead, vs. nothing-came-up which is the
@@ -621,12 +617,11 @@ export async function ensureBridge(
       : sharedMcpMode === "proxy"
         ? sharedMcpSuggestions("proxy")
         : [
-            "Check that chrome-devtools-mcp is installed: npx chrome-devtools-mcp@latest --help",
+            "Axis starts its own pinned chrome-devtools-mcp dependency; reinstall Axis Browser if it is missing (npm install -g github:Nirmantix/axis-browser)",
           ];
-  if (!sharedMcpMode && !process.env.CHROME_DEVTOOLS_AXI_MCP_PATH?.trim()) {
+  if (!sharedMcpMode && process.env.CHROME_DEVTOOLS_AXI_MCP_PATH?.trim()) {
     suggestions.push(
-      "If `npx -y chrome-devtools-mcp@latest` is slow on this machine, install mcp globally and set:",
-      '  export CHROME_DEVTOOLS_AXI_MCP_PATH="$(npm prefix -g)/lib/node_modules/chrome-devtools-mcp/build/src/bin/chrome-devtools-mcp.js"',
+      "CHROME_DEVTOOLS_AXI_MCP_PATH overrides the pinned build: verify that path starts, or unset it.",
     );
   }
   suggestions.push(
@@ -824,12 +819,13 @@ const MCP_CLOSED_PAGE_LINE_PREFIX = "The selected page has been closed.";
  * reconnect matcher in `src/bridge.ts` is unaffected, because a forged first
  * line still carries upstream's literal `Error: ` prefix.
  *
- * UNVERIFIED DEPENDENCY CONTRACT: this assumes chrome-devtools-mcp appends
- * `Error: <message>` LAST, after every page-derived block (and, for the
- * sibling reconnect matcher in `src/bridge.ts`, emits its notice FIRST).
- * Nothing in the test suite pins that order - chrome-devtools-mcp is spawned
- * via npx, not installed as a devDependency, so there is no build to assert
- * against. If upstream reorders, a genuine missing page falls through to
+ * PARTIALLY VERIFIED DEPENDENCY CONTRACT: the two literals this matcher keys on
+ * are pinned against the installed build by `test/mcp-pin.test.ts`, so a
+ * chrome-devtools-mcp bump that rewords them fails the suite instead of silently
+ * degrading every missing-page error. What is still assumed is the *order*: that
+ * chrome-devtools-mcp appends `Error: <message>` LAST, after every page-derived
+ * block (and, for the sibling reconnect matcher in `src/bridge.ts`, emits its
+ * notice FIRST). If upstream reorders, a genuine missing page falls through to
  * `mapErrorMessage` and surfaces as a less specific error rather than
  * retargeting anything; upstream hands out page ids from a process-wide
  * monotonic counter, so a stale id fails to resolve instead of landing on an

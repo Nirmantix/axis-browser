@@ -21,7 +21,7 @@ import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { ListRootsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
-import { execFileSync, execSync } from "node:child_process";
+import { execFileSync } from "node:child_process";
 import {
   createServer,
   type IncomingMessage,
@@ -37,6 +37,7 @@ import {
 } from "node:fs";
 import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
+import { createRequire } from "node:module";
 import {
   BRIDGE_PORT_IN_USE_EXIT_CODE,
   PAGE_IDENTITY_CHANGED_ERROR,
@@ -673,7 +674,18 @@ export const KEYCHAIN_ISOLATION_CHROME_ARGS = [
 ] as const;
 
 export function buildTransportArgs(): string[] {
-  const args = ["-y", "chrome-devtools-mcp@latest"];
+  // Only chrome-devtools-mcp flags. Which binary runs, and how, is decided by
+  // resolveTransportSpec — this package's pinned dependency spawned with node.
+  // The old `["-y", "chrome-devtools-mcp@latest"]` prefix existed purely for the
+  // npx fallback and is gone with it: nothing on this path may download and
+  // execute an unreviewed version at bridge startup.
+  const args: string[] = [
+    // `network` prints request and response headers back to the caller, so the
+    // sensitive ones are redacted at the source instead of filtered downstream.
+    // Verified present in the pinned chrome-devtools-mcp 1.9.0, where it
+    // defaults to false.
+    "--redactNetworkHeaders",
+  ];
 
   // The mode is now resolved explicitly rather than inferred from whichever variable
   // happened to be set first. resolveMode() falls back to the historical inference when
@@ -695,7 +707,19 @@ export function buildTransportArgs(): string[] {
     if (isWs) {
       args.push(`--wsEndpoint=${browserUrl}`);
       const wsHeaders = process.env.CHROME_DEVTOOLS_AXI_WS_HEADERS;
-      if (wsHeaders) {
+      if (wsHeaders?.trim()) {
+        // chrome-devtools-mcp 1.9.0 accepts WebSocket headers only as a
+        // command-line value (verified: `--wsHeaders` is its sole interface, and
+        // it works only with `--wsEndpoint`). An argv secret is readable by every
+        // other process owned by any user on this machine through the process
+        // table, so it is refused unless the operator explicitly accepts that
+        // exposure. The value itself is never echoed — not here, not in the
+        // validation errors below.
+        if (process.env.CHROME_DEVTOOLS_AXI_ALLOW_WS_HEADERS_ARGV !== "1") {
+          throw new Error(
+            "CHROME_DEVTOOLS_AXI_WS_HEADERS is set but was not forwarded: chrome-devtools-mcp only accepts WebSocket headers as a command-line argument, which other local processes can read from the process table. Unset it, or re-run with CHROME_DEVTOOLS_AXI_ALLOW_WS_HEADERS_ARGV=1 if you accept that exposure on this machine. The value is not printed here.",
+          );
+        }
         let parsedHeaders: unknown;
         try {
           parsedHeaders = JSON.parse(wsHeaders);
@@ -765,12 +789,13 @@ export function buildTransportArgs(): string[] {
 }
 
 /**
- * Probe interface for {@link detectGlobalMcpPath}. Defaults to real `node:fs`
- * + `npm prefix -g`; injectable for tests.
+ * Probe interface for {@link resolveBundledMcpPath}. Defaults to real `node:fs`
+ * plus this module's own resolver; injectable for tests.
  */
 export interface McpPathProbe {
   existsSync: (path: string) => boolean;
-  getNpmPrefix: () => string | null;
+  /** Resolve one of this package's own dependencies to an absolute path. */
+  resolveDependency: (specifier: string) => string | null;
 }
 /**
  * The command and arguments for a stdio-launched chrome-devtools-mcp process.
@@ -806,12 +831,9 @@ export interface BridgeTransportFactories {
 
 const DEFAULT_MCP_PATH_PROBE: McpPathProbe = {
   existsSync: (path) => existsSync(path),
-  getNpmPrefix: () => {
+  resolveDependency: (specifier) => {
     try {
-      return execSync("npm prefix -g", {
-        encoding: "utf8",
-        stdio: ["ignore", "pipe", "ignore"],
-      }).trim();
+      return createRequire(import.meta.url).resolve(specifier);
     } catch {
       return null;
     }
@@ -819,35 +841,35 @@ const DEFAULT_MCP_PATH_PROBE: McpPathProbe = {
 };
 
 /**
- * Auto-detect a globally-installed chrome-devtools-mcp by probing
- * both npm global package layouts: `<prefix>/node_modules/...` (Windows) and
- * `<prefix>/lib/node_modules/...` (POSIX).
+ * Entry point of the chrome-devtools-mcp version this package pins, resolved
+ * through Node's own module resolver from *this* module — so it is the dependency
+ * installed and reviewed with this release, on POSIX and Windows alike.
  *
- * Returns the resolved path on success, or null if npm is unavailable or the
- * package isn't installed. Used by {@link resolveTransportSpec} only for local
- * mode when no explicit executable is configured.
+ * It replaces two older behaviors, either of which could run code nobody
+ * reviewed:
+ *
+ * - an `npm prefix -g` scan that used whatever chrome-devtools-mcp happened to be
+ *   installed globally, at any version. Being built on the POSIX npm prefix, it
+ *   also silently missed Windows global installs and fell through to npx there.
+ * - an `npx -y chrome-devtools-mcp@latest` fallback that downloaded the newest
+ *   release at bridge startup: floating code, fetched over the network and
+ *   executed with the operator's privileges, on a path with no version pin and no
+ *   offline guarantee. A slow cold fetch could also exceed the readiness deadline
+ *   and surface as a bogus "Chrome failed to start".
+ *
+ * `chrome-devtools-mcp` publishes no `exports` map, so this subpath resolves
+ * directly; it is the same file the package's own `bin` entry points at.
  */
-export function detectGlobalMcpPath(
+export const PINNED_MCP_ENTRY =
+  "chrome-devtools-mcp/build/src/bin/chrome-devtools-mcp.js";
+
+/** Absolute path of the pinned MCP entry, or null when it is not installed. */
+export function resolveBundledMcpPath(
   probe: McpPathProbe = DEFAULT_MCP_PATH_PROBE,
 ): string | null {
-  const prefix = probe.getNpmPrefix();
-  if (!prefix || prefix.length === 0) return null;
-  const packagePath = [
-    "node_modules",
-    "chrome-devtools-mcp",
-    "build",
-    "src",
-    "bin",
-    "chrome-devtools-mcp.js",
-  ];
-  const candidates = [
-    join(prefix, "lib", ...packagePath),
-    join(prefix, ...packagePath),
-  ];
-  for (const candidate of candidates) {
-    if (probe.existsSync(candidate)) return candidate;
-  }
-  return null;
+  const resolved = probe.resolveDependency(PINNED_MCP_ENTRY);
+  if (!resolved || !probe.existsSync(resolved)) return null;
+  return resolved;
 }
 
 /**
@@ -860,8 +882,10 @@ export function detectGlobalMcpPath(
  * service owns Chrome's policy. See README Configuration for the supported
  * dependency and setup.
  *
- * For local mode, detecting a global install avoids npx bootstrap overhead,
- * which can exceed the bridge's readiness deadline on a slow or cold system.
+ * Ordinary local mode runs exactly one of two binaries: an explicit
+ * `CHROME_DEVTOOLS_AXI_MCP_PATH` the operator chose, or this package's pinned
+ * dependency. There is no global-install scan and no network fetch — a missing
+ * pinned dependency is a reinstall error, not a reason to improvise.
  */
 export function resolveTransportSpec(
   probe: McpPathProbe = DEFAULT_MCP_PATH_PROBE,
@@ -901,16 +925,13 @@ export function resolveTransportSpec(
   }
 
   const mcpArgs = buildTransportArgs();
-  const mcpPath = explicitPath || detectGlobalMcpPath(probe);
-  if (mcpPath) {
-    // Strip the npx prefix `["-y", "chrome-devtools-mcp@latest"]` — direct
-    // node spawn doesn't need it.
-    return {
-      command: process.execPath,
-      args: [mcpPath, ...mcpArgs.slice(2)],
-    };
+  const mcpPath = explicitPath || resolveBundledMcpPath(probe);
+  if (!mcpPath) {
+    throw new Error(
+      "Cannot start a bridge: the chrome-devtools-mcp version this package pins is not installed. Reinstall Axis Browser (npm install -g github:Nirmantix/axis-browser, or pnpm install in a checkout) so its pinned chrome-devtools-mcp dependency is present. Axis does not download an unpinned chrome-devtools-mcp at startup and no longer scans for a global install; to run a build you reviewed yourself, set CHROME_DEVTOOLS_AXI_MCP_PATH to its absolute path.",
+    );
   }
-  return { command: "npx", args: mcpArgs };
+  return { command: process.execPath, args: [mcpPath, ...mcpArgs] };
 }
 
 function parseSharedServerUrl(value: string): URL {

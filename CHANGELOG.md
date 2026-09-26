@@ -10,6 +10,32 @@ Versions `0.1.18` and below, and everything under
 
 ### Security
 
+* **the bridge no longer executes unreviewed code at startup.** With no explicit
+  `CHROME_DEVTOOLS_AXI_MCP_PATH` it used to scan the npm global prefix for any
+  installed `chrome-devtools-mcp` and, failing that, run
+  `npx -y chrome-devtools-mcp@latest` — downloading whatever was newest and
+  running it with the operator's privileges, on a machine that might be offline
+  or slow enough to trip the readiness deadline. `chrome-devtools-mcp` is now an
+  exact `1.9.0` production dependency, resolved through Node's own module
+  resolver from this package and spawned with `process.execPath`; a missing
+  pinned dependency is a reinstall error, not a reason to improvise. The old
+  prefix scan was POSIX-only besides, so Windows global installs were never found
+  and fell through to npx. `test/mcp-pin.test.ts` now asserts the installed build
+  really provides the flags this CLI passes it
+* **network header redaction is on by default.** The bridge passes
+  `--redactNetworkHeaders` (verified against the pinned 1.9.0, where it defaults
+  to false), so the `Authorization` and `Cookie` values `network` prints are
+  redacted at the source rather than filtered downstream. Explicitly saved
+  request and response bodies are still raw, and so is a remote MCP server's
+  reply — `network-get` help now says so
+* **`CHROME_DEVTOOLS_AXI_WS_HEADERS` is refused by default.** The pinned
+  chrome-devtools-mcp accepts WebSocket headers only as a command-line value, and
+  argv is readable by every other local process through the process table. The
+  bridge refuses to forward it unless
+  `CHROME_DEVTOOLS_AXI_ALLOW_WS_HEADERS_ARGV=1` is set for that invocation. The
+  refusal never echoes the value or the endpoint, and it is scoped to the
+  `ws(s)://` attach branch, so merely inheriting the variable cannot break an
+  ephemeral or managed launch
 * **bridge: reject non-loopback Host/Origin to block DNS rebinding**
   (GHSA-x439-jhfh-v9x2, merged from upstream `0.1.27`). The bridge exposed
   `GET /health`, `GET /tools`, and `POST /call` on loopback with no Host, Origin,

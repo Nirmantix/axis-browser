@@ -709,13 +709,14 @@ Two consequences worth knowing before they surprise you:
 | `CHROME_DEVTOOLS_AXI_AUTO_REAP` | Set to `0` to disable automatic cleanup of orphaned bridges on bridge startup |
 | `CHROME_DEVTOOLS_AXI_AUTO_CONNECT` | Set to `1` to attach to the user's running Chrome through Chrome 144+ auto-connect |
 | `CHROME_DEVTOOLS_AXI_BROWSER_URL` | Connect to an existing Chrome instance instead of launching one |
-| `CHROME_DEVTOOLS_AXI_WS_HEADERS` | JSON headers for authenticated `ws://` / `wss://` browser endpoints |
+| `CHROME_DEVTOOLS_AXI_WS_HEADERS` | JSON headers for authenticated `ws://` / `wss://` browser endpoints. **Refused unless `CHROME_DEVTOOLS_AXI_ALLOW_WS_HEADERS_ARGV=1`** — see below |
 | `CHROME_DEVTOOLS_AXI_USER_DATA_DIR` | Use a persistent Chrome profile instead of `--isolated` |
 | `CHROME_DEVTOOLS_AXI_HEADED` | Set to `1` to run the managed browser in headed mode |
 | `CHROME_DEVTOOLS_AXI_CHROME_ARGS` | Whitespace-separated Chrome flags forwarded to the browser |
 | `CHROME_DEVTOOLS_AXI_PORT` | Override the bridge port (default: `9224`) |
-| `CHROME_DEVTOOLS_AXI_MCP_PATH` | Absolute path to a local `chrome-devtools-mcp` binary (skips npx) |
-| `CHROME_DEVTOOLS_AXI_BRIDGE_TIMEOUT_MS` | Bridge readiness deadline in ms (default: `30000`; useful for slow npx bootstrap) |
+| `CHROME_DEVTOOLS_AXI_MCP_PATH` | Optional absolute path to a `chrome-devtools-mcp` build you reviewed yourself. Unset, the bridge runs the version this package pins |
+| `CHROME_DEVTOOLS_AXI_ALLOW_WS_HEADERS_ARGV` | Set to `1` to accept the `--wsHeaders` argv exposure described below |
+| `CHROME_DEVTOOLS_AXI_BRIDGE_TIMEOUT_MS` | Bridge readiness deadline in ms (default: `30000`; raise it for a slow Chrome launch) |
 | `BROWSER_BAY_DIR` | Absolute path to a local `browser-bay` checkout. Highest setup resolver priority |
 | `AXIS_BROWSER_HOME` | Axis Browser checkout root; setup looks for `skills/browser-bay` below it |
 | `AXIS_PORTABLE_SKILLS_DIR` | Directory containing portable skills; setup looks for `browser-bay` below it |
@@ -787,7 +788,39 @@ Authenticated WebSocket example:
 ```bash
 export CHROME_DEVTOOLS_AXI_BROWSER_URL=wss://cluster.example/launch
 export CHROME_DEVTOOLS_AXI_WS_HEADERS='{"Authorization":"Bearer token"}'
+# Required, and deliberately per-invocation:
+export CHROME_DEVTOOLS_AXI_ALLOW_WS_HEADERS_ARGV=1
 ```
+
+> **Why that second variable exists.** `chrome-devtools-mcp` 1.9.0 accepts
+> WebSocket headers only as a command-line argument (verified against the pinned
+> build: there is no header-file or env-var interface). Anything in argv is
+> readable by every other process on the machine through the process table, so
+> Axis refuses to forward `CHROME_DEVTOOLS_AXI_WS_HEADERS` unless you opt in
+> explicitly. The refusal never echoes the value, and it applies only to the
+> `ws(s)://` attach branch — inheriting the variable does not break an ephemeral
+> or managed launch.
+
+### Which chrome-devtools-mcp runs
+
+The bridge spawns the `chrome-devtools-mcp` this package pins as an exact
+dependency (`1.9.0`), resolved through Node's own module resolver and started
+with `process.execPath`. There is no `npx -y chrome-devtools-mcp@latest`
+fallback and no scan of your npm global prefix. Both existed before and both
+meant unreviewed code could run at bridge startup: the first downloaded whatever
+was newest, over the network, with your privileges; the second ran any version
+that happened to be installed globally (and, being built on the POSIX npm
+prefix, silently missed Windows global installs). If the pinned dependency is
+missing, the bridge fails with reinstall guidance instead of improvising.
+
+Two consequences worth knowing:
+
+- startup no longer depends on a cold `npx` fetch, so the old "install it
+  globally to make the bridge faster" advice is obsolete;
+- network inspection passes `--redactNetworkHeaders`, so the sensitive request
+  and response headers `network` prints are redacted at the source. Explicitly
+  saved request/response bodies are **not** redacted, and neither is a remote
+  MCP server's response — see `network-get`.
 
 Pick which installed Chrome release channel to target with
 `CHROME_DEVTOOLS_AXI_CHANNEL` — `stable` (the default), `beta`, `canary`, or

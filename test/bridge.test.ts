@@ -12,7 +12,7 @@ import {
   createBridgeServer,
   createRootsAwareBridgeClient,
   createTransport,
-  detectGlobalMcpPath,
+  PINNED_MCP_ENTRY,
   didMcpPageIdentityChange,
   extractHostHeaderHostname,
   extractToolText,
@@ -29,6 +29,7 @@ import {
   parseBridgeCallPayload,
   removePidFile,
   resolveBridgeScript,
+  resolveBundledMcpPath,
   resolveTransport,
   resolveTransportSpec,
   type BridgeClient,
@@ -157,54 +158,41 @@ describe("resolveBridgeScript", () => {
 });
 
 describe("buildTransportArgs", () => {
+  const MANAGED_ENV = [
+    "CHROME_DEVTOOLS_AXI_HEADED",
+    "CHROME_DEVTOOLS_AXI_CHROME_ARGS",
+    "CHROME_DEVTOOLS_AXI_BROWSER_URL",
+    "CHROME_DEVTOOLS_AXI_USER_DATA_DIR",
+    "CHROME_DEVTOOLS_AXI_AUTO_CONNECT",
+    "CHROME_DEVTOOLS_AXI_WS_HEADERS",
+    "CHROME_DEVTOOLS_AXI_ALLOW_WS_HEADERS_ARGV",
+    "CHROME_DEVTOOLS_AXI_CHANNEL",
+    "CHROME_DEVTOOLS_AXI_MODE",
+  ] as const;
   const savedEnv: Record<string, string | undefined> = {};
 
   beforeEach(() => {
-    savedEnv.CHROME_DEVTOOLS_AXI_HEADED =
-      process.env.CHROME_DEVTOOLS_AXI_HEADED;
-    savedEnv.CHROME_DEVTOOLS_AXI_CHROME_ARGS =
-      process.env.CHROME_DEVTOOLS_AXI_CHROME_ARGS;
-    savedEnv.CHROME_DEVTOOLS_AXI_BROWSER_URL =
-      process.env.CHROME_DEVTOOLS_AXI_BROWSER_URL;
-    savedEnv.CHROME_DEVTOOLS_AXI_USER_DATA_DIR =
-      process.env.CHROME_DEVTOOLS_AXI_USER_DATA_DIR;
-    savedEnv.CHROME_DEVTOOLS_AXI_AUTO_CONNECT =
-      process.env.CHROME_DEVTOOLS_AXI_AUTO_CONNECT;
-    savedEnv.CHROME_DEVTOOLS_AXI_WS_HEADERS =
-      process.env.CHROME_DEVTOOLS_AXI_WS_HEADERS;
-    savedEnv.CHROME_DEVTOOLS_AXI_CHANNEL =
-      process.env.CHROME_DEVTOOLS_AXI_CHANNEL;
-    delete process.env.CHROME_DEVTOOLS_AXI_HEADED;
-    delete process.env.CHROME_DEVTOOLS_AXI_CHROME_ARGS;
-    delete process.env.CHROME_DEVTOOLS_AXI_BROWSER_URL;
-    delete process.env.CHROME_DEVTOOLS_AXI_USER_DATA_DIR;
-    delete process.env.CHROME_DEVTOOLS_AXI_AUTO_CONNECT;
-    delete process.env.CHROME_DEVTOOLS_AXI_WS_HEADERS;
-    delete process.env.CHROME_DEVTOOLS_AXI_CHANNEL;
+    for (const key of MANAGED_ENV) {
+      savedEnv[key] = process.env[key];
+      delete process.env[key];
+    }
   });
 
   afterEach(() => {
-    process.env.CHROME_DEVTOOLS_AXI_HEADED =
-      savedEnv.CHROME_DEVTOOLS_AXI_HEADED;
-    process.env.CHROME_DEVTOOLS_AXI_CHROME_ARGS =
-      savedEnv.CHROME_DEVTOOLS_AXI_CHROME_ARGS;
-    process.env.CHROME_DEVTOOLS_AXI_BROWSER_URL =
-      savedEnv.CHROME_DEVTOOLS_AXI_BROWSER_URL;
-    process.env.CHROME_DEVTOOLS_AXI_USER_DATA_DIR =
-      savedEnv.CHROME_DEVTOOLS_AXI_USER_DATA_DIR;
-    process.env.CHROME_DEVTOOLS_AXI_AUTO_CONNECT =
-      savedEnv.CHROME_DEVTOOLS_AXI_AUTO_CONNECT;
-    process.env.CHROME_DEVTOOLS_AXI_WS_HEADERS =
-      savedEnv.CHROME_DEVTOOLS_AXI_WS_HEADERS;
-    process.env.CHROME_DEVTOOLS_AXI_CHANNEL =
-      savedEnv.CHROME_DEVTOOLS_AXI_CHANNEL;
+    for (const key of MANAGED_ENV) {
+      // Restoring with `process.env[key] = undefined` would store the literal
+      // string "undefined", which is truthy — a later test would then see a WS
+      // header value or a mode nobody set.
+      const saved = savedEnv[key];
+      if (saved === undefined) delete process.env[key];
+      else process.env[key] = saved;
+    }
   });
 
   it("defaults to headless and isolated", () => {
     const args = buildTransportArgs();
     expect(args).toEqual([
-      "-y",
-      "chrome-devtools-mcp@latest",
+      "--redactNetworkHeaders",
       "--isolated",
       "--headless",
       "--chrome-arg=--use-mock-keychain",
@@ -216,8 +204,7 @@ describe("buildTransportArgs", () => {
     process.env.CHROME_DEVTOOLS_AXI_HEADED = "1";
     const args = buildTransportArgs();
     expect(args).toEqual([
-      "-y",
-      "chrome-devtools-mcp@latest",
+      "--redactNetworkHeaders",
       "--isolated",
       "--chrome-arg=--use-mock-keychain",
       "--chrome-arg=--password-store=basic",
@@ -390,10 +377,33 @@ describe("buildTransportArgs", () => {
     expect(args).not.toContain("--browserUrl=wss://our.cluster.io/launch");
   });
 
-  it("passes --wsHeaders when CHROME_DEVTOOLS_AXI_WS_HEADERS is set with ws endpoint", () => {
+  it("refuses ws headers by default rather than putting a secret in argv", () => {
+    // chrome-devtools-mcp takes WS headers only as a command-line value, which
+    // any other local process can read from the process table. Inheriting that
+    // variable must not silently expose it.
+    process.env.CHROME_DEVTOOLS_AXI_BROWSER_URL = "wss://our.cluster.io/launch";
+    process.env.CHROME_DEVTOOLS_AXI_WS_HEADERS =
+      '{"Authorization":"Bearer SUPER-SECRET-TOKEN"}';
+    delete process.env.CHROME_DEVTOOLS_AXI_ALLOW_WS_HEADERS_ARGV;
+
+    let message = "";
+    try {
+      buildTransportArgs();
+    } catch (error) {
+      message = error instanceof Error ? error.message : String(error);
+    }
+    expect(message).toContain("CHROME_DEVTOOLS_AXI_ALLOW_WS_HEADERS_ARGV=1");
+    // The refusal must be actionable without leaking what it refused.
+    expect(message).not.toContain("SUPER-SECRET-TOKEN");
+    expect(message).not.toContain("Bearer");
+    expect(message).not.toContain("our.cluster.io");
+  });
+
+  it("passes --wsHeaders only after an explicit argv opt-in", () => {
     process.env.CHROME_DEVTOOLS_AXI_BROWSER_URL = "wss://our.cluster.io/launch";
     process.env.CHROME_DEVTOOLS_AXI_WS_HEADERS =
       '{"Authorization":"Bearer token"}';
+    process.env.CHROME_DEVTOOLS_AXI_ALLOW_WS_HEADERS_ARGV = "1";
     const args = buildTransportArgs();
     expect(args).toContain("--wsEndpoint=wss://our.cluster.io/launch");
     expect(args).toContain('--wsHeaders={"Authorization":"Bearer token"}');
@@ -402,6 +412,7 @@ describe("buildTransportArgs", () => {
   it("rejects malformed ws headers before launching the transport", () => {
     process.env.CHROME_DEVTOOLS_AXI_BROWSER_URL = "wss://our.cluster.io/launch";
     process.env.CHROME_DEVTOOLS_AXI_WS_HEADERS = "{";
+    process.env.CHROME_DEVTOOLS_AXI_ALLOW_WS_HEADERS_ARGV = "1";
 
     expect(() => buildTransportArgs()).toThrow(
       "CHROME_DEVTOOLS_AXI_WS_HEADERS must be valid JSON",
@@ -412,10 +423,26 @@ describe("buildTransportArgs", () => {
     process.env.CHROME_DEVTOOLS_AXI_BROWSER_URL = "wss://our.cluster.io/launch";
     process.env.CHROME_DEVTOOLS_AXI_WS_HEADERS =
       '["Authorization: Bearer token"]';
+    process.env.CHROME_DEVTOOLS_AXI_ALLOW_WS_HEADERS_ARGV = "1";
 
     expect(() => buildTransportArgs()).toThrow(
       "CHROME_DEVTOOLS_AXI_WS_HEADERS must be a JSON object",
     );
+  });
+
+  it("does not fail an unrelated launch mode that merely inherited ws headers", () => {
+    // The refusal belongs to the ws:// attach branch, where the value would reach
+    // argv. An ephemeral or managed launch must not break because the variable
+    // happens to be exported in the shell.
+    process.env.CHROME_DEVTOOLS_AXI_WS_HEADERS =
+      '{"Authorization":"Bearer token"}';
+    delete process.env.CHROME_DEVTOOLS_AXI_BROWSER_URL;
+    delete process.env.CHROME_DEVTOOLS_AXI_ALLOW_WS_HEADERS_ARGV;
+    process.env.CHROME_DEVTOOLS_AXI_MODE = "ephemeral";
+
+    const args = buildTransportArgs();
+    expect(args).toContain("--isolated");
+    expect(args.some((a) => a.startsWith("--wsHeaders="))).toBe(false);
   });
 
   it("ignores --wsHeaders without a ws endpoint", () => {
@@ -552,20 +579,40 @@ describe("resolveTransportSpec", () => {
     }
   });
 
-  it("defaults to spawning via npx when MCP_PATH is unset and auto-detection finds nothing", () => {
-    // Inject a probe that simulates "no global chrome-devtools-mcp" so the
-    // test outcome doesn't depend on the host machine's npm install state.
+  it("spawns this package's pinned chrome-devtools-mcp when MCP_PATH is unset", () => {
+    // The probe stands in for Node's resolver, so the outcome does not depend on
+    // what happens to be installed on the machine running the test.
     const probe = {
-      existsSync: () => false,
-      getNpmPrefix: () => "/usr",
+      existsSync: () => true,
+      resolveDependency: (specifier: string) =>
+        specifier === PINNED_MCP_ENTRY
+          ? "/pinned/chrome-devtools-mcp.js"
+          : null,
     };
     const spec = resolveTransportSpec(probe);
-    expect(spec.command).toBe("npx");
-    expect(spec.args[0]).toBe("-y");
-    expect(spec.args[1]).toBe("chrome-devtools-mcp@latest");
-    // Default mcp args follow
+    expect(spec.command).toBe(process.execPath);
+    expect(spec.args[0]).toBe("/pinned/chrome-devtools-mcp.js");
+    expect(spec.args).toContain("--redactNetworkHeaders");
     expect(spec.args).toContain("--isolated");
     expect(spec.args).toContain("--headless");
+  });
+
+  it("refuses to start when the pinned dependency is missing", () => {
+    // No global scan, no network fetch: an unreviewed floating build must not be
+    // improvised at startup just because the pinned one is absent.
+    const probe = { existsSync: () => false, resolveDependency: () => null };
+
+    let message = "";
+    try {
+      resolveTransportSpec(probe);
+    } catch (error) {
+      message = error instanceof Error ? error.message : String(error);
+    }
+    expect(message).toContain("pins is not installed");
+    expect(message).toContain("github:Nirmantix/axis-browser");
+    expect(message).toContain("CHROME_DEVTOOLS_AXI_MCP_PATH");
+    expect(message).not.toContain("npx");
+    expect(message).not.toContain("@latest");
   });
 
   it("spawns node directly when CHROME_DEVTOOLS_AXI_MCP_PATH is set", () => {
@@ -574,9 +621,8 @@ describe("resolveTransportSpec", () => {
     const spec = resolveTransportSpec();
     expect(spec.command).toBe(process.execPath);
     expect(spec.args[0]).toBe("/opt/mcp/build/src/bin/chrome-devtools-mcp.js");
-    // Strips the npx-only `-y, chrome-devtools-mcp@latest` prefix
     expect(spec.args).not.toContain("-y");
-    expect(spec.args).not.toContain("chrome-devtools-mcp@latest");
+    expect(spec.args).toContain("--redactNetworkHeaders");
     // Preserves the mcp-specific args
     expect(spec.args).toContain("--isolated");
     expect(spec.args).toContain("--headless");
@@ -631,13 +677,13 @@ describe("resolveTransportSpec", () => {
         else process.env.CHROME_DEVTOOLS_AXI_MCP_PATH = path;
         const probe = {
           existsSync: vi.fn(() => true),
-          getNpmPrefix: vi.fn(() => "/usr"),
+          resolveDependency: vi.fn(() => "/pinned/chrome-devtools-mcp.js"),
         };
 
         expect(() => resolveTransportSpec(probe)).toThrow(
           "requires CHROME_DEVTOOLS_AXI_MCP_PATH",
         );
-        expect(probe.getNpmPrefix).not.toHaveBeenCalled();
+        expect(probe.resolveDependency).not.toHaveBeenCalled();
       },
     );
 
@@ -680,58 +726,25 @@ describe("resolveTransportSpec", () => {
   it.each(["", "   "])("treats a blank MCP_PATH as unset: %s", (mcpPath) => {
     process.env.CHROME_DEVTOOLS_AXI_MCP_PATH = mcpPath;
     const probe = {
-      existsSync: () => false,
-      getNpmPrefix: () => null,
+      existsSync: () => true,
+      resolveDependency: () => "/pinned/chrome-devtools-mcp.js",
     };
     const spec = resolveTransportSpec(probe);
-    expect(spec.command).toBe("npx");
-  });
-
-  it("auto-detects a globally-installed chrome-devtools-mcp when MCP_PATH is unset", () => {
-    const probe = {
-      existsSync: (path: string) =>
-        path ===
-        "/usr/lib/node_modules/chrome-devtools-mcp/build/src/bin/chrome-devtools-mcp.js",
-      getNpmPrefix: () => "/usr",
-    };
-    const spec = resolveTransportSpec(probe);
+    // A blank override must not be spawned as an empty program path.
     expect(spec.command).toBe(process.execPath);
-    expect(spec.args[0]).toBe(
-      "/usr/lib/node_modules/chrome-devtools-mcp/build/src/bin/chrome-devtools-mcp.js",
-    );
-    expect(spec.args).not.toContain("-y");
-    expect(spec.args).not.toContain("chrome-devtools-mcp@latest");
-    expect(spec.args).toContain("--isolated");
+    expect(spec.args[0]).toBe("/pinned/chrome-devtools-mcp.js");
   });
 
-  it("falls back to npx when auto-detection finds nothing", () => {
-    const probe = {
-      existsSync: () => false,
-      getNpmPrefix: () => "/usr",
-    };
-    const spec = resolveTransportSpec(probe);
-    expect(spec.command).toBe("npx");
-    expect(spec.args[0]).toBe("-y");
-  });
-
-  it("falls back to npx when npm prefix is unavailable", () => {
-    const probe = {
-      existsSync: () => true, // would match anything if asked
-      getNpmPrefix: () => null,
-    };
-    const spec = resolveTransportSpec(probe);
-    expect(spec.command).toBe("npx");
-  });
-
-  it("explicit MCP_PATH always wins over auto-detection", () => {
+  it("explicit MCP_PATH wins and short-circuits dependency resolution", () => {
     process.env.CHROME_DEVTOOLS_AXI_MCP_PATH = "/explicit/override.js";
     const probe = {
-      existsSync: () => true,
-      getNpmPrefix: () => "/usr",
+      existsSync: vi.fn(() => true),
+      resolveDependency: vi.fn(() => "/pinned/chrome-devtools-mcp.js"),
     };
     const spec = resolveTransportSpec(probe);
     expect(spec.command).toBe(process.execPath);
     expect(spec.args[0]).toBe("/explicit/override.js");
+    expect(probe.resolveDependency).not.toHaveBeenCalled();
   });
 });
 
@@ -762,7 +775,7 @@ describe("resolveTransport / createTransport", () => {
       " https://127.0.0.1:9333/mcp ";
     const probe = {
       existsSync: vi.fn(() => false),
-      getNpmPrefix: vi.fn(() => "/usr"),
+      resolveDependency: vi.fn(() => "/pinned/chrome-devtools-mcp.js"),
     };
 
     const selection = resolveTransport(probe);
@@ -770,7 +783,7 @@ describe("resolveTransport / createTransport", () => {
     expect(selection.kind).toBe("http");
     if (selection.kind !== "http") throw new Error("expected HTTP transport");
     expect(selection.url.href).toBe("https://127.0.0.1:9333/mcp");
-    expect(probe.getNpmPrefix).not.toHaveBeenCalled();
+    expect(probe.resolveDependency).not.toHaveBeenCalled();
   });
 
   it.each([
@@ -795,19 +808,16 @@ describe("resolveTransport / createTransport", () => {
         process.env.CHROME_DEVTOOLS_AXI_MCP_SERVER_URL = serverUrl;
       }
       const selection = resolveTransport({
-        existsSync: () => false,
-        getNpmPrefix: () => "/usr",
+        existsSync: () => true,
+        resolveDependency: () => "/pinned/chrome-devtools-mcp.js",
       });
 
       expect(selection.kind).toBe("stdio");
       if (selection.kind !== "stdio") {
         throw new Error("expected stdio transport");
       }
-      expect(selection.spec.command).toBe("npx");
-      expect(selection.spec.args.slice(0, 2)).toEqual([
-        "-y",
-        "chrome-devtools-mcp@latest",
-      ]);
+      expect(selection.spec.command).toBe(process.execPath);
+      expect(selection.spec.args[0]).toBe("/pinned/chrome-devtools-mcp.js");
     },
   );
 
@@ -916,92 +926,64 @@ describe("resolveTransport / createTransport", () => {
   });
 });
 
-describe("detectGlobalMcpPath", () => {
-  it("returns the Windows npm global path without a lib segment", () => {
-    const prefix = join("opt", "npm");
-    const expected = join(
-      prefix,
-      "node_modules",
-      "chrome-devtools-mcp",
-      "build",
-      "src",
-      "bin",
-      "chrome-devtools-mcp.js",
-    );
+describe("resolveBundledMcpPath", () => {
+  const pinned = join(
+    "install",
+    "node_modules",
+    "chrome-devtools-mcp",
+    "build",
+    "src",
+    "bin",
+    "chrome-devtools-mcp.js",
+  );
+
+  it("resolves the pinned entry from this package's own dependency graph", () => {
     const probe = {
-      existsSync: (path: string) => path === expected,
-      getNpmPrefix: () => prefix,
+      existsSync: (path: string) => path === pinned,
+      resolveDependency: (specifier: string) =>
+        specifier === PINNED_MCP_ENTRY ? pinned : null,
     };
 
-    expect(detectGlobalMcpPath(probe)).toBe(expected);
+    expect(resolveBundledMcpPath(probe)).toBe(pinned);
   });
 
-  it("returns the POSIX npm global path with a lib segment", () => {
-    const prefix = join("opt", "npm");
-    const expected = join(
-      prefix,
-      "lib",
-      "node_modules",
-      "chrome-devtools-mcp",
-      "build",
-      "src",
-      "bin",
-      "chrome-devtools-mcp.js",
-    );
-    const probe = {
-      existsSync: (path: string) => path === expected,
-      getNpmPrefix: () => prefix,
-    };
+  it("returns null when the dependency does not resolve", () => {
+    const probe = { existsSync: () => true, resolveDependency: () => null };
 
-    expect(detectGlobalMcpPath(probe)).toBe(expected);
+    expect(resolveBundledMcpPath(probe)).toBeNull();
   });
 
-  it("prefers the POSIX global path when both layouts exist", () => {
-    const prefix = join("opt", "npm");
-    const probe = {
-      existsSync: () => true,
-      getNpmPrefix: () => prefix,
-    };
-
-    expect(detectGlobalMcpPath(probe)).toBe(
-      join(
-        prefix,
-        "lib",
-        "node_modules",
-        "chrome-devtools-mcp",
-        "build",
-        "src",
-        "bin",
-        "chrome-devtools-mcp.js",
-      ),
-    );
-  });
-
-  it("returns null when the file is missing", () => {
+  it("returns null when the resolved file is not on disk", () => {
+    // A stale symlink or a pruned store must not be handed to a spawn.
     const probe = {
       existsSync: () => false,
-      getNpmPrefix: () => "/opt/npm",
+      resolveDependency: () => "/stale/chrome-devtools-mcp.js",
     };
 
-    expect(detectGlobalMcpPath(probe)).toBeNull();
+    expect(resolveBundledMcpPath(probe)).toBeNull();
   });
 
-  it("returns null when npm prefix is null (npm not installed)", () => {
-    const probe = {
-      existsSync: () => true,
-      getNpmPrefix: () => null,
-    };
-
-    expect(detectGlobalMcpPath(probe)).toBeNull();
+  it("names the package entry, never a floating version", () => {
+    expect(PINNED_MCP_ENTRY).toBe(
+      "chrome-devtools-mcp/build/src/bin/chrome-devtools-mcp.js",
+    );
+    expect(PINNED_MCP_ENTRY).not.toContain("latest");
   });
 
-  it("returns null when npm prefix is the empty string", () => {
-    const probe = {
-      existsSync: () => true,
-      getNpmPrefix: () => "",
-    };
+  it("resolves the real pinned dependency in this install", () => {
+    // Not mocked: this is the file the bridge will actually spawn, so a package
+    // layout change that breaks the subpath fails here rather than at startup on
+    // somebody's machine.
+    const resolved = resolveBundledMcpPath();
 
-    expect(detectGlobalMcpPath(probe)).toBeNull();
+    expect(resolved).not.toBeNull();
+    expect(resolved!.endsWith("build/src/bin/chrome-devtools-mcp.js")).toBe(
+      true,
+    );
+    expect(existsSync(resolved!)).toBe(true);
+    const spec = resolveTransportSpec();
+    expect(spec.command).toBe(process.execPath);
+    expect(spec.args[0]).toBe(resolved);
   });
 });
 

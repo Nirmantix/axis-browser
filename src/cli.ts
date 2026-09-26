@@ -115,24 +115,32 @@ environment:
                                     http(s):// uses --browserUrl (fetches /json/version).
                                     ws(s):// uses --wsEndpoint (direct WebSocket).
                                     e.g. "http://127.0.0.1:9222" or "wss://cluster.example/launch"
-  CHROME_DEVTOOLS_AXI_WS_HEADERS    JSON headers for ws(s):// endpoints (only with BROWSER_URL=wss?://)
+  CHROME_DEVTOOLS_AXI_WS_HEADERS    JSON headers for ws(s):// endpoints (only with BROWSER_URL=wss?://).
+                                    Refused by default: chrome-devtools-mcp accepts these only as a
+                                    command-line argument, which any other local process can read
+                                    from the process table. Opt in per invocation with
+                                    CHROME_DEVTOOLS_AXI_ALLOW_WS_HEADERS_ARGV=1. The value is never
+                                    echoed back.
                                     e.g. '{"Authorization":"Bearer token"}'
   CHROME_DEVTOOLS_AXI_USER_DATA_DIR Persistent Chrome profile directory (skips --isolated mode)
                                     e.g. "/path/to/.chrome-profile"
-  CHROME_DEVTOOLS_AXI_MCP_PATH      Absolute path to a chrome-devtools-mcp script. When set
-                                    without a shared URL, the bridge spawns 'node $MCP_PATH'
-                                    directly instead of 'npx -y chrome-devtools-mcp@latest'.
+  CHROME_DEVTOOLS_AXI_MCP_PATH      Absolute path to a chrome-devtools-mcp build you reviewed
+                                    yourself. Optional — by default the bridge spawns the
+                                    chrome-devtools-mcp this package pins as its own dependency.
+                                    There is no global-install scan and no 'npx …@latest' download,
+                                    so what runs is what this release was tested against.
                                     With MCP_SERVER_URL also set, selects stdio proxy mode:
                                     the executable must advertise --serverUrl in --help.
-                                    Local-mode recommendation:
-                                      npm install -g chrome-devtools-mcp
-                                      export CHROME_DEVTOOLS_AXI_MCP_PATH="$(npm prefix -g)/lib/node_modules/chrome-devtools-mcp/build/src/bin/chrome-devtools-mcp.js"
   CHROME_DEVTOOLS_AXI_MCP_SERVER_URL
-                                    Shared MCP service URL. With MCP_PATH, starts a verified
-                                    stdio proxy and passes --server-url=<URL>. Without
-                                    MCP_PATH, connects directly over Streamable HTTP (no
+                                    Shared MCP service URL — bring your own server. With MCP_PATH,
+                                    starts a verified stdio proxy and passes --server-url=<URL>.
+                                    Without MCP_PATH, connects directly over Streamable HTTP (no
                                     local MCP child); use an absolute http(s) MCP endpoint.
-                                    If unset or blank, the bridge uses standalone stdio mode.
+                                    The pinned official chrome-devtools-mcp advertises neither
+                                    --serverUrl nor an HTTP listener, so both modes require a server
+                                    build that adds them, and that server must redact sensitive
+                                    headers itself. If unset or blank, the bridge uses standalone
+                                    stdio mode.
   CHROME_DEVTOOLS_AXI_BRIDGE_TIMEOUT_MS
                                     Bridge readiness deadline in ms (default: 30000, min: 1000)
 

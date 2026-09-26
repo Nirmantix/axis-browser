@@ -29,12 +29,12 @@ Keep this lifecycle table in sync with the canonical environment reference in
 | `CHROME_DEVTOOLS_AXI_SESSION` | No | Named session for concurrent isolation. Each name gets its own bridge process, state dir, and a port derived from the name. Default: `default`. An explicit `CHROME_DEVTOOLS_AXI_PORT` overrides that derivation for **every** session, so exporting one globally forces all sessions onto a single port — set it per session, or not at all. |
 | `CHROME_DEVTOOLS_AXI_CHANNEL` | No | Chrome release channel: `stable` (default), `beta`, `canary`, or `dev`. Ignored only in `attach` mode. `AUTO_CONNECT` outranks `BROWSER_URL`, so with both set the mode is `autoconnect` and the channel still applies. |
 | `CHROME_DEVTOOLS_AXI_BROWSER_URL` | No | Attach to an existing HTTP(S) or WS(S) CDP endpoint. |
-| `CHROME_DEVTOOLS_AXI_WS_HEADERS` | No | JSON object of headers for WS(S) endpoints. Do not commit secret values. |
+| `CHROME_DEVTOOLS_AXI_WS_HEADERS` | No | JSON object of headers for WS(S) endpoints. Refused unless `CHROME_DEVTOOLS_AXI_ALLOW_WS_HEADERS_ARGV=1`, because `chrome-devtools-mcp` only accepts them via argv, which other local processes can read. Do not commit secret values. |
 | `CHROME_DEVTOOLS_AXI_USER_DATA_DIR` | No | Persistent Chrome profile for a managed launch. Default `~/.axis-browser-data`; a *named* session uses `<dir>/sessions/<name>`. A path inside a real browser profile is refused. |
 | `CHROME_DEVTOOLS_AXI_HEADED` | No | Set to `1` to launch Chrome headed. |
 | `CHROME_DEVTOOLS_AXI_CHROME_ARGS` | No | Whitespace-separated Chrome flags. Flags with spaces are not supported. |
 | `CHROME_DEVTOOLS_AXI_PORT` | No | Local bridge server port. Default: `9224`. |
-| `CHROME_DEVTOOLS_AXI_MCP_PATH` | No | Absolute path to a local `chrome-devtools-mcp` script. |
+| `CHROME_DEVTOOLS_AXI_MCP_PATH` | No | Optional absolute path to a `chrome-devtools-mcp` build you reviewed. Unset, the bridge runs the exact version this package pins as a dependency; there is no global-install scan and no `npx …@latest` fetch. |
 | `CHROME_DEVTOOLS_AXI_BRIDGE_TIMEOUT_MS` | No | Bridge readiness timeout. Default: `30000`; minimum accepted value: `1000`. |
 
 Workflow setup uses these optional environment variables:
@@ -235,14 +235,18 @@ axis-browser reap --dry-run
 axis-browser reap
 ```
 
-If startup is slow because `npx chrome-devtools-mcp` is cold:
+Startup no longer fetches `chrome-devtools-mcp` over the network: the bridge runs
+the exact version this package pins as a dependency, resolved from its own
+`node_modules`. If the bridge reports that the pinned dependency is missing, the
+fix is to reinstall this package rather than to point at a global copy:
 
 ```bash
-npm install -g chrome-devtools-mcp
-export CHROME_DEVTOOLS_AXI_MCP_PATH="$(npm prefix -g)/lib/node_modules/chrome-devtools-mcp/build/src/bin/chrome-devtools-mcp.js"
+npm install -g github:Nirmantix/axis-browser   # or pnpm install in a checkout
 ```
 
-Or extend the bridge readiness timeout:
+Set `CHROME_DEVTOOLS_AXI_MCP_PATH` only to run a build you reviewed yourself.
+
+If Chrome itself is slow to launch, extend the bridge readiness timeout:
 
 ```bash
 export CHROME_DEVTOOLS_AXI_BRIDGE_TIMEOUT_MS=60000
