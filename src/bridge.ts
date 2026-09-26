@@ -28,14 +28,9 @@ import {
   type Server,
   type ServerResponse,
 } from "node:http";
-import {
-  existsSync,
-  mkdirSync,
-  readFileSync,
-  unlinkSync,
-  writeFileSync,
-} from "node:fs";
-import { basename, dirname, isAbsolute, join, resolve } from "node:path";
+import { existsSync } from "node:fs";
+import { timingSafeEqual } from "node:crypto";
+import { basename, isAbsolute, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { createRequire } from "node:module";
 import {
@@ -44,11 +39,19 @@ import {
   resolveBridgeScript,
 } from "./bridge-script.js";
 import { clearSelectedPageId } from "./selected-page.js";
+import { readProcessIdentity } from "./process-identity.js";
 import {
+  BRIDGE_AUTH_SCHEME,
+  BRIDGE_TOKEN_HEADER,
+  clearBridgeRecord,
+  generateBridgeToken,
   resolveSessionName,
-  resolveSessionPidFile,
   resolveSessionPort,
+  resolveSessionStateChain,
+  writeBridgeRecord,
+  type AuthenticatedBridgeRecord,
 } from "./sessions.js";
+import { hardenStateDirs, StateDirError } from "./state-dir.js";
 import { resolveMode, resolveUserDataDir } from "./mode.js";
 
 // Re-exported so existing bridge consumers keep a single import surface; the
@@ -155,39 +158,74 @@ export async function isBridgeTargetReachable(
   }
 }
 
-function writePidFile(port: number): void {
-  const pidFile = resolveSessionPidFile();
-  mkdirSync(dirname(pidFile), { recursive: true });
-  writeFileSync(pidFile, JSON.stringify({ pid: process.pid, port }));
+/**
+ * This bridge's capability token. Set once, when the port is bound; until then
+ * every request is refused, because the window between `listen` succeeding and
+ * the record being written is small but real and a bearer credential has no safe
+ * "open" state.
+ */
+let bridgeToken: string | null = null;
+
+/** The token this bridge validates requests against; null until it is bound. */
+export function currentBridgeToken(): string | null {
+  return bridgeToken;
 }
 
 /**
- * Remove the session PID file, but only when this process owns it. On a
- * same-session bind race the losing bridge exits via EADDRINUSE after the
- * winning bridge has already written the shared PID file; an unconditional
- * unlink would delete the still-running winner's handle and orphan it (later
- * `stop`/reuse can no longer find it). A missing, unreadable, or malformed
- * file — or one recording a different pid — is left untouched. `ownerPid` is
- * injectable for tests.
+ * Arm or disarm the capability gate directly. Exported for tests.
+ *
+ * Production arms the token only through {@link publishBridgeCapability}, which
+ * first proves the state directory can hold a secret and that this process can be
+ * identified. Unit tests that drive {@link handleBridgeRequest} without a bound
+ * port need the gate itself under control; routing them through the filesystem
+ * would test the record writer instead of the request handler.
  */
-export function removePidFile(
-  pidFile: string = resolveSessionPidFile(),
-  ownerPid: number = process.pid,
-): void {
-  try {
-    const data = JSON.parse(readFileSync(pidFile, "utf-8")) as {
-      pid?: unknown;
-    };
-    if (data.pid !== ownerPid) return;
-  } catch {
-    // Missing, unreadable, or malformed — nothing we own to remove.
-    return;
+export function setBridgeTokenForTest(token: string | null): void {
+  bridgeToken = token;
+}
+
+/**
+ * Publish this bridge's capability: verify the state directory can hold a
+ * secret, then write the record atomically and arm the token.
+ *
+ * Called from the `listen` callback, so the port is already bound and this
+ * process is the winner of any same-session race — a loser exits on EADDRINUSE
+ * and never gets here, which is what keeps it from publishing over the winner's
+ * record. It also runs before READY is printed, so no CLI can read a record
+ * whose token this bridge does not yet honour.
+ *
+ * Fails closed. A directory that cannot be proven private, or a process whose
+ * own start time cannot be read, means the record must not be written: the first
+ * would hand the token to every local user, and the second would leave a bridge
+ * that `stop` can never verify and therefore never safely terminate.
+ */
+export function publishBridgeCapability(port: number): void {
+  hardenStateDirs(resolveSessionStateChain());
+  const identity = readProcessIdentity(process.pid);
+  if (identity === null) {
+    throw new Error(
+      "Cannot establish this bridge process's own start time, so its record could never be verified before a stop. Refusing to publish a capability for a process that cannot be identified.",
+    );
   }
-  try {
-    unlinkSync(pidFile);
-  } catch {
-    // Already gone — fine
-  }
+  const token = generateBridgeToken();
+  const record: AuthenticatedBridgeRecord = {
+    pid: process.pid,
+    port,
+    token,
+    startedAt: identity.startedAt,
+  };
+  writeBridgeRecord(record);
+  bridgeToken = token;
+}
+
+/**
+ * Drop our own record on the way out — and only our own. A bind-race loser never
+ * armed a token, so it returns without touching the winner's record; a bridge
+ * whose record was replaced by a newer one is left alone for the same reason.
+ */
+function unpublishBridgeCapability(): void {
+  if (bridgeToken === null) return;
+  clearBridgeRecord({ pid: process.pid, token: bridgeToken });
 }
 
 export function getErrorMessage(error: unknown): string {
@@ -248,9 +286,16 @@ export function extractHostHeaderHostname(hostHeader: string): string | null {
  * True when the `Host` header is present and names the loopback interface.
  * A missing Host, or one naming any other host (e.g. a rebound
  * `evil.attacker.com`), is rejected.
+ *
+ * The parameter is `unknown` rather than `string | undefined` because this gate
+ * is the last thing between a remote page and CDP: an unexpected shape — a
+ * repeated header delivered as an array, which Node's parser does not produce but
+ * a proxy, a future Node, or a hand-built request can — must answer "refuse".
+ * Throwing instead would escape as a 500 from the request handler and tell the
+ * caller nothing, while a refusal is both correct and loggable.
  */
-export function isAllowedBridgeHost(host: string | undefined): boolean {
-  if (host === undefined) return false;
+export function isAllowedBridgeHost(host: unknown): boolean {
+  if (typeof host !== "string") return false;
   const hostname = extractHostHeaderHostname(host);
   if (hostname === null) return false;
   return isLoopbackHostname(hostname);
@@ -498,6 +543,82 @@ async function handleCallRequest(
   writeJson(res, 200, { result: text });
 }
 
+/** Longest hostname DNS permits; anything longer is not a hostname. */
+const MAX_LOGGED_HOSTNAME = 253;
+
+/**
+ * Strip what would let a caller forge diagnostics: C0/C1 controls (including
+ * CR/LF, which would inject fake log lines) and anything past a legal hostname
+ * length. Applied to every derived value before it reaches the log.
+ */
+function sanitizeLoggedHostname(hostname: string | null): string {
+  if (hostname === null || hostname.length === 0) return "(unparseable)";
+  const stripped = hostname.replace(/[\u0000-\u001f\u007f-\u009f]/g, "");
+  const capped = stripped.slice(0, MAX_LOGGED_HOSTNAME);
+  return capped.length > 0 ? capped : "(unparseable)";
+}
+
+function originHostname(origin: string | undefined): string | null {
+  if (origin === undefined || origin.length === 0) return null;
+  try {
+    // The same parse isRequestOriginAllowed used to decide the refusal, so the
+    // log names exactly the host that was judged.
+    return new URL(origin).hostname;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * A diagnosable description of a request the anti-rebinding gate refused.
+ *
+ * The previous log line interpolated the raw `Host` header, the raw `Origin`
+ * header, and `req.url`. All three are caller-controlled, so anything that could
+ * reach the port could write arbitrary text into the bridge's diagnostics:
+ * credentials smuggled into a query string, a forged `Origin`, or a newline that
+ * fakes subsequent log entries. Only derived values are logged now — the hostname
+ * the gate itself parsed, a fixed refusal category, and the method. Never the raw
+ * headers, the URL, the path, the query, the port, or the token.
+ */
+export function describeRejectedRequest(req: IncomingMessage): string {
+  const hostHeader = req.headers.host;
+  const hostAllowed = isAllowedBridgeHost(hostHeader);
+  const hostHostname =
+    typeof hostHeader === "string"
+      ? extractHostHeaderHostname(hostHeader)
+      : null;
+
+  // Host first: when it fails, the origin was never the reason, and logging an
+  // attacker-supplied origin as the cause would misdirect the operator.
+  if (!hostAllowed) {
+    return `Rejected ${req.method ?? "REQUEST"}: host hostname=${sanitizeLoggedHostname(hostHostname)}`;
+  }
+  const rawOrigin = req.headers.origin;
+  const origin = Array.isArray(rawOrigin) ? rawOrigin[0] : rawOrigin;
+  return `Rejected ${req.method ?? "REQUEST"}: origin hostname=${sanitizeLoggedHostname(originHostname(origin))}`;
+}
+
+/**
+ * Whether the request presents this bridge's capability token.
+ *
+ * Fails closed when the token is not armed yet (the port is bound but the record
+ * is not published) and compares in constant time when it is. The length check
+ * comes first because `timingSafeEqual` throws on a length mismatch, and a
+ * malformed header must produce a 401 rather than a 500 that also tells the
+ * caller its guess had the right length.
+ */
+export function hasValidBridgeToken(req: IncomingMessage): boolean {
+  const expected = bridgeToken;
+  if (expected === null) return false;
+  const raw = req.headers[BRIDGE_TOKEN_HEADER];
+  const presented = Array.isArray(raw) ? raw[0] : raw;
+  if (typeof presented !== "string") return false;
+  const presentedBytes = Buffer.from(presented, "utf8");
+  const expectedBytes = Buffer.from(expected, "utf8");
+  if (presentedBytes.length !== expectedBytes.length) return false;
+  return timingSafeEqual(presentedBytes, expectedBytes);
+}
+
 export async function handleBridgeRequest(
   client: BridgeClient,
   req: IncomingMessage,
@@ -516,13 +637,21 @@ export async function handleBridgeRequest(
     // Log the refusal so an operator can tell a mis-configured client apart
     // from an actual rebinding attempt. Injected (not a direct
     // logBridgeMessage call) so unit tests stay quiet unless they opt in.
-    const rawOrigin = req.headers.origin;
-    const origin = Array.isArray(rawOrigin) ? rawOrigin[0] : rawOrigin;
-    logForbidden?.(
-      `Rejected request with disallowed host: host=${req.headers.host ?? ""} ` +
-        `origin=${origin ?? ""} ${req.method ?? ""} ${req.url ?? ""}`,
-    );
+    logForbidden?.(describeRejectedRequest(req));
     writeJson(res, 403, { error: "Forbidden host" });
+    return;
+  }
+
+  // Capability gate: after the anti-rebinding gate (which costs nothing and
+  // stops the remote attacker) and before every route, /health included. The
+  // Host/Origin check proves a request did not come from a web page; it says
+  // nothing about the *other* processes on this machine, and `/call` maps
+  // straight to CDP. For another local user, loopback binding was never an
+  // authentication boundary — the token is.
+  if (!hasValidBridgeToken(req)) {
+    writeJson(res, 401, {
+      error: "Missing or invalid bridge capability token",
+    });
     return;
   }
 
@@ -564,6 +693,12 @@ export async function handleBridgeRequest(
       writeJson(res, 200, {
         status: "ok",
         session: sessionName,
+        // `auth` is what a CLI keys on to prove this bridge validated its token.
+        // An older bridge answers 200 {status:"ok"} while ignoring the header
+        // entirely, so without the marker a CLI cannot tell the two apart and
+        // would silently reuse an unauthenticated bridge. It is emitted only
+        // here, after the capability gate above has passed.
+        auth: BRIDGE_AUTH_SCHEME,
         ...(droppedSelection ? { pageIdentityChanged: true } : {}),
       });
       return;
@@ -1164,7 +1299,23 @@ export async function runBridge(port = resolveSessionPort()): Promise<void> {
     handleBridgeServerError(error, port);
   });
   server.listen(port, "127.0.0.1", () => {
-    writePidFile(port);
+    try {
+      publishBridgeCapability(port);
+    } catch (error) {
+      // Fail closed: a bridge that cannot prove its record is private, or cannot
+      // identify its own process, must not serve. Exiting non-zero here is what
+      // lets ensureBridge attribute the failure and print the repair steps.
+      logBridgeMessage(
+        `Refusing to serve without a verified capability record: ${getErrorMessage(error)}`,
+      );
+      if (error instanceof StateDirError) {
+        for (const step of error.repair) {
+          logBridgeMessage(`  repair: ${step}`);
+        }
+      }
+      process.exit(1);
+      return;
+    }
     logBridgeMessage(`Listening on http://127.0.0.1:${port}`);
     writeReadySignal();
   });
@@ -1173,7 +1324,7 @@ export async function runBridge(port = resolveSessionPort()): Promise<void> {
   const shutdown = async () => {
     if (shuttingDown) return;
     shuttingDown = true;
-    removePidFile();
+    unpublishBridgeCapability();
     // Each resource is torn down independently: one failure must not skip the
     // rest, or a server close error would leave the MCP transport open.
     // Failures are logged, never rethrown — an escaping rejection exits
@@ -1201,7 +1352,7 @@ export async function runBridge(port = resolveSessionPort()): Promise<void> {
   // don't survive as orphans. The bridge is spawned with detached:true,
   // making it a process group leader — all children share our PGID.
   process.on("exit", () => {
-    removePidFile();
+    unpublishBridgeCapability();
     try {
       process.kill(-process.pid, "SIGTERM");
     } catch {

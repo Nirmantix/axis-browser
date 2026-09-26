@@ -1233,15 +1233,20 @@ async function handleClick(args: string[], full: boolean): Promise<string> {
 
 async function handleFill(args: string[], full: boolean): Promise<string> {
   const uid = args[0];
+  // Presence, not truthiness: an explicitly empty argument is a real request to
+  // *clear* the field. Testing the joined string instead made `fill @g1:5 ""`
+  // unreachable, so a prefilled input could never be emptied from the CLI.
+  const hasValue = args.length > 1;
   const value = args.slice(1).join(" ");
   if (!uid) {
     throw new CdpError("Missing element ref", "VALIDATION_ERROR", [
       'Run `axis-browser fill @<uid> "text"` — get uid from snapshot',
     ]);
   }
-  if (!value) {
+  if (!hasValue) {
     throw new CdpError("Missing fill text", "VALIDATION_ERROR", [
       'Run `axis-browser fill @<uid> "text"` to fill the field',
+      'Pass an explicit empty string to clear it: axis-browser fill @<uid> ""',
     ]);
   }
 
@@ -1710,7 +1715,10 @@ async function handleUpload(args: string[], full: boolean): Promise<string> {
   }
   const snapshot = await callWithSnapshot("upload_file", {
     uid: await parseUidFresh(uid),
-    filePath,
+    // Resolved here, not in the bridge: the bridge is a detached process whose
+    // cwd is wherever the *first* command of the session happened to run, so a
+    // relative path sent verbatim would name a different file (or nothing).
+    filePath: resolveOutputPath(filePath),
   });
   return formatPageOutput(snapshot, "upload", undefined, full);
 }

@@ -257,7 +257,7 @@ describe("main", () => {
     {
       argv: ["upload", "@g7:1", "-file"],
       tool: "upload_file",
-      args: { uid: "1", filePath: "-file" },
+      args: { uid: "1", filePath: resolve(process.cwd(), "-file") },
       preflight: true,
     },
     {
@@ -628,6 +628,76 @@ describe("main", () => {
     await main(["perf-stop", "--file"]);
 
     expect(callTool).toHaveBeenCalledWith("performance_stop_trace", {});
+  });
+
+  it.each([
+    { argv: ["fill"], message: "Missing element ref" },
+    { argv: ["upload"], message: "Missing element ref" },
+    { argv: ["upload", "@1"], message: "Missing file path" },
+  ])("rejects `%s` before calling MCP", async ({ argv, message }) => {
+    const write = vi
+      .spyOn(process.stdout, "write")
+      .mockImplementation(() => true);
+
+    await main(argv);
+
+    expect(callTool).not.toHaveBeenCalled();
+    expect(String(write.mock.calls[0]?.[0])).toContain(message);
+    expect(process.exitCode).toBe(2);
+  });
+
+  it("rejects fill without text and prescribes the explicit-empty escape", async () => {
+    const write = vi
+      .spyOn(process.stdout, "write")
+      .mockImplementation(() => true);
+
+    await main(["fill", "@1"]);
+
+    expect(callTool).not.toHaveBeenCalled();
+    // Both suggestions must reach the operator — including the escape hatch
+    // for clearing a field, which is otherwise unguessable. Decoded, not
+    // substringed: TOON escapes the quotes inside the help strings.
+    expect(decode(String(write.mock.calls[0]?.[0]))).toEqual({
+      error: "Missing fill text",
+      code: "VALIDATION_ERROR",
+      help: [
+        'Run `axis-browser fill @<uid> "text"` to fill the field',
+        'Pass an explicit empty string to clear it: axis-browser fill @<uid> ""',
+      ],
+    });
+    expect(process.exitCode).toBe(2);
+  });
+
+  it("sends an explicit empty fill value — clearing a field is a real request", async () => {
+    const write = vi
+      .spyOn(process.stdout, "write")
+      .mockImplementation(() => true);
+    callTool.mockResolvedValue('RootWebArea "P"\n  uid=1 link "x"');
+
+    await main(["fill", "@1", ""]);
+
+    // Presence, not truthiness: "" is a request to clear the field, distinct
+    // from the missing-argument error above.
+    expect(callTool.mock.calls[0]).toEqual(["fill", { uid: "1", value: "" }]);
+    expect(process.exitCode).toBeUndefined();
+  });
+
+  it("resolves the upload path against caller cwd before calling MCP", async () => {
+    // The bridge is detached: its cwd is wherever the session's first command
+    // ran, so a verbatim relative path would name the wrong file there.
+    vi.spyOn(process, "cwd").mockReturnValue("/caller/dir");
+    const write = vi
+      .spyOn(process.stdout, "write")
+      .mockImplementation(() => true);
+    callTool.mockResolvedValue('RootWebArea "P"\n  uid=1 link "x"');
+
+    await main(["upload", "@1", "./photo.jpg"]);
+
+    expect(callTool.mock.calls[0]).toEqual([
+      "upload_file",
+      { uid: "1", filePath: resolve("/caller/dir", "./photo.jpg") },
+    ]);
+    expect(process.exitCode).toBeUndefined();
   });
 });
 

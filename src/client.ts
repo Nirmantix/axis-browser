@@ -2,8 +2,8 @@
  * HTTP client for the Axis Browser bridge + bridge lifecycle management.
  */
 
-import { execFileSync, spawn } from "node:child_process";
-import { readFileSync, existsSync } from "node:fs";
+import { spawn } from "node:child_process";
+import { existsSync } from "node:fs";
 import { request } from "node:http";
 import { dirname } from "node:path";
 import { AxiError } from "axi-sdk-js";
@@ -16,14 +16,30 @@ import { type AxiMode, resolveModeSafe } from "./mode.js";
 import { needsPageId } from "./pages.js";
 import { autoReapOrphans } from "./reap.js";
 import {
+  identityIsBridge,
+  identityMatchesRecord,
+  readProcessGroupId,
+  readProcessIdentity,
+} from "./process-identity.js";
+import {
   clearSelectedPageId,
   getSelectedPageId,
   rememberToolRouting,
 } from "./selected-page.js";
+import { assertStateDirOwned, StateDirError } from "./state-dir.js";
 import {
+  BRIDGE_AUTH_SCHEME,
+  BRIDGE_TOKEN_HEADER,
+  clearBridgeRecord,
+  clearLegacyBridgeRecord,
+  DEFAULT_SESSION_NAME,
+  isAuthedRecord,
+  readBridgeRecord,
   resolveSessionName,
   resolveSessionPidFile,
   resolveSessionPort,
+  resolveSessionStateChain,
+  type BridgeRecord,
 } from "./sessions.js";
 
 const DEFAULT_BRIDGE_TIMEOUT_MS = 30_000;
@@ -66,24 +82,62 @@ export class CdpError extends AxiError {
   }
 }
 
-interface PidInfo {
-  pid: number;
+/**
+ * An authenticated bridge endpoint: the loopback port plus the capability token
+ * from the *same* session record. Both are re-read from disk at every use, so a
+ * bridge that was recycled while this process was running is never addressed with
+ * the previous process's token.
+ */
+export interface BridgeEndpoint {
   port: number;
+  token: string;
 }
 
-function readPidFile(
-  pidFile: string = resolveSessionPidFile(),
-): PidInfo | null {
-  try {
-    if (!existsSync(pidFile)) return null;
-    const data = JSON.parse(readFileSync(pidFile, "utf-8"));
-    if (typeof data.pid === "number" && typeof data.port === "number") {
-      return data as PidInfo;
-    }
-    return null;
-  } catch {
-    return null;
-  }
+/**
+ * The active session's authenticated endpoint, or null when there is no usable
+ * record. A tokenless legacy record also yields null: adopting the unauthenticated
+ * bridge an older CLI may have left behind would put browser control back on a
+ * predictable local port, which is exactly what the token exists to prevent.
+ */
+export function readBridgeEndpoint(
+  sessionName: string = resolveSessionName(),
+): BridgeEndpoint | null {
+  const record = readBridgeRecord(resolveSessionPidFile(sessionName));
+  if (!isAuthedRecord(record)) return null;
+  return { port: record.port, token: record.token };
+}
+
+/** The active session's endpoint, or an actionable error naming the legacy record. */
+function requireBridgeEndpoint(sessionName: string): BridgeEndpoint {
+  const record = readBridgeRecord(resolveSessionPidFile(sessionName));
+  if (isAuthedRecord(record)) return { port: record.port, token: record.token };
+  throw legacyRecordError(sessionName, record);
+}
+
+/**
+ * The error every RPC path raises for a pre-token record. It names the session,
+ * tells the operator the one command that can retire the old bridge, and never
+ * suggests killing a PID by hand.
+ */
+function legacyRecordError(
+  session: string,
+  record: BridgeRecord | null,
+): CdpError {
+  const suffix =
+    session === DEFAULT_SESSION_NAME
+      ? ""
+      : ` (with CHROME_DEVTOOLS_AXI_SESSION=${session})`;
+  return new CdpError(
+    `The bridge record for session "${session}" carries no capability token, so this CLI cannot authenticate to it. It was left by an older Axis Browser; adopting it would put unauthenticated browser control back on a predictable local port.`,
+    "BRIDGE_NOT_READY",
+    [
+      `Retire it with this upgraded CLI: axis-browser stop${suffix}`,
+      "Then re-run your command; the new bridge writes an authenticated record.",
+      record
+        ? `If stop cannot verify pid ${record.pid}, inspect it before touching it: ps -p ${record.pid} -o command=`
+        : "If stop cannot verify the process, inspect it before touching it: ps -o command= -p <pid>",
+    ],
+  );
 }
 
 function isProcessAlive(pid: number): boolean {
@@ -99,10 +153,18 @@ function httpGet(
   port: number,
   path: string,
   timeoutMs = 2000,
+  token?: string,
 ): Promise<string> {
   return new Promise((resolve, reject) => {
     const req = request(
-      { hostname: "127.0.0.1", port, path, method: "GET", timeout: timeoutMs },
+      {
+        hostname: "127.0.0.1",
+        port,
+        path,
+        method: "GET",
+        timeout: timeoutMs,
+        headers: token ? { [BRIDGE_TOKEN_HEADER]: token } : undefined,
+      },
       (res) => {
         let data = "";
         res.on("data", (chunk) => (data += chunk));
@@ -123,6 +185,7 @@ function httpPost(
   path: string,
   body: unknown,
   timeoutMs = 120_000,
+  token?: string,
 ): Promise<string> {
   return new Promise((resolve, reject) => {
     const payload = JSON.stringify(body);
@@ -136,6 +199,7 @@ function httpPost(
         headers: {
           "Content-Type": "application/json",
           "Content-Length": Buffer.byteLength(payload),
+          ...(token ? { [BRIDGE_TOKEN_HEADER]: token } : {}),
         },
       },
       (res) => {
@@ -168,11 +232,16 @@ function httpPost(
  * With `expectedSession`, a bridge that reports a *different* session name is
  * treated as unhealthy, so a session never silently reuses another session's
  * bridge after a port collision (two sessions pinned to one port via a global
- * `CHROME_DEVTOOLS_AXI_PORT`). A bridge that omits the field (older version) is
- * accepted, since there is no mismatch to detect.
+ * `CHROME_DEVTOOLS_AXI_PORT`).
  *
  * With `notice`, a healthy *deep* probe writes the bridge's `pageIdentityChanged`
  * flag into that caller-owned holder (see {@link PageIdentityNotice}).
+ *
+ * A response only counts as healthy when it carries the current capability auth
+ * marker. That is what stops a listener on the expected port — an older
+ * unauthenticated bridge, or an unrelated local server that happens to answer
+ * `/health` — from being treated as ours: the token is sent with the probe, and
+ * the marker proves the answer came from a bridge that enforces it.
  *
  * Exported for tests; production code uses it via {@link ensureBridge}.
  */
@@ -182,14 +251,16 @@ export async function checkBridgeHealth(
     deep?: boolean;
     expectedSession?: string;
     notice?: PageIdentityNotice;
+    token?: string;
   } = {},
 ): Promise<boolean> {
   try {
     const path = opts.deep ? "/health?deep=1" : "/health";
     const timeoutMs = opts.deep ? DEEP_HEALTH_TIMEOUT_MS : HEALTH_TIMEOUT_MS;
-    const resp = await httpGet(port, path, timeoutMs);
+    const resp = await httpGet(port, path, timeoutMs, opts.token);
     const data = JSON.parse(resp);
     if (data.status !== "ok") return false;
+    if (data.auth !== BRIDGE_AUTH_SCHEME) return false;
     if (
       opts.expectedSession !== undefined &&
       typeof data.session === "string" &&
@@ -253,78 +324,82 @@ export async function waitForProcessExit(
 }
 
 /**
- * Whether `pid` is one of our bridge processes, decided by inspecting its
- * command line.
- *
- * POSIX-only: `ps` does not exist on Windows, so this returns false there and
- * callers fall back to killing the bare pid instead of the process group. That
- * degrades rather than breaks — the bridge still dies — but chrome-devtools-mcp
- * and Chrome children can survive as orphans. Returning false on an unknown pid
- * is also the safe direction: it never escalates to a group kill we are not
- * certain we own.
+ * Whether `pid` is still the bridge its record named, decided by re-reading the
+ * live process identity and comparing it with the recorded start time. This
+ * replaces the old "does the command line contain the marker" check: a marker match
+ * proves the process is *a* bridge, not that it is *this* record's bridge, so a
+ * recycled pid running an unrelated Axis session could be signalled on the
+ * strength of a stale file.
  */
-function isBridgeProcess(pid: number): boolean {
-  try {
-    const command = execFileSync("ps", ["-p", String(pid), "-o", "command="], {
-      encoding: "utf-8",
-      timeout: 1000,
-    });
-    return command.includes("chrome-devtools-axi-bridge");
-  } catch {
-    return false;
-  }
+function verifiedBridgeIdentity(
+  pid: number,
+  expectedStartedAt: string,
+): boolean {
+  return identityMatchesRecord(readProcessIdentity(pid), expectedStartedAt);
 }
 
 /**
- * Terminate a bridge process and reap its detached process group. Sends
- * SIGTERM, polls up to ~2s for exit, then escalates to SIGKILL on the entire
- * process group so chrome-devtools-mcp / Chrome children can't survive as
- * orphans. Returns once the bridge PID is gone (or the SIGKILL grace window
- * expires).
+ * Raised instead of signalling anything when a recorded pid no longer names the
+ * bridge we started. It tells the operator how to look for themselves and how to
+ * clear the stale record, because guessing here means killing a process we do not
+ * own.
+ */
+function staleIdentityError(pid: number): CdpError {
+  return new CdpError(
+    `Pid ${pid} is recorded as this session's bridge, but the live process at that pid does not match the recorded identity (command line or start time differs). Nothing was signalled: that pid may now belong to an unrelated process.`,
+    "BRIDGE_NOT_READY",
+    [
+      `Inspect it yourself before deciding anything: ps -p ${pid} -o command=,lstart=`,
+      `If it is unrelated, clear the stale record: rm -f ${resolveSessionPidFile()}`,
+      "Or work in a fresh session: CHROME_DEVTOOLS_AXI_SESSION=work2 axis-browser open <url>",
+    ],
+  );
+}
+
+/**
+ * Terminate a verified bridge process. Sends SIGTERM and waits up to ~2s; the
+ * bridge's own shutdown handler removes its record and reaps its children on exit.
+ * If it is still alive, identity is verified *again* before escalating, and a group
+ * signal is only sent when the process still leads its own group.
+ *
+ * There is deliberately no post-exit group kill. Once the leader is gone the OS is
+ * free to hand its pid — and that pgid — to an unrelated process, so signalling
+ * `-pid` after the fact can kill a process tree we have never seen.
  */
 export async function terminateBridgeProcess(
   pid: number,
+  expectedStartedAt: string,
   opts: { killProcessGroup?: boolean } = {},
 ): Promise<void> {
   if (!isProcessAlive(pid)) return;
-  const killProcessGroup = opts.killProcessGroup === true;
+  if (!verifiedBridgeIdentity(pid, expectedStartedAt)) {
+    throw staleIdentityError(pid);
+  }
 
-  // Give the bridge a chance to run its own shutdown handler (which kills its
-  // process group on `exit`).
   try {
     process.kill(pid, "SIGTERM");
   } catch {
-    return;
+    return; // Already gone, or not ours to signal.
   }
 
-  if (await waitForProcessExit(pid, 2000)) {
-    if (killProcessGroup) {
-      try {
-        process.kill(-pid, "SIGKILL");
-      } catch {
-        // Group already gone or pid was never a group leader — fine.
-      }
-    }
-    return;
-  }
+  if (await waitForProcessExit(pid, 2000)) return;
 
-  // Escalate: kill the whole process group so children get reaped together.
-  if (killProcessGroup) {
+  // Still alive after SIGTERM. Re-verify before escalating: the pid may have
+  // changed owner during the wait.
+  if (!verifiedBridgeIdentity(pid, expectedStartedAt)) {
+    throw staleIdentityError(pid);
+  }
+  if (opts.killProcessGroup === true && readProcessGroupId(pid) === pid) {
     try {
       process.kill(-pid, "SIGKILL");
     } catch {
-      try {
-        process.kill(pid, "SIGKILL");
-      } catch {
-        // Already dead.
-      }
+      // Group already gone; the bare kill below still applies.
     }
-  } else {
-    try {
-      process.kill(pid, "SIGKILL");
-    } catch {
-      // Already dead.
-    }
+  }
+  try {
+    process.kill(pid, "SIGKILL");
+  } catch {
+    return;
   }
   await waitForProcessExit(pid, 1000);
 }
@@ -503,22 +578,32 @@ export async function ensureBridge(
   const port = resolveSessionPort(sessionName);
   const pidFile = resolveSessionPidFile(sessionName);
 
-  // Check existing bridge via PID file. Use a deep probe so a bridge whose
-  // attached CDP target has gone away gets recycled instead of returned.
-  const pidInfo = readPidFile(pidFile);
-  if (pidInfo && isProcessAlive(pidInfo.pid)) {
-    if (
-      await checkBridgeHealth(pidInfo.port, {
-        deep: true,
-        expectedSession: sessionName,
-        notice,
-      })
-    ) {
-      return pidInfo.port;
+  // Check the existing bridge through its session record rather than a bare pid
+  // file: the record carries the capability token this CLI must present, and the
+  // start time it must match before anything is signalled.
+  const record = readBridgeRecord(pidFile);
+  if (record) {
+    // A tokenless record was left by an older CLI. Adopting it would put
+    // unauthenticated browser control back on a predictable local port, so every
+    // RPC path refuses and points at the one command that can retire it.
+    if (!isAuthedRecord(record)) throw legacyRecordError(sessionName, record);
+    if (isProcessAlive(record.pid)) {
+      // Deep probe, so a bridge whose attached CDP target has gone away gets
+      // recycled instead of returned.
+      if (
+        await checkBridgeHealth(record.port, {
+          deep: true,
+          expectedSession: sessionName,
+          notice,
+          token: record.token,
+        })
+      ) {
+        return record.port;
+      }
+      await terminateBridgeProcess(record.pid, record.startedAt, {
+        killProcessGroup: true,
+      });
     }
-    await terminateBridgeProcess(pidInfo.pid, {
-      killProcessGroup: isBridgeProcess(pidInfo.pid),
-    });
   }
 
   // MCP page ids reset with a new process; a leftover session id would
@@ -560,11 +645,18 @@ export async function ensureBridge(
   const deadline = Date.now() + timeoutMs;
   let sawShallowReady = false;
   while (Date.now() < deadline) {
+    // The bridge publishes its capability record only once it is listening, so
+    // the token is re-read on every pass. Until it appears the bridge answers
+    // 401 and the probe correctly reports "not ready yet" — a bind-race loser
+    // that never published is therefore indistinguishable from one still
+    // starting, and never gets adopted.
+    const token = readBridgeRecord(pidFile)?.token;
     if (
       await checkBridgeHealth(port, {
         deep: true,
         expectedSession: sessionName,
         notice,
+        token,
       })
     ) {
       return port;
@@ -575,6 +667,7 @@ export async function ensureBridge(
           deep: true,
           expectedSession: sessionName,
           notice,
+          token: readBridgeRecord(pidFile)?.token,
         })
       ) {
         return port;
@@ -583,7 +676,7 @@ export async function ensureBridge(
     }
     if (
       !sawShallowReady &&
-      (await checkBridgeHealth(port, { expectedSession: sessionName }))
+      (await checkBridgeHealth(port, { expectedSession: sessionName, token }))
     ) {
       sawShallowReady = true;
     }
@@ -655,11 +748,11 @@ async function postTool(
   port: number,
   name: string,
   args: Record<string, unknown>,
-  opts: { roots?: string[]; timeoutMs?: number } = {},
+  opts: { roots?: string[]; timeoutMs?: number; token?: string } = {},
 ): Promise<string> {
   const body: Record<string, unknown> = { name, args };
   if (opts.roots && opts.roots.length > 0) body.roots = opts.roots;
-  const resp = await httpPost(port, "/call", body, opts.timeoutMs);
+  const resp = await httpPost(port, "/call", body, opts.timeoutMs, opts.token);
   return parseCallResponse(resp);
 }
 
@@ -768,12 +861,17 @@ export async function callTool(
   // overwrite or consume this one's reconnect attribution.
   const notice: PageIdentityNotice = { pageIdentityChanged: false };
   const port = await ensureBridge(undefined, notice);
+  // Re-read for every tool call: the bridge may have been recycled between
+  // ensureBridge's probe and this request, and a stale token is a hard 401
+  // rather than a silent fall-through to an unauthenticated call.
+  const { token } = requireBridgeEndpoint(resolveSessionName());
   let resolved = args;
 
   try {
     resolved = resolveToolArgs(name, args, notice.pageIdentityChanged);
     const result = await postTool(port, name, resolved, {
       roots: collectRootDirs(name, resolved),
+      token,
     });
     rememberToolRouting(name, resolved, result);
     return result;
@@ -941,18 +1039,27 @@ export function mapErrorMessage(message: string): CdpError {
  */
 export async function getSessionSnapshotIfRunning(): Promise<string | null> {
   let sessionName: string;
-  let pidInfo: PidInfo | null;
+  let endpoint: BridgeEndpoint | null;
+  let pid: number | null;
   try {
     sessionName = resolveSessionName();
-    pidInfo = readPidFile(resolveSessionPidFile(sessionName));
+    const record = readBridgeRecord(resolveSessionPidFile(sessionName));
+    endpoint = isAuthedRecord(record)
+      ? { port: record.port, token: record.token }
+      : null;
+    pid = record?.pid ?? null;
   } catch {
     return null;
   }
-  if (!pidInfo || !isProcessAlive(pidInfo.pid)) {
-    return null;
-  }
+  // A tokenless legacy record degrades to "no active session" here instead of
+  // raising: this probe runs on every prompt, and `axis-browser stop` is the loud
+  // path that explains how to retire the old bridge.
+  if (!endpoint || pid === null || !isProcessAlive(pid)) return null;
   if (
-    !(await checkBridgeHealth(pidInfo.port, { expectedSession: sessionName }))
+    !(await checkBridgeHealth(endpoint.port, {
+      expectedSession: sessionName,
+      token: endpoint.token,
+    }))
   ) {
     return null;
   }
@@ -960,10 +1067,10 @@ export async function getSessionSnapshotIfRunning(): Promise<string | null> {
     const pageId = getSelectedPageId();
     if (pageId === null) return null;
     return await postTool(
-      pidInfo.port,
+      endpoint.port,
       "take_snapshot",
       { pageId },
-      { timeoutMs: 5000 },
+      { timeoutMs: 5000, token: endpoint.token },
     );
   } catch {
     return null;
@@ -971,18 +1078,118 @@ export async function getSessionSnapshotIfRunning(): Promise<string | null> {
 }
 
 /**
- * Stop the bridge process. Waits for the bridge PID to actually exit (bounded
- * poll, ~2s) before escalating to SIGKILL on the entire detached process
- * group, so chrome-devtools-mcp + Chrome children get reaped together rather
- * than orphaned. Resolves once the bridge process is gone.
+ * Stop the bridge process for the selected session. Waits for the pid to actually
+ * exit before escalating, and only ever signals a process whose live identity
+ * matches the record — see {@link terminateBridgeProcess}.
+ *
+ * A tokenless record predates the capability token, so it cannot be authenticated.
+ * Because `stop` is an explicit operator command rather than a probe that races
+ * bridge startup, it still retires that bridge, but only through the verified path
+ * in {@link stopLegacyBridge}.
  */
 export async function stopBridge(): Promise<boolean> {
-  const pidInfo = readPidFile();
-  if (!pidInfo) return false;
-  if (!isProcessAlive(pidInfo.pid)) return false;
-  await terminateBridgeProcess(pidInfo.pid, {
-    killProcessGroup: isBridgeProcess(pidInfo.pid),
-  });
+  const sessionName = resolveSessionName();
+  const pidFile = resolveSessionPidFile(sessionName);
+  const record = readBridgeRecord(pidFile);
+  if (!record) return false;
+  if (!isProcessAlive(record.pid)) return false;
+
+  if (isAuthedRecord(record)) {
+    await terminateBridgeProcess(record.pid, record.startedAt, {
+      killProcessGroup: true,
+    });
+    // An orderly bridge removes its own record on exit; one that had to be
+    // SIGKILLed never ran that handler. Clear it here so a dead session does not
+    // leave a live-looking record — holding a token — on disk. The pid and token
+    // comparison means a bridge that restarted in the meantime is left alone.
+    clearBridgeRecord({ pid: record.pid, token: record.token }, pidFile);
+  } else {
+    await stopLegacyBridge(sessionName, record);
+  }
   clearSelectedPageId();
   return true;
+}
+
+/**
+ * Retire a pre-token bridge on explicit operator request — or explain why it will
+ * not be touched.
+ *
+ * Nothing here is authenticated by a secret, so the authority to signal comes from
+ * evidence instead: the state directory must be a real owner-controlled directory
+ * (never a symlink), the live process must carry the bridge marker, and two
+ * independent identity reads must agree on the same start time. That last check is
+ * what separates "this pid has been the same bridge all along" from "this pid was
+ * recycled between our two looks". Anything unverifiable raises instead of
+ * signalling.
+ */
+async function stopLegacyBridge(
+  sessionName: string,
+  record: BridgeRecord,
+): Promise<void> {
+  const pidFile = resolveSessionPidFile(sessionName);
+  try {
+    assertStateDirOwned(resolveSessionStateChain(sessionName));
+  } catch (error) {
+    throw new CdpError(
+      `Refusing to act on the bridge record for session "${sessionName}": ${error instanceof Error ? error.message : String(error)}`,
+      "BRIDGE_NOT_READY",
+      error instanceof StateDirError ? [...error.repair] : [],
+    );
+  }
+
+  const first = readProcessIdentity(record.pid);
+  const second =
+    first && identityIsBridge(first) ? readProcessIdentity(record.pid) : null;
+  if (
+    !first ||
+    !identityIsBridge(first) ||
+    !second ||
+    !identityMatchesRecord(second, first.startedAt)
+  ) {
+    throw new CdpError(
+      `The record for session "${sessionName}" names pid ${record.pid}, but that pid could not be verified as this bridge (no bridge marker in its command line, or its start time changed between two reads). Nothing was signalled.`,
+      "BRIDGE_NOT_READY",
+      [
+        `Inspect it yourself before deciding anything: ps -p ${record.pid} -o command=,lstart=`,
+        `If it is unrelated, clear the stale record: rm -f ${pidFile}`,
+        "Or work in a fresh session: CHROME_DEVTOOLS_AXI_SESSION=work2 axis-browser open <url>",
+      ],
+    );
+  }
+
+  // If the old bridge answers /health at all, insist that it is *this* session's.
+  // No answer is not a failure: a tokenless bridge may already be wedged, and the
+  // identity checks above are what authorise the signal.
+  const reported = await readLegacyBridgeSession(record.port);
+  if (reported !== null && reported !== sessionName) {
+    throw new CdpError(
+      `Pid ${record.pid} answers on port ${record.port} as session "${reported}", not "${sessionName}". Nothing was signalled: the record and the live bridge disagree about which session they belong to.`,
+      "BRIDGE_NOT_READY",
+      [
+        `Stop the session that actually owns it: CHROME_DEVTOOLS_AXI_SESSION=${reported} axis-browser stop`,
+        `Then clear this stale record: rm -f ${pidFile}`,
+      ],
+    );
+  }
+
+  await terminateBridgeProcess(record.pid, second.startedAt, {
+    killProcessGroup: true,
+  });
+  // A SIGKILLed legacy bridge never runs its own cleanup, so its record would
+  // outlive it and be mistaken for a live bridge by the next command.
+  clearLegacyBridgeRecord({ pid: record.pid });
+}
+
+/** The session name a pre-token bridge reports on /health, or null if it does not answer. */
+async function readLegacyBridgeSession(port: number): Promise<string | null> {
+  try {
+    const data = JSON.parse(
+      await httpGet(port, "/health", HEALTH_TIMEOUT_MS),
+    ) as {
+      session?: unknown;
+    };
+    return typeof data.session === "string" ? data.session : null;
+  } catch {
+    return null;
+  }
 }

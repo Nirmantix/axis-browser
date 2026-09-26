@@ -20,6 +20,11 @@ import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
+import {
+  type ProcessIdentity,
+  identityMatchesRecord,
+  readProcessIdentity,
+} from "./process-identity.js";
 
 /** Command-line marker identifying a process as one of our bridges. */
 const BRIDGE_MARKER = "chrome-devtools-axi-bridge";
@@ -30,6 +35,12 @@ export interface BridgeProcess {
   pgid: number;
   ageMs: number;
   command: string;
+  /**
+   * Process start time observed when the listing was built — the baseline every
+   * later identity re-read is compared against before a signal is sent. Null
+   * when the identity probe failed at listing time; null means never signal.
+   */
+  startedAt: string | null;
 }
 
 export interface ReapOutcome {
@@ -67,6 +78,7 @@ export function listBridgeProcesses(
       maxBuffer: 64 * 1024 * 1024,
       timeout: 10_000,
     }),
+  readIdentity: (pid: number) => ProcessIdentity | null = readProcessIdentity,
 ): BridgeProcess[] {
   let out: string;
   try {
@@ -90,6 +102,7 @@ export function listBridgeProcesses(
       pgid: Number(match[3]),
       ageMs: parseElapsed(match[4]),
       command,
+      startedAt: readIdentity(Number(match[1]))?.startedAt ?? null,
     });
   }
   return rows;
@@ -227,11 +240,23 @@ function isAlive(pid: number): boolean {
  * The group is only signalled when the bridge leads it — bridges are spawned detached
  * (`detached: true`), so in production it always does. When it does not, we signal the
  * bare pid: killing a group we do not lead could reach an unrelated shell.
+ *
+ * A pid is only ever signalled after its identity is re-verified: the process
+ * listing that produced `targets` may be seconds old by the time a signal goes
+ * out, and a pid recycled in that window would put the signal — possibly a
+ * whole process group's worth — on an unrelated process. Immediately before
+ * each batch the live identity is compared against the start time the listing
+ * recorded; a target that cannot be re-verified (gone, recycled, no recorded
+ * start time, or no longer a bridge command) is skipped, never signalled.
  */
 export function reapBridges(
   targets: BridgeProcess[],
-  opts: { dryRun?: boolean } = {},
+  opts: {
+    dryRun?: boolean;
+    readIdentity?: (pid: number) => ProcessIdentity | null;
+  } = {},
 ): ReapOutcome {
+  const readIdentity = opts.readIdentity ?? readProcessIdentity;
   if (opts.dryRun) {
     return { reaped: [], failed: [], skipped: targets.map((t) => t.pid) };
   }
@@ -249,12 +274,25 @@ export function reapBridges(
     }
   };
 
+  /** Pids whose identity could not be re-verified just before a signal. */
+  const unverified = new Set<number>();
+
   const signal = (batch: BridgeProcess[], sig: "SIGTERM" | "SIGKILL") => {
     for (const target of batch) {
       if (!isAlive(target.pid)) continue;
+      // Re-read the identity *now*: the listing's picture may be seconds old and
+      // this pid could have been recycled onto an unrelated process. It is also
+      // what makes the recorded pgid safe to act on — a group signal is only
+      // sent when `pgid === pid`, and only after this check proves the pid still
+      // names the same bridge that recorded that pgid.
+      if (
+        target.startedAt === null ||
+        !identityMatchesRecord(readIdentity(target.pid), target.startedAt)
+      ) {
+        unverified.add(target.pid);
+        continue;
+      }
       try {
-        // Group-kill only when the bridge leads its own group, so the signal can
-        // never reach a shell that merely shares a pgid with it.
         if (target.pgid === target.pid) process.kill(-target.pgid, sig);
         else process.kill(target.pid, sig);
       } catch {
@@ -277,7 +315,10 @@ export function reapBridges(
 
   const outcome: ReapOutcome = { reaped: [], failed: [], skipped: [] };
   for (const target of targets) {
-    if (isAlive(target.pid)) outcome.failed.push(target.pid);
+    // A pid we refused to signal is skipped, never failed — it was not ours to
+    // kill, so its survival is not a reap failure.
+    if (unverified.has(target.pid)) outcome.skipped.push(target.pid);
+    else if (isAlive(target.pid)) outcome.failed.push(target.pid);
     else outcome.reaped.push(target.pid);
   }
   return outcome;

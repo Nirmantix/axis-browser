@@ -35,16 +35,25 @@ describe("readProfileLock — Chrome's one-process-per-profile lock", () => {
 describe("buildDoctorReport", () => {
   let home: string;
   const savedSession = process.env.CHROME_DEVTOOLS_AXI_SESSION;
+  const savedHome = process.env.HOME;
+  const savedPort = process.env.CHROME_DEVTOOLS_AXI_PORT;
 
   beforeEach(() => {
     home = mkdtempSync(join(tmpdir(), "axi-doctor-"));
     mkdirSync(join(home, ".axis-browser"), { recursive: true });
     delete process.env.CHROME_DEVTOOLS_AXI_SESSION;
+    // readBridgeRecord/scanSessionPidFiles resolve through homedir(), not the
+    // injected home — sandbox HOME so a stray real record cannot leak in.
+    process.env.HOME = home;
   });
   afterEach(() => {
     if (savedSession === undefined)
       delete process.env.CHROME_DEVTOOLS_AXI_SESSION;
     else process.env.CHROME_DEVTOOLS_AXI_SESSION = savedSession;
+    if (savedHome === undefined) delete process.env.HOME;
+    else process.env.HOME = savedHome;
+    if (savedPort === undefined) delete process.env.CHROME_DEVTOOLS_AXI_PORT;
+    else process.env.CHROME_DEVTOOLS_AXI_PORT = savedPort;
     rmSync(home, { recursive: true, force: true });
   });
 
@@ -199,6 +208,112 @@ describe("buildDoctorReport", () => {
     expect(report.remedies.some((r) => r.startsWith("rm "))).toBe(true);
   });
 
+  it("presents the record's capability token to the health probe", async () => {
+    // The bridge 401s unauthenticated /health: doctor must arm itself from the
+    // same record every other RPC path reads, or it reports its own healthy
+    // bridge as broken.
+    writeFileSync(
+      join(home, ".axis-browser", "bridge.pid"),
+      JSON.stringify({
+        pid: process.pid,
+        port: 9871,
+        token: "record-token",
+        startedAt: "t",
+      }),
+    );
+    const seen: { port?: number; token?: string; session?: string } = {};
+    const report = await buildDoctorReport(
+      { CHROME_DEVTOOLS_AXI_MODE: "ephemeral" },
+      {
+        ...deps({ ok: true }),
+        health: async (
+          port: number,
+          opts?: { expectedSession?: string; token?: string },
+        ) => {
+          seen.port = port;
+          seen.session = opts?.expectedSession;
+          seen.token = opts?.token;
+          return true;
+        },
+      },
+    );
+    expect(seen).toEqual({
+      port: report.session.port,
+      session: "default",
+      token: "record-token",
+    });
+  });
+
+  it("probes without a token when the record predates capability tokens", async () => {
+    writeFileSync(
+      join(home, ".axis-browser", "bridge.pid"),
+      JSON.stringify({ pid: process.pid, port: 9871 }),
+    );
+    const tokens: (string | undefined)[] = [];
+    await buildDoctorReport(
+      { CHROME_DEVTOOLS_AXI_MODE: "ephemeral" },
+      {
+        ...deps({ ok: true }),
+        health: async (_port: number, opts?: { token?: string }) => {
+          tokens.push(opts?.token);
+          return true;
+        },
+      },
+    );
+    expect(tokens).toEqual([undefined]);
+  });
+
+  it("warns on a tokenless record and prescribes the verified stop", async () => {
+    // The record names a live bridge this CLI cannot authenticate to; `stop`
+    // is the only sanctioned retirement path.
+    writeFileSync(
+      join(home, ".axis-browser", "bridge.pid"),
+      JSON.stringify({ pid: process.pid, port: 9871 }),
+    );
+    const report = await buildDoctorReport(
+      { CHROME_DEVTOOLS_AXI_MODE: "ephemeral" },
+      deps({ ok: true }),
+    );
+    expect(report.status).toBe("warn");
+    expect(report.blockers.join("\n")).toContain("predates capability tokens");
+    expect(report.remedies.some((r) => r.startsWith("axis-browser stop"))).toBe(
+      true,
+    );
+  });
+
+  it("reports an invalid CHROME_DEVTOOLS_AXI_PORT as a blocker, not a crash", async () => {
+    // resolveSessionPort throws on a bad override; doctor converts that into the
+    // misconfiguration report it exists to produce. Supplied through the report's
+    // own env, exactly like the session name below.
+    const report = await buildDoctorReport(
+      {
+        CHROME_DEVTOOLS_AXI_MODE: "ephemeral",
+        CHROME_DEVTOOLS_AXI_PORT: "not-a-port",
+      },
+      deps({ ok: true }),
+    );
+    expect(report.status).toBe("error");
+    expect(report.blockers.join("\n")).toContain(
+      'Invalid CHROME_DEVTOOLS_AXI_PORT "not-a-port"',
+    );
+    expect(report.remedies).toContain("unset CHROME_DEVTOOLS_AXI_PORT");
+    // Falls back to the session's own port so the rest of the report still runs.
+    expect(report.session.port).toBe(9224);
+  });
+
+  it("diagnoses the env it was handed, not the ambient process.env", async () => {
+    // The port used to be the one setting doctor still read from process.env, so
+    // a bad value in the operator's shell leaked into a report built for a
+    // different environment — and a *good* value there was silently ignored.
+    // Restored in afterEach.
+    process.env.CHROME_DEVTOOLS_AXI_PORT = "not-a-port";
+    const report = await buildDoctorReport(
+      { CHROME_DEVTOOLS_AXI_MODE: "ephemeral" },
+      deps({ ok: true }),
+    );
+    expect(report.blockers.join("\n")).not.toContain("not-a-port");
+    expect(report.session.port).toBe(9224);
+  });
   it("reports an invalid session name instead of dying on it", async () => {
     // doctor exists to report misconfiguration; resolveSessionName throws on a bad
     // CHROME_DEVTOOLS_AXI_SESSION, which killed the command with a raw stack trace.

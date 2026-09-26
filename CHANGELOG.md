@@ -10,6 +10,48 @@ Versions `0.1.18` and below, and everything under
 
 ### Security
 
+* **the bridge now requires a per-session capability token.** `GET /health`,
+  `GET /tools` and `POST /call` were reachable by *any* local process that could
+  guess the port — and the port is deterministic, derived from the session name —
+  with `POST /call` mapping straight to `client.callTool`, i.e. arbitrary CDP
+  execution against the operator's browser. Each bridge now generates 32 random
+  bytes when it binds, writes them into its session record (`0600`, atomically via
+  an exclusive temp file and rename), and refuses every request that does not
+  present them in `x-axis-bridge-token`. The comparison is constant time, and the
+  length is checked first so a wrong-length guess gets a `401` rather than a `500`
+  that also confirms the length. The gate runs after the anti-rebinding check and
+  before any routing, so an unauthenticated caller learns nothing about the
+  session; `/health` answers `auth: "capability-v1"` only once authorised, which
+  is how `doctor` and the readiness poll tell our bridge from an unrelated
+  listener on the same port
+* **the state directory is proven private before a secret is written into it.**
+  `~/.axis-browser` and each session directory are now created `0700`, tightened
+  if they were left permissive, and rejected outright if they are a symlink, not a
+  directory, or owned by another user. On Windows the ACL is repaired with
+  `icacls` and then *verified* through the effective ACEs, allowing only the
+  current user and `LocalSystem`. A bridge that cannot verify any of this exits
+  non-zero with the exact repair commands instead of serving — a token in a
+  world-readable file is not a token. The CLI-side writers that can create a
+  session directory before any bridge exists create it `0700` too
+* **nothing is signalled on the strength of a stale pid any more.** `stop`, the
+  bridge-recycle path and `reap` all re-read the live process identity — command
+  line *and* start time — immediately before every `SIGTERM` and `SIGKILL`, so a
+  pid the OS recycled between listing and signalling is skipped and reported
+  rather than killed. A process group is only signalled when the target still
+  leads it, and the old post-exit `kill(-pid, SIGKILL)` is gone: once a leader
+  exits, its pid and pgid are free for the OS to hand to an unrelated tree, so
+  that call could kill processes we had never seen (the bridge's own exit handler
+  already reaps its children). Records written before tokens existed cannot be
+  authenticated, so no RPC path adopts one — `open`, tool calls and the ambient
+  snapshot refuse it with instructions, and only an explicit `axis-browser stop`
+  retires it, after verifying the process twice and confirming which session it
+  answers for
+* **refusals are logged without the request that caused them.** A rejected
+  Host/Origin used to be diagnosable only by reading the bridge log, and the
+  obvious way to write that log echoes attacker-controlled header values into a
+  file. The refusal line now carries the method, a fixed host/origin category and
+  a hostname derived from the header with control characters stripped and the
+  length capped — never a raw header, URL, query string, port or token
 * **the bridge no longer executes unreviewed code at startup.** With no explicit
   `CHROME_DEVTOOLS_AXI_MCP_PATH` it used to scan the npm global prefix for any
   installed `chrome-devtools-mcp` and, failing that, run
@@ -52,6 +94,21 @@ Versions `0.1.18` and below, and everything under
 
 ### Fixed
 
+* `upload @<uid> ./photo.jpg` sent the path to the bridge verbatim, and the bridge
+  is a detached process whose working directory is wherever the *first* command of
+  the session happened to run — so a relative upload named a different file, or
+  nothing. Upload paths are now resolved against the invoking CLI's directory, the
+  same way screenshot, trace and network-body output paths already were
+* `fill @<uid> ""` was rejected as "Missing fill text", which made a prefilled
+  input impossible to clear from the CLI. The check is now on the *presence* of a
+  value argument, so an explicit empty string reaches the field and `fill @<uid>`
+  with no argument still errors (and says how to clear a field)
+* `CHROME_DEVTOOLS_AXI_PORT` was parsed with `Number.parseInt` and silently
+  ignored when the result was unusable, so `9224abc` became `9224` and a typo
+  fell back to the session's hashed port — which can be *another* running
+  session's port, quietly putting two agents on one browser. A set-but-invalid
+  value is now a loud error naming the value and the port that would have been
+  used, and `doctor` reports it as a blocker instead of dying on it
 * upstream 0.1.34's strict flag parser ships a per-command allow-list with no
   entry for the fork-owned commands, so merging it silently rejected every flag
   those commands document: `update --check`, `doctor --json`,

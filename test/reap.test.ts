@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -13,7 +13,31 @@ import {
   scanSessionPidFiles,
 } from "../src/reap.js";
 
+vi.mock("node:child_process", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("node:child_process")>();
+  return {
+    ...actual,
+    // reapBridges settles with `sleep 1` between signal batches; the pause is
+    // production behaviour, not something these tests need to wait through.
+    // Everything else (ps, powershell) passes through untouched.
+    execFileSync: ((command: unknown, args: unknown, ...rest: unknown[]) =>
+      command === "sleep"
+        ? ""
+        : (actual.execFileSync as (...a: unknown[]) => unknown)(
+            command,
+            args,
+            ...rest,
+          )) as unknown,
+  };
+});
+
 const HOUR = 3_600_000;
+
+/** A bridge command line, matching the marker both modules check for. */
+const BRIDGE_COMMAND = "node /opt/axis/bin/chrome-devtools-axi-bridge.js";
+/** Two distinct process start times, as `ps lstart` renders them. */
+const STARTED_T1 = "Sat Sep 26 08:00:00 2026";
+const STARTED_T2 = "Sat Sep 26 09:30:00 2026";
 
 describe("parseElapsed", () => {
   it("MM:SS", () => expect(parseElapsed("05:30")).toBe(330_000));
@@ -31,33 +55,50 @@ describe("listBridgeProcesses", () => {
     "  505     1   505    02:00:00 node /opt/other-tool/server.js",
   ].join("\n");
 
+  // Identity probes are injected so these tests never depend on a real `ps`.
+  const noIdentity = () => null;
+
   it("finds only our bridges", () => {
-    const found = listBridgeProcesses(() => ps);
+    const found = listBridgeProcesses(() => ps, noIdentity);
     expect(found.map((p) => p.pid)).toEqual([101, 202]);
   });
 
   it("never matches a browser", () => {
-    expect(listBridgeProcesses(() => ps).some((p) => p.pid === 303)).toBe(
-      false,
-    );
+    expect(
+      listBridgeProcesses(() => ps, noIdentity).some((p) => p.pid === 303),
+    ).toBe(false);
   });
 
   it("does not match a grep looking for itself", () => {
-    expect(listBridgeProcesses(() => ps).some((p) => p.pid === 404)).toBe(
-      false,
-    );
+    expect(
+      listBridgeProcesses(() => ps, noIdentity).some((p) => p.pid === 404),
+    ).toBe(false);
   });
 
   it("returns nothing rather than guessing when ps is unavailable", () => {
     expect(
       listBridgeProcesses(() => {
         throw new Error("ps: not found");
-      }),
+      }, noIdentity),
     ).toEqual([]);
   });
 
   it("parses age", () => {
-    expect(listBridgeProcesses(() => ps)[0].ageMs).toBe(4 * HOUR);
+    expect(listBridgeProcesses(() => ps, noIdentity)[0].ageMs).toBe(4 * HOUR);
+  });
+
+  it("records each bridge's start time as the baseline for later re-reads", () => {
+    const found = listBridgeProcesses(
+      () => ps,
+      (pid) => ({ command: BRIDGE_COMMAND, startedAt: `T${pid}` }),
+    );
+    expect(found[0].startedAt).toBe("T101");
+    expect(found[1].startedAt).toBe("T202");
+  });
+
+  it("records a null start time when the identity probe fails", () => {
+    const found = listBridgeProcesses(() => ps, noIdentity);
+    expect(found[0].startedAt).toBeNull();
   });
 });
 
@@ -69,7 +110,8 @@ describe("claimedBridgePids / findOrphanBridges", () => {
     ppid,
     pgid: pid,
     ageMs,
-    command: "node chrome-devtools-axi-bridge.js",
+    command: BRIDGE_COMMAND,
+    startedAt: STARTED_T1,
   });
 
   beforeEach(() => {
@@ -186,20 +228,184 @@ describe("claimedBridgePids / findOrphanBridges", () => {
 });
 
 describe("reapBridges", () => {
+  /** Pids the simulated OS reports as live. */
+  let alive: Set<number>;
+  /** Pids that survive SIGTERM and only die on SIGKILL. */
+  let stubborn: Set<number>;
+  /** Pids that reject every signal with EPERM and stay alive. */
+  let denied: Set<number>;
+  /** Every real signal delivered, in order: negative pid = group signal. */
+  let kills: [number, string][];
+
+  beforeEach(() => {
+    alive = new Set();
+    stubborn = new Set();
+    denied = new Set();
+    kills = [];
+    vi.spyOn(process, "kill").mockImplementation((pid, signal) => {
+      const bare = Math.abs(pid);
+      if (signal === 0) {
+        if (alive.has(bare)) return true;
+        throw Object.assign(new Error("ESRCH"), { code: "ESRCH" });
+      }
+      if (!alive.has(bare)) {
+        throw Object.assign(new Error("ESRCH"), { code: "ESRCH" });
+      }
+      kills.push([pid, String(signal)]);
+      if (denied.has(bare)) {
+        throw Object.assign(new Error("EPERM"), { code: "EPERM" });
+      }
+      if (signal === "SIGKILL" || !stubborn.has(bare)) alive.delete(bare);
+      return true;
+    });
+  });
+  afterEach(() => vi.restoreAllMocks());
+
+  const target = (
+    pid: number,
+    startedAt: string | null = STARTED_T1,
+    pgid: number = pid,
+  ): BridgeProcess => ({
+    pid,
+    ppid: 1,
+    pgid,
+    ageMs: 9 * HOUR,
+    command: BRIDGE_COMMAND,
+    startedAt,
+  });
+
+  const bridgeIdentity = (startedAt: string) => ({
+    command: BRIDGE_COMMAND,
+    startedAt,
+  });
+
+  /** Identity reader that keeps reporting the listing's bridge identity while alive. */
+  const sameBridge = (pid: number) =>
+    alive.has(pid) ? bridgeIdentity(STARTED_T1) : null;
+
   it("kills nothing in dry-run mode and reports what it would have killed", () => {
-    const outcome = reapBridges(
-      [
-        {
-          pid: 999_999,
-          ppid: 1,
-          pgid: 999_999,
-          ageMs: 5 * HOUR,
-          command: "x",
-        },
-      ],
-      { dryRun: true },
-    );
+    const outcome = reapBridges([target(999_999)], { dryRun: true });
     expect(outcome).toEqual({ reaped: [], failed: [], skipped: [999_999] });
+    expect(kills).toEqual([]);
+  });
+
+  it("group-signals a verified target that leads its own process group", () => {
+    alive.add(9100);
+    const outcome = reapBridges([target(9100)], { readIdentity: sameBridge });
+    expect(kills).toEqual([[-9100, "SIGTERM"]]);
+    expect(outcome).toEqual({ reaped: [9100], failed: [], skipped: [] });
+  });
+
+  it("bare-signals a verified target that is not its group leader", () => {
+    alive.add(9200);
+    const outcome = reapBridges([target(9200, STARTED_T1, 500)], {
+      readIdentity: sameBridge,
+    });
+    expect(kills).toEqual([[9200, "SIGTERM"]]);
+    expect(outcome).toEqual({ reaped: [9200], failed: [], skipped: [] });
+  });
+
+  it("never signals a pid recycled between the listing and the signal", () => {
+    // The listing saw a bridge at 9300 started at T1; by signal time the pid
+    // belongs to a different process started at T2.
+    alive.add(9300);
+    const outcome = reapBridges([target(9300, STARTED_T1)], {
+      readIdentity: () => bridgeIdentity(STARTED_T2),
+    });
+    expect(kills).toEqual([]);
+    expect(outcome).toEqual({ reaped: [], failed: [], skipped: [9300] });
+  });
+
+  it("never signals a pid whose identity can no longer be read", () => {
+    // Still alive, but the probe fails — e.g. it vanished mid-check or the OS
+    // refused. Unverifiable means untouchable.
+    alive.add(9400);
+    const outcome = reapBridges([target(9400)], {
+      readIdentity: () => null,
+    });
+    expect(kills).toEqual([]);
+    expect(outcome).toEqual({ reaped: [], failed: [], skipped: [9400] });
+  });
+
+  it("never signals a target whose start time was never recorded", () => {
+    // The listing could not establish a baseline, so there is nothing to
+    // compare a re-read against — even a perfect bridge identity does not help.
+    alive.add(9500);
+    const outcome = reapBridges([target(9500, null)], {
+      readIdentity: () => bridgeIdentity(STARTED_T1),
+    });
+    expect(kills).toEqual([]);
+    expect(outcome).toEqual({ reaped: [], failed: [], skipped: [9500] });
+  });
+
+  it("never signals a pid whose command no longer names a bridge", () => {
+    // Same start time, so it is plausibly the same process — but it is not our
+    // bridge any more, so it is not ours to signal.
+    alive.add(9600);
+    const outcome = reapBridges([target(9600)], {
+      readIdentity: () => ({
+        command: "node /opt/other-tool/server.js",
+        startedAt: STARTED_T1,
+      }),
+    });
+    expect(kills).toEqual([]);
+    expect(outcome).toEqual({ reaped: [], failed: [], skipped: [9600] });
+  });
+
+  it("re-verifies identity before the SIGKILL escalation", () => {
+    // Survives SIGTERM, gets re-checked, still matches, gets SIGKILL.
+    alive.add(9700);
+    stubborn.add(9700);
+    const outcome = reapBridges([target(9700)], { readIdentity: sameBridge });
+    expect(kills).toEqual([
+      [-9700, "SIGTERM"],
+      [-9700, "SIGKILL"],
+    ]);
+    expect(outcome).toEqual({ reaped: [9700], failed: [], skipped: [] });
+  });
+
+  it("does not escalate a pid that fails re-verification after SIGTERM", () => {
+    // SIGTERM went out while 9800 was still our bridge; the process survived,
+    // and the re-read before SIGKILL finds a different start time — the pid was
+    // recycled during the settle. The escalation must not follow it.
+    alive.add(9800);
+    stubborn.add(9800);
+    let reads = 0;
+    const outcome = reapBridges([target(9800)], {
+      readIdentity: () =>
+        ++reads === 1 ? bridgeIdentity(STARTED_T1) : bridgeIdentity(STARTED_T2),
+    });
+    expect(kills).toEqual([[-9800, "SIGTERM"]]);
+    // Signalled but no longer verifiably ours: skipped, never failed.
+    expect(outcome).toEqual({ reaped: [], failed: [], skipped: [9800] });
+  });
+
+  it("signals verified targets while skipping unverifiable ones", () => {
+    alive.add(9900);
+    alive.add(9901);
+    const outcome = reapBridges([target(9900), target(9901)], {
+      readIdentity: (pid) =>
+        pid === 9900 ? sameBridge(pid) : bridgeIdentity(STARTED_T2),
+    });
+    expect(kills).toEqual([[-9900, "SIGTERM"]]);
+    expect(outcome).toEqual({
+      reaped: [9900],
+      failed: [],
+      skipped: [9901],
+    });
+  });
+
+  it("reports a verified target that survives every signal as failed", () => {
+    // Identity checks all pass; the OS simply refuses to let us kill it. This
+    // is the only honest reading of "signalled and still alive".
+    alive.add(9950);
+    denied.add(9950);
+    const outcome = reapBridges([target(9950)], { readIdentity: sameBridge });
+    expect(kills).toEqual([
+      [-9950, "SIGTERM"],
+      [-9950, "SIGKILL"],
+    ]);
+    expect(outcome).toEqual({ reaped: [], failed: [9950], skipped: [] });
   });
 });
 

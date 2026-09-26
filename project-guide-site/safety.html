@@ -65,9 +65,13 @@
 
       <section class="section" aria-labelledby="process-boundaries">
         <h2 id="process-boundaries">What the runtime enforces for you</h2>
-        <p class="muted-lead">Two boundaries are enforced in code, not by convention. Both matter because CDP has no authentication — anything that reaches the endpoint gets full control of the browser.</p>
+        <p class="muted-lead">These boundaries are enforced in code, not by convention. They matter because CDP itself has no authentication — anything that reaches the browser's endpoint gets full control of it.</p>
         <div class="feature-board">
           <div class="safety-band">
+            <div>
+              <strong>Capability token on the bridge</strong>
+              <p>The bridge's port is deterministic, so "reachable from localhost" used to mean "able to drive your browser". Each bridge now generates 32 random bytes when it binds, stores them in its session record (<code>0600</code>, inside a <code>0700</code> state directory that is verified private before the secret is written), and answers <code>401</code> to every request that does not present them in <code>x-axis-bridge-token</code>. The CLI reads and sends it for you; it is never printed, and a refusal is logged without header values, URLs, query strings or tokens.</p>
+            </div>
             <div>
               <strong>Anti-rebinding gate on the bridge</strong>
               <p>The bridge serves <code>/health</code>, <code>/tools</code>, and <code>/call</code> on loopback, and <code>/call</code> maps straight to a tool invocation. A gate now runs first on every route and rejects any request whose <code>Host</code> or <code>Origin</code> is not loopback, returning <code>403 {"error":"Forbidden host"}</code>. Without it, any page you visited could rebind its own domain to <code>127.0.0.1</code> and drive CDP from your browser (GHSA-x439-jhfh-v9x2).</p>
@@ -75,6 +79,10 @@
             <div>
               <strong>Keychain isolation for browsers Axis launches</strong>
               <p><code>ephemeral</code> and <code>managed</code> always pass <code>--use-mock-keychain</code> and <code>--password-store=basic</code>, so a browser this tool starts cannot reach your OS password store. <code>attach</code> and <code>autoconnect</code> deliberately omit them — that browser's keychain policy belongs to whoever started it.</p>
+            </div>
+            <div>
+              <strong>Nothing is killed on the strength of a stale pid</strong>
+              <p><code>stop</code>, bridge recycling and <code>reap</code> re-read the live process identity — command line <em>and</em> start time — immediately before every <code>SIGTERM</code> and <code>SIGKILL</code>, so a pid the operating system recycled in between is skipped and reported instead of killed. A process group is only signalled when the target still leads it, and there is no group kill after the leader exits. A record left by an older release carries no token: no command adopts one, and only an explicit <code>axis-browser stop</code> retires it, after verifying the process twice.</p>
             </div>
             <div>
               <strong>Never export a connection variable globally</strong>

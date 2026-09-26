@@ -48,6 +48,45 @@ Do not restore upstream `~/.chrome-devtools-axi` paths.
 Named sessions (`CHROME_DEVTOOLS_AXI_SESSION`) live under
 `~/.axis-browser/sessions/<name>/`, also derived from `STATE_DIR_NAME`.
 
+## Fork Bridge Authentication And Process Safety
+
+Upstream has no equivalent of this layer, so a merge will never bring it and can
+silently delete it. These modules are fork-owned; treat any upstream change that
+touches them as a conflict to resolve in the fork's favour:
+
+- `src/sessions.ts` — the bridge record is `{pid, port, token, startedAt}`, not
+  upstream's `{pid, port}`. `writeBridgeRecord` is atomic and `0600`;
+  `clearBridgeRecord` requires pid **and** token; `clearLegacyBridgeRecord`
+  removes only a tokenless record; `resolveSessionStateChain` enumerates the
+  directories that must be private. `resolveSessionPort` rejects an unusable
+  `CHROME_DEVTOOLS_AXI_PORT` instead of falling back to the session hash.
+- `src/state-dir.ts` — proves the state directories can hold a secret before one
+  is written (POSIX `0700`, symlink/ownership rejection, tightening and
+  verification; Windows `icacls` repair plus effective-ACE verification). Fails
+  closed with `StateDirError.repair` steps.
+- `src/process-identity.ts` — the only source of "is this pid still *our*
+  bridge": command-line marker **and** start time, on POSIX via `ps` and on
+  Windows via `Get-CimInstance`. Returns `null` on any failure so callers skip
+  the signal rather than guess.
+- `src/bridge.ts` — `publishBridgeCapability` runs in the `listen` callback
+  before READY; the request order is anti-rebinding `403`, then capability
+  `401`, then routing; `/health` reports `auth: "capability-v1"` only when
+  authorised; `describeRejectedRequest` is the only refusal log line and carries
+  no raw header, URL, query, port or token.
+- `src/client.ts` — every probe and tool call presents the token and re-reads the
+  record per call; `checkBridgeHealth` rejects a body without the auth marker;
+  `terminateBridgeProcess(pid, expectedStartedAt, opts)` verifies identity before
+  *each* signal, group-signals only when the live pgid equals the pid, and has no
+  post-exit group kill; a tokenless record is refused on RPC paths and retired
+  only by the twice-verified `stop` path.
+- `src/reap.ts` — `BridgeProcess.startedAt` is re-checked immediately before each
+  `SIGTERM`/`SIGKILL`; unverifiable pids are reported as `skipped`, never
+  `failed`, and never signalled.
+
+The CI `engines-floor` job asserts the two gates (401 unauthenticated, 403
+rebound Host) against the packed artifact, and `windows-state-security` is the
+only place the Windows branches run at all.
+
 ## Fork UID Freshness Semantics
 
 There is exactly one UID freshness module: `src/uid-freshness.ts`. The fork's

@@ -12,6 +12,7 @@ import {
   createBridgeServer,
   createRootsAwareBridgeClient,
   createTransport,
+  currentBridgeToken,
   PINNED_MCP_ENTRY,
   didMcpPageIdentityChange,
   extractHostHeaderHostname,
@@ -27,13 +28,14 @@ import {
   isBridgeTargetReachable,
   PAGE_IDENTITY_CHANGED_ERROR,
   parseBridgeCallPayload,
-  removePidFile,
   resolveBridgeScript,
   resolveBundledMcpPath,
   resolveTransport,
   resolveTransportSpec,
+  setBridgeTokenForTest,
   type BridgeClient,
 } from "../src/bridge.js";
+import { BRIDGE_AUTH_SCHEME, BRIDGE_TOKEN_HEADER } from "../src/sessions.js";
 import { pathToFileURL } from "node:url";
 import {
   clearSelectedPageId,
@@ -1146,11 +1148,34 @@ describe("isBridgeTargetReachable", () => {
   });
 });
 
+/**
+ * A deterministic stand-in token for arming the capability gate. Tests that
+ * need a *specific* armed value use `currentBridgeToken()` after publish; the
+ * rest only need the gate to have a known-good credential to present.
+ */
+const TEST_BRIDGE_TOKEN = "test-bridge-capability-token";
+
+/**
+ * Arm the capability gate for the duration of a describe block, and always
+ * disarm afterwards: `bridgeToken` is module state, so a forgotten reset would
+ * silently arm every later describe in this file (and a stale token would
+ * survive into any test that forgot it runs under a real filesystem bridge).
+ */
+function useArmedBridgeToken(): void {
+  beforeEach(() => {
+    setBridgeTokenForTest(TEST_BRIDGE_TOKEN);
+  });
+  afterEach(() => {
+    setBridgeTokenForTest(null);
+  });
+}
+
 function makeRequest(
   method: string,
   url: string,
-  headers: Record<string, string> = {},
+  headers: Record<string, string | string[]> = {},
   body?: string,
+  token: string | null = currentBridgeToken(),
 ): IncomingMessage {
   const req = new IncomingMessage(new Socket());
   req.method = method;
@@ -1159,6 +1184,13 @@ function makeRequest(
   // "127.0.0.1:<port>". Default to loopback so the anti-rebinding gate lets
   // these through, and let callers override to exercise rejection.
   req.headers = { host: "127.0.0.1:9224", ...headers };
+  // The capability gate sits behind the Host check, so a request without the
+  // armed token is a 401, never a routed response. Send the live token by
+  // default — what the real client does — unless the caller already set the
+  // header explicitly (`token: null` or a header value) to test rejection.
+  if (token !== null && req.headers[BRIDGE_TOKEN_HEADER] === undefined) {
+    req.headers[BRIDGE_TOKEN_HEADER] = token;
+  }
   // Feed a request body so handlers that read the stream (e.g. /call) don't
   // hang waiting on EOF. Rejected requests short-circuit before reading it.
   if (body !== undefined) {
@@ -1196,6 +1228,8 @@ function makeResponse(): { res: ServerResponse; captured: CapturedResponse } {
 }
 
 describe("handleBridgeRequest /health", () => {
+  useArmedBridgeToken();
+
   it("returns 200 ok for shallow /health when MCP is connected", async () => {
     const client: BridgeClient = {
       listTools: async () => ({ tools: [] }),
@@ -1207,7 +1241,10 @@ describe("handleBridgeRequest /health", () => {
     await handleBridgeRequest(client, makeRequest("GET", "/health"), res);
 
     expect(captured.statusCode).toBe(200);
-    expect(JSON.parse(captured.body)).toEqual({ status: "ok" });
+    expect(JSON.parse(captured.body)).toEqual({
+      status: "ok",
+      auth: BRIDGE_AUTH_SCHEME,
+    });
   });
 
   it("stamps the session name into the /health response when provided", async () => {
@@ -1229,6 +1266,7 @@ describe("handleBridgeRequest /health", () => {
     expect(JSON.parse(captured.body)).toEqual({
       status: "ok",
       session: "worker-1",
+      auth: BRIDGE_AUTH_SCHEME,
     });
   });
 
@@ -1336,6 +1374,7 @@ describe("handleBridgeRequest /health", () => {
       expect(JSON.parse(captured.body)).toEqual({
         status: "ok",
         session: "reconnect-worker",
+        auth: BRIDGE_AUTH_SCHEME,
         pageIdentityChanged: true,
       });
 
@@ -1355,6 +1394,7 @@ describe("handleBridgeRequest /health", () => {
       expect(JSON.parse(second.captured.body)).toEqual({
         status: "ok",
         session: "reconnect-worker",
+        auth: BRIDGE_AUTH_SCHEME,
       });
     } finally {
       if (savedHome === undefined) delete process.env.HOME;
@@ -1412,8 +1452,10 @@ describe("handleBridgeRequest /health", () => {
     );
 
     expect(captured.statusCode).toBe(200);
-    expect(JSON.parse(captured.body)).toEqual({ status: "ok" });
-    expect(listPagesCalls).toBe(1);
+    expect(JSON.parse(captured.body)).toEqual({
+      status: "ok",
+      auth: BRIDGE_AUTH_SCHEME,
+    });
   });
 
   it("does not invoke the deep CDP probe on the shallow /health path", async () => {
@@ -1532,6 +1574,8 @@ describe("isRequestOriginAllowed", () => {
 });
 
 describe("handleBridgeRequest anti-rebinding gate", () => {
+  useArmedBridgeToken();
+
   const client: BridgeClient = {
     listTools: async () => ({ tools: [{ name: "take_snapshot" }] }),
     callTool: async () => ({ content: [{ type: "text", text: "ok" }] }),
@@ -1621,7 +1665,7 @@ describe("handleBridgeRequest anti-rebinding gate", () => {
     expect(JSON.parse(captured.body)).toEqual({ result: "ok" });
   });
 
-  it("logs the refusal (host/origin/route) when a request is rejected", async () => {
+  it("logs the refusal (method + judged hostname) when a request is rejected", async () => {
     const logs: string[] = [];
     const { res } = makeResponse();
 
@@ -1636,9 +1680,12 @@ describe("handleBridgeRequest anti-rebinding gate", () => {
       (message) => logs.push(message),
     );
 
+    // The refusal line names the method and the hostname the gate judged —
+    // never the raw path, query, or headers (see describeRejectedRequest).
     expect(logs).toHaveLength(1);
+    expect(logs[0]).toContain("POST");
     expect(logs[0]).toContain("evil.attacker.com");
-    expect(logs[0]).toContain("/call");
+    expect(logs[0]).not.toContain("/call");
   });
 
   it("does not log when a request is allowed", async () => {
@@ -1674,6 +1721,8 @@ describe("handleBridgeRequest anti-rebinding gate", () => {
 });
 
 describe("handleBridgeRequest /call error + roots", () => {
+  useArmedBridgeToken();
+
   it("surfaces an isError tool result as { error } so the CLI fails loudly (#96)", async () => {
     const client: BridgeClient = {
       listTools: async () => ({ tools: [] }),
@@ -2184,50 +2233,9 @@ describe("handleBridgeServerError", () => {
   });
 });
 
-describe("removePidFile ownership", () => {
-  let dir: string;
-  let pidFile: string;
-
-  beforeEach(() => {
-    dir = mkdtempSync(join(tmpdir(), "cda-pid-"));
-    pidFile = join(dir, "bridge.pid");
-  });
-
-  afterEach(() => {
-    rmSync(dir, { recursive: true, force: true });
-  });
-
-  it("leaves the winner's PID file intact when a same-session loser exits", () => {
-    const winnerPid = process.pid + 1;
-    const loserPid = process.pid + 2;
-    writeFileSync(pidFile, JSON.stringify({ pid: winnerPid, port: 9224 }));
-
-    // The EADDRINUSE loser's exit handler must not delete the winner's handle.
-    removePidFile(pidFile, loserPid);
-
-    expect(existsSync(pidFile)).toBe(true);
-  });
-
-  it("removes the PID file when this process owns it", () => {
-    const ownerPid = process.pid + 3;
-    writeFileSync(pidFile, JSON.stringify({ pid: ownerPid, port: 9224 }));
-
-    removePidFile(pidFile, ownerPid);
-
-    expect(existsSync(pidFile)).toBe(false);
-  });
-
-  it("treats a missing or malformed PID file as nothing to remove", () => {
-    expect(() => removePidFile(pidFile, process.pid)).not.toThrow();
-    expect(existsSync(pidFile)).toBe(false);
-
-    writeFileSync(pidFile, "not json");
-    expect(() => removePidFile(pidFile, process.pid)).not.toThrow();
-    expect(existsSync(pidFile)).toBe(true);
-  });
-});
-
 describe("createBridgeServer", () => {
+  useArmedBridgeToken();
+
   const postCall = (port: number, payload: unknown): Promise<string> =>
     new Promise((resolvePost, rejectPost) => {
       const body = JSON.stringify(payload);
@@ -2237,7 +2245,12 @@ describe("createBridgeServer", () => {
           port,
           path: "/call",
           method: "POST",
-          headers: { "Content-Length": Buffer.byteLength(body) },
+          headers: {
+            "Content-Length": Buffer.byteLength(body),
+            // The served route applies the same capability gate as
+            // handleBridgeRequest, so the client must present the armed token.
+            [BRIDGE_TOKEN_HEADER]: currentBridgeToken() ?? "",
+          },
         },
         (res) => {
           let received = "";

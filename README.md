@@ -593,7 +593,9 @@ For large request or response bodies, prefer `network-get <id> --response-file <
 Run `doctor --json` **before** a browser task. Every entry in its `remedies` array is a
 command you can execute verbatim; escalate to a human only for `NEEDS_INTERACTIVE_LOGIN` or
 `PORT_HELD_BY_FOREIGN_PROCESS`. **Local CDP has no authentication — never request
-credentials, tokens, or a `ws://` URL to reach it.**
+credentials, tokens, or a `ws://` URL to reach it.** The bridge's own capability token is
+read from the session record automatically; never ask a human for it, print it, or paste it
+into a command.
 
 Orphaned bridges are also reaped automatically when a new bridge starts: only processes
 carrying our own bridge marker, claimed by no session, and at least four hours old. Set
@@ -713,7 +715,7 @@ Two consequences worth knowing before they surprise you:
 | `CHROME_DEVTOOLS_AXI_USER_DATA_DIR` | Use a persistent Chrome profile instead of `--isolated` |
 | `CHROME_DEVTOOLS_AXI_HEADED` | Set to `1` to run the managed browser in headed mode |
 | `CHROME_DEVTOOLS_AXI_CHROME_ARGS` | Whitespace-separated Chrome flags forwarded to the browser |
-| `CHROME_DEVTOOLS_AXI_PORT` | Override the bridge port (default: `9224`) |
+| `CHROME_DEVTOOLS_AXI_PORT` | Override the bridge port (default: `9224`). Must be a plain decimal port in 1-65535 — an unusable value is an error, not a silent fallback, because falling back can land on another session's port |
 | `CHROME_DEVTOOLS_AXI_MCP_PATH` | Optional absolute path to a `chrome-devtools-mcp` build you reviewed yourself. Unset, the bridge runs the version this package pins |
 | `CHROME_DEVTOOLS_AXI_ALLOW_WS_HEADERS_ARGV` | Set to `1` to accept the `--wsHeaders` argv exposure described below |
 | `CHROME_DEVTOOLS_AXI_BRIDGE_TIMEOUT_MS` | Bridge readiness deadline in ms (default: `30000`; raise it for a slow Chrome launch) |
@@ -897,12 +899,15 @@ the same port. Rely on per-session default ports, or set
 
 ### Runtime State
 
-State is stored in `~/.axis-browser/`:
+State is stored in `~/.axis-browser/` (per-session state under
+`~/.axis-browser/sessions/<name>/`). Directories are `0700`; the record is `0600` because
+it holds a secret:
 
-| File                  | Purpose                                    |
-| --------------------- | ------------------------------------------ |
-| `bridge.pid`          | PID and port of the running bridge         |
-| `snapshot-generation` | Counter used to detect stale uid refs      |
+| File                  | Purpose                                                                   |
+| --------------------- | ------------------------------------------------------------------------- |
+| `bridge.pid`          | PID, port, capability token and recorded start time of the running bridge |
+| `snapshot-generation` | Counter used to detect stale uid refs                                     |
+| `selected-page-id`    | Page this session last selected, for page-scoped tools                    |
 
 ### Session Hooks
 
@@ -922,31 +927,82 @@ it according to the project's incident process and rotate the affected secrets.
 
 ## Security
 
-### The bridge is unauthenticated by design, and guarded against DNS rebinding
+### The bridge requires a per-session capability token
 
-The bridge is a persistent loopback HTTP service on a known port, and it has no
-authentication — anything that can reach it gets full control of the browser through CDP.
-Binding to `127.0.0.1` does **not** protect it: in a DNS-rebinding attack a malicious page
-re-points its own domain at `127.0.0.1`, and the victim's browser then issues same-origin
-requests that arrive on loopback like any other.
+The bridge is a persistent loopback HTTP service, and `POST /call` maps straight to
+`client.callTool` — that is arbitrary CDP execution against your browser. Its port is
+deterministic (derived from the session name, `9224` by default), so "anything local can
+reach it" used to mean "anything local can drive your browser".
+
+Each bridge now generates 32 random bytes when it binds the port, writes them into its own
+session record, and refuses every request that does not present them:
+
+```bash
+curl -s http://127.0.0.1:9224/health
+# {"error":"Missing or invalid bridge capability token"}   (401)
+```
+
+The CLI reads the token from the record and sends it in `x-axis-bridge-token` on every
+probe, tool call and `stop`; you never handle it. The comparison is constant time, and the
+length is checked first so a wrong-length guess gets the same `401` rather than an error
+that confirms the length. An authorised `/health` reports `auth: "capability-v1"`, which is
+how `doctor` and the readiness poll distinguish our bridge from an unrelated listener that
+happens to hold the port.
+
+The token is written only after the state directory has been proven private (below), and a
+bridge that cannot prove it exits non-zero with the repair commands instead of serving — a
+secret in a world-readable file is not a secret.
+
+Records written by older releases carry no token. No RPC path adopts one: `open`, tool
+calls and the ambient snapshot refuse it and tell you to run `axis-browser stop`, which
+retires it after verifying the process twice.
+
+### Guarded against DNS rebinding
+
+Binding to `127.0.0.1` does **not** protect a loopback service on its own: in a
+DNS-rebinding attack a malicious page re-points its own domain at `127.0.0.1`, and the
+victim's browser then issues same-origin requests that arrive on loopback like any other.
 
 The one thing a rebound request cannot hide is that it carries the attacker's domain in its
 `Host` (and `Origin`) header, and page JavaScript cannot forge either. Every request to
 `/health`, `/tools`, and `/call` is therefore rejected with `403 {"error":"Forbidden host"}`
-unless both headers name loopback. This addresses **GHSA-x439-jhfh-v9x2** in the upstream
-project.
+unless both headers name loopback — and that gate runs *before* the token check, so a
+rebound page cannot even probe for a valid token. This addresses
+**GHSA-x439-jhfh-v9x2** in the upstream project.
 
 ```bash
 curl -H 'Host: evil.attacker.com' http://127.0.0.1:9224/health
 # {"error":"Forbidden host"}
 ```
 
+A refusal is logged as the method, a fixed host/origin category and a derived hostname —
+never a raw header value, URL, query string, port or token, so an attacker-controlled
+request cannot write attacker-controlled bytes into your bridge log.
+
+### State directories are private, and verified before use
+
+`~/.axis-browser` and each session directory hold the capability token, so they are created
+`0700`, tightened if an earlier release left them permissive, and rejected outright if they
+are a symlink, not a directory, or owned by another user. On Windows the ACL is repaired
+with `icacls` and then verified through the effective ACEs, allowing only your account and
+`LocalSystem`. The record file itself is `0600`, written atomically through an exclusive
+temp file and rename so a half-written record can never be read.
+
+### Nothing is killed on the strength of a stale pid
+
+`stop`, the bridge-recycle path and `reap` re-read the live process identity — command line
+*and* start time — immediately before every `SIGTERM` and `SIGKILL`. A pid the OS recycled
+in between is skipped and reported, not signalled. A process group is only signalled when
+the target still leads it, and there is no post-exit group kill: once a leader exits, its
+pid and pgid are free for the OS to hand to an unrelated tree.
+
 ### Local CDP has no authentication — do not go looking for credentials
 
-If a connection to a local DevTools endpoint fails, the cause is never a missing token. An
-agent that reads a bare connection failure and concludes the endpoint needs credentials will
-escalate to a human for something no human can supply. `axis-browser doctor` states this
-explicitly in its output for exactly that reason.
+The browser's own DevTools endpoint is a different thing from the bridge, and it has no
+authentication of its own. If a connection to it fails, the cause is never a missing
+credential: an agent that reads a bare connection failure and concludes the endpoint needs
+a token will escalate to a human for something no human can supply. `axis-browser doctor`
+states this explicitly in its output for exactly that reason.
 
 ### Automation browsers never touch your profile or your keychain
 

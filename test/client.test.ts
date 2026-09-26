@@ -1,13 +1,16 @@
-import { describe, expect, it, beforeEach, afterEach } from "vitest";
-import { spawn } from "node:child_process";
+import { describe, expect, it, beforeEach, afterEach, vi } from "vitest";
+import { spawn, type ChildProcess } from "node:child_process";
 import { EventEmitter } from "node:events";
 import { createServer, type Server } from "node:http";
 import { AddressInfo } from "node:net";
 import {
-  mkdtempSync,
+  existsSync,
   mkdirSync,
+  mkdtempSync,
   readFileSync,
   rmSync,
+  statSync,
+  symlinkSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -17,6 +20,7 @@ import {
   BRIDGE_PORT_IN_USE_EXIT_CODE,
   createBridgeServer,
   PAGE_IDENTITY_CHANGED_ERROR,
+  setBridgeTokenForTest,
   type BridgeClient,
 } from "../src/bridge.js";
 import { setSelectedPageId } from "../src/selected-page.js";
@@ -29,13 +33,59 @@ import {
   ensureBridge,
   getSessionSnapshotIfRunning,
   mapErrorMessage,
+  readBridgeEndpoint,
   resolveBridgeTimeoutMs,
   type SpawnedBridge,
   stopBridge,
   terminateBridgeProcess,
   waitForProcessExit,
 } from "../src/client.js";
-import { resolveSessionPidFile } from "../src/sessions.js";
+import {
+  BRIDGE_TOKEN_HEADER,
+  DEFAULT_SESSION_NAME,
+  resolveSessionPidFile,
+} from "../src/sessions.js";
+import * as processIdentity from "../src/process-identity.js";
+import {
+  BRIDGE_COMMAND_MARKER,
+  readProcessIdentity,
+} from "../src/process-identity.js";
+
+/**
+ * Spawn a long-lived node process whose command line carries the bridge
+ * marker, so `readProcessIdentity` accepts it as a stand-in bridge. The marker
+ * is appended as an unused argv entry because `-e` scripts would otherwise
+ * look like a bare `node -e …` to `ps`.
+ */
+function spawnMarkedBridge(script: string, detached = false): ChildProcess {
+  const child = spawn(process.execPath, ["-e", script, BRIDGE_COMMAND_MARKER], {
+    stdio: "ignore",
+    detached,
+  });
+  child.unref();
+  return child;
+}
+
+/**
+ * The recorded start time a bridge record would carry for `pid`, read through
+ * the same probe production uses. Retried briefly: the process table entry
+ * exists at fork, but `ps` may need a tick before `command=` shows the `-e`
+ * argv (and therefore the marker).
+ */
+function startedAtOf(pid: number): string {
+  for (let attempt = 0; attempt < 10; attempt++) {
+    const identity = readProcessIdentity(pid);
+    if (identity && identity.command.includes(BRIDGE_COMMAND_MARKER)) {
+      return identity.startedAt;
+    }
+    // ~10ms busy wait; a sleep(0) via timers is not reliably short enough here.
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 10);
+  }
+  const last = readProcessIdentity(pid);
+  throw new Error(
+    `test fixture: pid ${pid} is not a marked bridge (command: ${last?.command ?? "<unreadable>"})`,
+  );
+}
 
 describe("CdpError", () => {
   it("uses the shared axi-sdk-js error contract", () => {
@@ -163,15 +213,33 @@ interface FakeBridgeOptions {
   deep: "ok" | "error";
   deepDelayMs?: number;
   session?: string;
+  /**
+   * Whether healthy answers carry `auth: "capability-v1"`. Real bridges only
+   * emit the marker after validating the request token; `auth: false` stands
+   * in for a pre-auth bridge or an unrelated server that ignores the header.
+   */
+  auth?: boolean;
+  /** When set, every request must present this token or gets a 401. */
+  requireToken?: string;
 }
 
 function startFakeBridgeServer(opts: FakeBridgeOptions): Promise<{
   port: number;
   server: Server;
+  /** `x-axis-bridge-token` header seen on each request, in order. */
+  tokens: (string | undefined)[];
   close: () => Promise<void>;
 }> {
+  const tokens: (string | undefined)[] = [];
   return new Promise((resolveStart, rejectStart) => {
     const server = createServer((req, res) => {
+      const presented = req.headers[BRIDGE_TOKEN_HEADER];
+      tokens.push(typeof presented === "string" ? presented : undefined);
+      if (opts.requireToken && presented !== opts.requireToken) {
+        res.statusCode = 401;
+        res.end(JSON.stringify({ error: "unauthorized" }));
+        return;
+      }
       if (req.method === "GET" && req.url?.startsWith("/health")) {
         const wantsDeep = req.url.includes("deep=1");
         const outcome = wantsDeep ? opts.deep : opts.shallow;
@@ -179,7 +247,13 @@ function startFakeBridgeServer(opts: FakeBridgeOptions): Promise<{
         const sendResponse = () => {
           if (outcome === "ok") {
             res.statusCode = 200;
-            res.end(JSON.stringify({ status: "ok", session: opts.session }));
+            res.end(
+              JSON.stringify({
+                status: "ok",
+                session: opts.session,
+                ...(opts.auth === false ? {} : { auth: "capability-v1" }),
+              }),
+            );
           } else {
             res.statusCode = 503;
             res.end(JSON.stringify({ status: "error" }));
@@ -201,6 +275,7 @@ function startFakeBridgeServer(opts: FakeBridgeOptions): Promise<{
       resolveStart({
         port,
         server,
+        tokens,
         close: () =>
           new Promise<void>((closeResolve) => {
             server.close(() => closeResolve());
@@ -286,11 +361,56 @@ describe("checkBridgeHealth (deep probe)", () => {
   });
 
   it("accepts a bridge that omits the session field (older version)", async () => {
-    const fake = await startFakeBridgeServer({ shallow: "ok", deep: "ok" });
+    // Pre-session-field, not pre-auth: a bridge old enough to lack `session`
+    // can still carry the capability marker, which is what adoption keys on.
+    const fake = await startFakeBridgeServer({
+      shallow: "ok",
+      deep: "ok",
+    });
     try {
       expect(
         await checkBridgeHealth(fake.port, { expectedSession: "worker-1" }),
       ).toBe(true);
+    } finally {
+      await fake.close();
+    }
+  });
+
+  it("rejects a healthy response that lacks the capability marker", async () => {
+    // A 200 `{status:"ok"}` alone proves nothing: an unrelated local server or
+    // a pre-token bridge answers exactly that while ignoring the token header.
+    const fake = await startFakeBridgeServer({
+      shallow: "ok",
+      deep: "ok",
+      auth: false,
+    });
+    try {
+      expect(await checkBridgeHealth(fake.port)).toBe(false);
+      expect(await checkBridgeHealth(fake.port, { deep: true })).toBe(false);
+    } finally {
+      await fake.close();
+    }
+  });
+
+  it("sends the capability token and requires the bridge to honour it", async () => {
+    const token = "test-capability-token";
+    const fake = await startFakeBridgeServer({
+      shallow: "ok",
+      deep: "ok",
+      requireToken: token,
+    });
+    try {
+      // No token, and the wrong token, both fail closed — exactly as a real
+      // bridge treats them, since the record's token is the only credential.
+      expect(await checkBridgeHealth(fake.port)).toBe(false);
+      expect(await checkBridgeHealth(fake.port, { token: "wrong-token" })).toBe(
+        false,
+      );
+      expect(await checkBridgeHealth(fake.port, { token })).toBe(true);
+      expect(await checkBridgeHealth(fake.port, { deep: true, token })).toBe(
+        true,
+      );
+      expect(fake.tokens).toEqual([undefined, "wrong-token", token, token]);
     } finally {
       await fake.close();
     }
@@ -511,7 +631,11 @@ describe("ensureBridge early-exit fast-fail", () => {
         res.end(
           JSON.stringify(
             healthy
-              ? { status: "ok", session: "early-exit-worker" }
+              ? {
+                  status: "ok",
+                  session: "early-exit-worker",
+                  auth: "capability-v1",
+                }
               : { status: "error" },
           ),
         );
@@ -606,68 +730,78 @@ describe("terminateBridgeProcess", () => {
     }
   }
 
-  it("waits for the bridge process to actually exit before returning", async () => {
+  afterEach(() => {
+    // The fail-closed tests spy on process.kill and readProcessIdentity;
+    // a leaked spy would corrupt the next fixture's signal or identity reads.
+    vi.restoreAllMocks();
+  });
+
+  it("waits for the bridge process to actually exit, and never signals a dead leader's group", async () => {
     // Mimics a well-behaved bridge: exits cleanly on SIGTERM.
-    const child = spawn(
-      process.execPath,
-      [
-        "-e",
-        "process.on('SIGTERM', () => process.exit(0)); setTimeout(() => {}, 30000);",
-      ],
-      { stdio: "ignore", detached: true },
+    const killSpy = vi.spyOn(process, "kill");
+    const child = spawnMarkedBridge(
+      "process.on('SIGTERM', () => process.exit(0)); setTimeout(() => {}, 30000);",
+      true,
     );
     const pid = child.pid as number;
-    child.unref();
+    const startedAt = startedAtOf(pid);
 
     // Give the listener a moment to register before we send the signal.
     await new Promise((r) => setTimeout(r, 50));
-    await terminateBridgeProcess(pid);
+    await terminateBridgeProcess(pid, startedAt, { killProcessGroup: true });
 
-    let alive = true;
-    try {
-      process.kill(pid, 0);
-    } catch {
-      alive = false;
-    }
-    expect(alive).toBe(false);
+    expect(isAlive(pid)).toBe(false);
+    // The production comment is the contract: once the leader is gone the OS
+    // may recycle its pid — and pgid — for an unrelated process, so there is
+    // deliberately no `kill(-pid)` after the exit is observed.
+    expect(
+      killSpy.mock.calls.filter(
+        ([target]) => typeof target === "number" && target < 0,
+      ),
+    ).toEqual([]);
   });
 
-  it("escalates to SIGKILL when the bridge ignores SIGTERM", async () => {
+  it("escalates to SIGKILL, group-first, when a group-leading bridge ignores SIGTERM", async () => {
     // Mimics a stuck bridge: ignores SIGTERM. Without escalation, stop +
     // start can't recover (issue #43). The 2s SIGTERM grace window means
-    // the test takes ~2s to drive the escalation path.
-    const child = spawn(
-      process.execPath,
-      ["-e", "process.on('SIGTERM', () => {}); setTimeout(() => {}, 30000);"],
-      { stdio: "ignore", detached: true },
+    // the test takes ~2s to drive the escalation path. `detached` makes the
+    // child lead its own group, so the trusted path takes kill(-pid) first.
+    const killSpy = vi.spyOn(process, "kill");
+    const child = spawnMarkedBridge(
+      "process.on('SIGTERM', () => {}); setTimeout(() => {}, 30000);",
+      true,
     );
     const pid = child.pid as number;
-    child.unref();
+    const startedAt = startedAtOf(pid);
 
     await new Promise((r) => setTimeout(r, 50));
-    await terminateBridgeProcess(pid);
+    await terminateBridgeProcess(pid, startedAt, { killProcessGroup: true });
 
-    let alive = true;
-    try {
-      process.kill(pid, 0);
-    } catch {
-      alive = false;
-    }
-    expect(alive).toBe(false);
-  }, 10_000);
+    expect(killSpy).toHaveBeenCalledWith(-pid, "SIGKILL");
+    expect(await waitForProcessExit(pid, 3000)).toBe(true);
+  }, 15_000);
 
   it("is a no-op when the pid is already gone", async () => {
-    // Pick a likely-unused pid by spawning + waiting for it to exit.
+    // Pick a likely-unused pid by spawning + waiting for it to exit. The
+    // recorded start time is only consulted for a live process, so any value
+    // is a valid stand-in for a record whose bridge already exited.
     const child = spawn(process.execPath, ["-e", ""], { stdio: "ignore" });
     const pid = child.pid as number;
     await new Promise<void>((r) => child.on("exit", () => r()));
 
-    await expect(terminateBridgeProcess(pid)).resolves.toBeUndefined();
+    await expect(
+      terminateBridgeProcess(pid, "irrelevant-for-a-dead-pid"),
+    ).resolves.toBeUndefined();
   });
 
-  it("does not kill the process group unless group termination is trusted", async () => {
+  it("never group-signals a bridge that does not lead its own group, even when asked", async () => {
+    // Without `detached` the child shares our process group: readProcessGroupId
+    // returns the runner's pgid, not the bridge pid, so the trusted-group check
+    // must refuse kill(-pid) — sending it would SIGKILL this very test process
+    // tree. The plain SIGKILL still retires the stuck bridge.
     const dir = mkdtempSync(join(tmpdir(), "chrome-devtools-axi-test-"));
     const childPidFile = join(dir, "child.pid");
+    const killSpy = vi.spyOn(process, "kill");
     const parent = spawn(
       process.execPath,
       [
@@ -679,17 +813,26 @@ describe("terminateBridgeProcess", () => {
           "process.on('SIGTERM', () => {});",
           "setTimeout(() => {}, 30000);",
         ].join(""),
+        BRIDGE_COMMAND_MARKER,
       ],
-      { stdio: "ignore", detached: true },
+      { stdio: "ignore" },
     );
     const parentPid = parent.pid as number;
     parent.unref();
+    const startedAt = startedAtOf(parentPid);
 
     const childPid = Number.parseInt(await waitForFile(childPidFile), 10);
     try {
-      await terminateBridgeProcess(parentPid);
+      await terminateBridgeProcess(parentPid, startedAt, {
+        killProcessGroup: true,
+      });
 
       expect(isAlive(parentPid)).toBe(false);
+      expect(
+        killSpy.mock.calls.filter(
+          ([target]) => typeof target === "number" && target < 0,
+        ),
+      ).toEqual([]);
       expect(isAlive(childPid)).toBe(true);
     } finally {
       try {
@@ -698,6 +841,90 @@ describe("terminateBridgeProcess", () => {
         // Already gone.
       }
       rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("refuses to signal a pid whose live start time does not match the record", async () => {
+    // A recycled pid can keep the bridge marker (another Axis bridge) while
+    // being a different process instance; start time is what tells them apart.
+    const killSpy = vi.spyOn(process, "kill");
+    const child = spawnMarkedBridge("setTimeout(() => {}, 30000);");
+    const pid = child.pid as number;
+    try {
+      const wrongStartedAt = "Mon Jan  1 00:00:00 1990";
+      await expect(
+        terminateBridgeProcess(pid, wrongStartedAt),
+      ).rejects.toMatchObject({
+        code: "BRIDGE_NOT_READY",
+        message: expect.stringContaining(
+          "does not match the recorded identity",
+        ),
+      });
+      // Nothing but liveness probes (signal 0) may reach that pid.
+      expect(killSpy).not.toHaveBeenCalledWith(pid, "SIGTERM");
+      expect(killSpy).not.toHaveBeenCalledWith(pid, "SIGKILL");
+      expect(
+        killSpy.mock.calls.filter(
+          ([target]) => typeof target === "number" && target < 0,
+        ),
+      ).toEqual([]);
+      expect(isAlive(pid)).toBe(true);
+    } finally {
+      try {
+        process.kill(pid, "SIGKILL");
+      } catch {
+        // Already gone.
+      }
+    }
+  });
+
+  it("refuses to signal a live process that is not a marked bridge", async () => {
+    const killSpy = vi.spyOn(process, "kill");
+    const child = spawn(
+      process.execPath,
+      ["-e", "setTimeout(() => {}, 30000)"],
+      {
+        stdio: "ignore",
+      },
+    );
+    const pid = child.pid as number;
+    try {
+      const startedAt = readProcessIdentity(pid)?.startedAt ?? "unreadable";
+      await expect(
+        terminateBridgeProcess(pid, startedAt),
+      ).rejects.toMatchObject({ code: "BRIDGE_NOT_READY" });
+      expect(killSpy).not.toHaveBeenCalledWith(pid, "SIGTERM");
+      expect(killSpy).not.toHaveBeenCalledWith(pid, "SIGKILL");
+      expect(isAlive(pid)).toBe(true);
+    } finally {
+      try {
+        process.kill(pid, "SIGKILL");
+      } catch {
+        // Already gone.
+      }
+    }
+  });
+
+  it("refuses to signal when the live identity cannot be read at all", async () => {
+    // `ps` returning nothing is "do not signal", not "unverified but try
+    // anyway": an access-denied or platform-failed probe must fail closed.
+    const killSpy = vi.spyOn(process, "kill");
+    const child = spawnMarkedBridge("setTimeout(() => {}, 30000);");
+    const pid = child.pid as number;
+    try {
+      vi.spyOn(processIdentity, "readProcessIdentity").mockReturnValue(null);
+      await expect(
+        terminateBridgeProcess(pid, "irrelevant"),
+      ).rejects.toMatchObject({ code: "BRIDGE_NOT_READY" });
+      expect(killSpy).not.toHaveBeenCalledWith(pid, "SIGTERM");
+      expect(killSpy).not.toHaveBeenCalledWith(pid, "SIGKILL");
+      expect(isAlive(pid)).toBe(true);
+    } finally {
+      try {
+        process.kill(pid, "SIGKILL");
+      } catch {
+        // Already gone.
+      }
     }
   });
 });
@@ -715,21 +942,38 @@ interface FakeCallBridgeOptions {
   toolErrors?: Record<string, string>;
 }
 
-function startFakeCallBridge(opts: FakeCallBridgeOptions): Promise<{
+interface FakeCallBridge {
   port: number;
   calls: { name: string; args: Record<string, unknown> }[];
   /** The `roots` field seen on each `/call`, in lockstep with `calls`. */
   roots: (string[] | undefined)[];
+  /** `x-axis-bridge-token` header seen on each request, in order. */
+  tokens: (string | undefined)[];
   close: () => Promise<void>;
-}> {
+}
+
+function startFakeCallBridge(
+  opts: FakeCallBridgeOptions,
+): Promise<FakeCallBridge> {
   return new Promise((resolveStart, rejectStart) => {
     const calls: { name: string; args: Record<string, unknown> }[] = [];
     const roots: (string[] | undefined)[] = [];
+    const tokens: (string | undefined)[] = [];
     const server = createServer((req, res) => {
+      const presented = req.headers[BRIDGE_TOKEN_HEADER];
+      tokens.push(typeof presented === "string" ? presented : undefined);
       if (req.method === "GET" && req.url?.startsWith("/health")) {
         res.setHeader("Content-Type", "application/json");
         res.statusCode = 200;
-        res.end(JSON.stringify({ status: "ok", session: opts.session }));
+        res.end(
+          JSON.stringify({
+            status: "ok",
+            session: opts.session,
+            // Mirrors the real bridge: healthy answers carry the auth marker,
+            // which is what the CLI requires before treating the port as ours.
+            auth: "capability-v1",
+          }),
+        );
         return;
       }
       if (req.method === "POST" && req.url === "/call") {
@@ -774,6 +1018,7 @@ function startFakeCallBridge(opts: FakeCallBridgeOptions): Promise<{
         port,
         calls,
         roots,
+        tokens,
         close: () =>
           new Promise<void>((closeResolve) => {
             server.close(() => closeResolve());
@@ -789,15 +1034,17 @@ describe("callTool pageId routing", () => {
   const savedPort = process.env.CHROME_DEVTOOLS_AXI_PORT;
   let tmpHome = "";
 
+  // Arbitrary but fixed: the fake bridge records rather than validates the
+  // token, so the value only needs to be checkable for presence on requests.
+  const FAKE_TOKEN = "fake-session-capability-token";
+
   const restore = (key: string, value: string | undefined) => {
     if (value === undefined) delete process.env[key];
     else process.env[key] = value;
   };
 
   async function withFakeBridge(
-    run: (
-      fake: Awaited<ReturnType<typeof startFakeCallBridge>>,
-    ) => Promise<void>,
+    run: (fake: FakeCallBridge) => Promise<void>,
     opts: Omit<FakeCallBridgeOptions, "session"> = {},
   ): Promise<void> {
     tmpHome = mkdtempSync(join(tmpdir(), "axi-pageid-"));
@@ -810,12 +1057,26 @@ describe("callTool pageId routing", () => {
     process.env.CHROME_DEVTOOLS_AXI_PORT = String(fake.port);
     const pidFile = resolveSessionPidFile("pageid-worker");
     mkdirSync(dirname(pidFile), { recursive: true });
+    // An authenticated record: pid/port plus the capability token and start
+    // time that readBridgeEndpoint/ensureBridge now require. The pid is this
+    // test process's — nothing in callTool ever signals it (only stop does).
     writeFileSync(
       pidFile,
-      JSON.stringify({ pid: process.pid, port: fake.port }),
+      JSON.stringify({
+        pid: process.pid,
+        port: fake.port,
+        token: FAKE_TOKEN,
+        startedAt: "fixture-start-time",
+      }),
     );
     try {
       await run(fake);
+      // Every request the CLI made — health probes and /call alike — carried
+      // the record's capability token.
+      expect(fake.tokens.length).toBeGreaterThan(0);
+      expect(fake.tokens).toEqual(
+        new Array<string>(fake.tokens.length).fill(FAKE_TOKEN),
+      );
     } finally {
       await fake.close();
     }
@@ -1370,12 +1631,26 @@ describe("reconnect reporting through the deep health probe", () => {
         server.listen(0, "127.0.0.1", ready);
       });
       const { port } = server.address() as AddressInfo;
+      // The real bridge gates /health and /call on the capability token, so
+      // arm it exactly as publishBridgeCapability would and write the
+      // authenticated record the CLI reads to learn the token.
+      const token = "reconnect-cli-test-token";
+      setBridgeTokenForTest(token);
       process.env.CHROME_DEVTOOLS_AXI_PORT = String(port);
       const pidFile = resolveSessionPidFile("reconnect-cli");
       mkdirSync(dirname(pidFile), { recursive: true });
-      writeFileSync(pidFile, JSON.stringify({ pid: process.pid, port }));
+      writeFileSync(
+        pidFile,
+        JSON.stringify({
+          pid: process.pid,
+          port,
+          token,
+          startedAt: "fixture-start-time",
+        }),
+      );
       await run();
     } finally {
+      setBridgeTokenForTest(null);
       await new Promise<void>((closed) => server.close(() => closed()));
     }
   }
@@ -1482,6 +1757,579 @@ describe("reconnect reporting through the deep health probe", () => {
     );
   });
 });
+
+/**
+ * Shared sandbox for the record-driven describes below: HOME and the session
+ * env are pointed at a throwaway dir so resolveSessionPidFile and friends read
+ * only records these tests write.
+ */
+function useSandboxedSession(name: string): { home: string; pidFile: string } {
+  const home = mkdtempSync(join(tmpdir(), "axi-client-sandbox-"));
+  process.env.HOME = home;
+  if (name === DEFAULT_SESSION_NAME) {
+    delete process.env.CHROME_DEVTOOLS_AXI_SESSION;
+  } else {
+    process.env.CHROME_DEVTOOLS_AXI_SESSION = name;
+  }
+  const pidFile = resolveSessionPidFile(name);
+  mkdirSync(dirname(pidFile), { recursive: true });
+  return { home, pidFile };
+}
+
+function sandboxEnvTeardown(home: string): void {
+  rmSync(home, { recursive: true, force: true });
+}
+
+describe("readBridgeEndpoint", () => {
+  const savedSession = process.env.CHROME_DEVTOOLS_AXI_SESSION;
+  const savedHome = process.env.HOME;
+
+  afterEach(() => {
+    if (savedSession === undefined)
+      delete process.env.CHROME_DEVTOOLS_AXI_SESSION;
+    else process.env.CHROME_DEVTOOLS_AXI_SESSION = savedSession;
+    if (savedHome === undefined) delete process.env.HOME;
+    else process.env.HOME = savedHome;
+  });
+
+  it("returns port and token for an authenticated record", () => {
+    const { home, pidFile } = useSandboxedSession("endpoint-worker");
+    try {
+      writeFileSync(
+        pidFile,
+        JSON.stringify({
+          pid: 4242,
+          port: 9333,
+          token: "the-capability",
+          startedAt: "some start time",
+        }),
+      );
+      expect(readBridgeEndpoint("endpoint-worker")).toEqual({
+        port: 9333,
+        token: "the-capability",
+      });
+    } finally {
+      sandboxEnvTeardown(home);
+    }
+  });
+
+  it("returns null for a tokenless legacy record — it is never adopted for RPC", () => {
+    const { home, pidFile } = useSandboxedSession("endpoint-worker");
+    try {
+      writeFileSync(pidFile, JSON.stringify({ pid: 4242, port: 9333 }));
+      expect(readBridgeEndpoint("endpoint-worker")).toBeNull();
+    } finally {
+      sandboxEnvTeardown(home);
+    }
+  });
+
+  it("returns null for a record whose token or start time is blank", () => {
+    const { home, pidFile } = useSandboxedSession("endpoint-worker");
+    try {
+      for (const record of [
+        { pid: 1, port: 2, token: "", startedAt: "t" },
+        { pid: 1, port: 2, token: "t", startedAt: "" },
+      ]) {
+        writeFileSync(pidFile, JSON.stringify(record));
+        expect(readBridgeEndpoint("endpoint-worker")).toBeNull();
+      }
+    } finally {
+      sandboxEnvTeardown(home);
+    }
+  });
+
+  it("returns null when there is no record", () => {
+    const { home } = useSandboxedSession("endpoint-worker");
+    try {
+      expect(readBridgeEndpoint("endpoint-worker")).toBeNull();
+    } finally {
+      sandboxEnvTeardown(home);
+    }
+  });
+});
+
+describe("stopBridge", () => {
+  const savedSession = process.env.CHROME_DEVTOOLS_AXI_SESSION;
+  const savedHome = process.env.HOME;
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    if (savedSession === undefined)
+      delete process.env.CHROME_DEVTOOLS_AXI_SESSION;
+    else process.env.CHROME_DEVTOOLS_AXI_SESSION = savedSession;
+    if (savedHome === undefined) delete process.env.HOME;
+    else process.env.HOME = savedHome;
+  });
+
+  it("returns false when there is no record at all", async () => {
+    const { home } = useSandboxedSession("stop-worker");
+    try {
+      await expect(stopBridge()).resolves.toBe(false);
+    } finally {
+      sandboxEnvTeardown(home);
+    }
+  });
+
+  it("returns false when the record's pid is already dead, without touching it", async () => {
+    const { home, pidFile } = useSandboxedSession("stop-worker");
+    try {
+      // Spawn-and-reap so the pid is real but dead; a tokenless record is the
+      // legacy path, which also reaches for the state dir first — the point
+      // is that none of that runs for a dead pid.
+      const child = spawn(process.execPath, ["-e", ""], { stdio: "ignore" });
+      const deadPid = child.pid as number;
+      await new Promise<void>((r) => child.on("exit", () => r()));
+      writeFileSync(pidFile, JSON.stringify({ pid: deadPid, port: 1 }));
+
+      const killSpy = vi.spyOn(process, "kill");
+      await expect(stopBridge()).resolves.toBe(false);
+      expect(killSpy.mock.calls.filter(([, s]) => s !== 0)).toEqual([]);
+      // The dead record is left in place for a future reap, not deleted.
+      expect(existsSync(pidFile)).toBe(true);
+    } finally {
+      sandboxEnvTeardown(home);
+    }
+  });
+
+  it("stops an authenticated bridge through the verified termination path", async () => {
+    const { home, pidFile } = useSandboxedSession("stop-worker");
+    const child = spawnMarkedBridge(
+      "process.on('SIGTERM', () => process.exit(0)); setTimeout(() => {}, 30000);",
+      true,
+    );
+    const pid = child.pid as number;
+    try {
+      writeFileSync(
+        pidFile,
+        JSON.stringify({
+          pid,
+          port: 1,
+          token: "tok",
+          startedAt: startedAtOf(pid),
+        }),
+      );
+
+      // SIGTERM lands quickly; give the handler a tick to register first.
+      await new Promise((r) => setTimeout(r, 50));
+      await expect(stopBridge()).resolves.toBe(true);
+      expect(await waitForProcessExit(pid, 2000)).toBe(true);
+      // `stop` clears the record itself. An orderly bridge also removes it on
+      // exit, but one that had to be SIGKILLed never runs that handler — and a
+      // live-looking record still holding a token is exactly what a later
+      // command would mistake for a running bridge. The pid+token comparison
+      // means a record this session already replaced survives (covered by the
+      // clearBridgeRecord ownership tests).
+      expect(existsSync(pidFile)).toBe(false);
+    } finally {
+      try {
+        process.kill(pid, "SIGKILL");
+      } catch {
+        // Already gone.
+      }
+      sandboxEnvTeardown(home);
+    }
+  });
+
+  it("refuses to signal a pid whose live identity does not match the record", async () => {
+    const { home, pidFile } = useSandboxedSession("stop-worker");
+    const child = spawnMarkedBridge("setTimeout(() => {}, 30000);");
+    const pid = child.pid as number;
+    try {
+      writeFileSync(
+        pidFile,
+        JSON.stringify({
+          pid,
+          port: 1,
+          token: "tok",
+          // Deliberately wrong: the pid is a bridge, but not the one this
+          // record was written for — exactly the recycled-pid case.
+          startedAt: "Mon Jan  1 00:00:00 1990",
+        }),
+      );
+
+      await expect(stopBridge()).rejects.toMatchObject({
+        code: "BRIDGE_NOT_READY",
+        message: expect.stringContaining(
+          "does not match the recorded identity",
+        ),
+      });
+      expect(bridgeStillAlive(pid)).toBe(true);
+    } finally {
+      try {
+        process.kill(pid, "SIGKILL");
+      } catch {
+        // Already gone.
+      }
+      sandboxEnvTeardown(home);
+    }
+  });
+
+  it("retires a verified tokenless legacy bridge and removes its record", async () => {
+    const { home, pidFile } = useSandboxedSession("stop-worker");
+    const child = spawnMarkedBridge(
+      "process.on('SIGTERM', () => process.exit(0)); setTimeout(() => {}, 30000);",
+      true,
+    );
+    const pid = child.pid as number;
+    try {
+      // No token/startedAt: a pre-auth record. Port 1 answers nothing, so the
+      // legacy session probe degrades to "unreachable", which is not a veto.
+      writeFileSync(pidFile, JSON.stringify({ pid, port: 1 }));
+
+      const identitySpy = vi.spyOn(processIdentity, "readProcessIdentity");
+      await new Promise((r) => setTimeout(r, 50));
+      await expect(stopBridge()).resolves.toBe(true);
+
+      // The legacy path reads the identity twice before signalling, then the
+      // shared terminator verifies again — the double-check is the contract.
+      expect(
+        identitySpy.mock.calls.filter(([p]) => p === pid).length,
+      ).toBeGreaterThanOrEqual(2);
+      expect(await waitForProcessExit(pid, 2000)).toBe(true);
+      // A retired legacy bridge cannot clean up after itself, so stop does.
+      expect(existsSync(pidFile)).toBe(false);
+    } finally {
+      try {
+        process.kill(pid, "SIGKILL");
+      } catch {
+        // Already gone.
+      }
+      sandboxEnvTeardown(home);
+    }
+  });
+
+  it("refuses a tokenless record when the live process is not a bridge", async () => {
+    const { home, pidFile } = useSandboxedSession("stop-worker");
+    const child = spawn(
+      process.execPath,
+      ["-e", "setTimeout(() => {}, 30000)"],
+      { stdio: "ignore" },
+    );
+    const pid = child.pid as number;
+    try {
+      writeFileSync(pidFile, JSON.stringify({ pid, port: 1 }));
+      const killSpy = vi.spyOn(process, "kill");
+
+      await expect(stopBridge()).rejects.toMatchObject({
+        code: "BRIDGE_NOT_READY",
+        message: expect.stringContaining(
+          "could not be verified as this bridge",
+        ),
+      });
+      expect(killSpy).not.toHaveBeenCalledWith(pid, "SIGTERM");
+      expect(killSpy).not.toHaveBeenCalledWith(pid, "SIGKILL");
+      expect(existsSync(pidFile)).toBe(true);
+    } finally {
+      try {
+        process.kill(pid, "SIGKILL");
+      } catch {
+        // Already gone.
+      }
+      sandboxEnvTeardown(home);
+    }
+  });
+
+  it("refuses a tokenless bridge that answers /health as a different session", async () => {
+    const { home, pidFile } = useSandboxedSession("stop-worker");
+    const fake = await startFakeBridgeServer({
+      shallow: "ok",
+      deep: "ok",
+      session: "other-session",
+      auth: false, // legacy bridges predate the marker; readLegacyBridgeSession ignores it
+    });
+    const child = spawnMarkedBridge("setTimeout(() => {}, 30000);");
+    const pid = child.pid as number;
+    try {
+      writeFileSync(pidFile, JSON.stringify({ pid, port: fake.port }));
+      const killSpy = vi.spyOn(process, "kill");
+
+      await expect(stopBridge()).rejects.toMatchObject({
+        code: "BRIDGE_NOT_READY",
+        message: expect.stringContaining('as session "other-session"'),
+      });
+      expect(killSpy).not.toHaveBeenCalledWith(pid, "SIGTERM");
+      expect(killSpy).not.toHaveBeenCalledWith(pid, "SIGKILL");
+    } finally {
+      await fake.close();
+      try {
+        process.kill(pid, "SIGKILL");
+      } catch {
+        // Already gone.
+      }
+      sandboxEnvTeardown(home);
+    }
+  });
+
+  it("refuses a tokenless record behind a symlinked state directory", async () => {
+    // A symlinked state dir can point the record — and the signal decision it
+    // drives — at a directory the session does not own, so stop fails closed.
+    const home = mkdtempSync(join(tmpdir(), "axi-stop-symlink-"));
+    process.env.HOME = home;
+    delete process.env.CHROME_DEVTOOLS_AXI_SESSION;
+    const realDir = join(home, "real-state-dir");
+    mkdirSync(realDir, { recursive: true });
+    symlinkSync(realDir, join(home, ".axis-browser"));
+    const child = spawnMarkedBridge("setTimeout(() => {}, 30000);");
+    const pid = child.pid as number;
+    try {
+      writeFileSync(
+        join(realDir, "bridge.pid"),
+        JSON.stringify({ pid, port: 1 }),
+      );
+      const killSpy = vi.spyOn(process, "kill");
+
+      await expect(stopBridge()).rejects.toMatchObject({
+        code: "BRIDGE_NOT_READY",
+        message: expect.stringContaining(
+          "Refusing to act on the bridge record",
+        ),
+      });
+      expect(killSpy).not.toHaveBeenCalledWith(pid, "SIGTERM");
+      expect(killSpy).not.toHaveBeenCalledWith(pid, "SIGKILL");
+    } finally {
+      try {
+        process.kill(pid, "SIGKILL");
+      } catch {
+        // Already gone.
+      }
+      sandboxEnvTeardown(home);
+    }
+  });
+});
+
+describe("getSessionSnapshotIfRunning — session record handling", () => {
+  const savedSession = process.env.CHROME_DEVTOOLS_AXI_SESSION;
+  const savedHome = process.env.HOME;
+  const savedPort = process.env.CHROME_DEVTOOLS_AXI_PORT;
+
+  afterEach(() => {
+    if (savedSession === undefined)
+      delete process.env.CHROME_DEVTOOLS_AXI_SESSION;
+    else process.env.CHROME_DEVTOOLS_AXI_SESSION = savedSession;
+    if (savedHome === undefined) delete process.env.HOME;
+    else process.env.HOME = savedHome;
+    if (savedPort === undefined) delete process.env.CHROME_DEVTOOLS_AXI_PORT;
+    else process.env.CHROME_DEVTOOLS_AXI_PORT = savedPort;
+  });
+
+  it("degrades a malformed bridge record to null instead of throwing", async () => {
+    const { home, pidFile } = useSandboxedSession("snap-worker");
+    try {
+      writeFileSync(pidFile, "{truncated");
+      await expect(getSessionSnapshotIfRunning()).resolves.toBeNull();
+    } finally {
+      sandboxEnvTeardown(home);
+    }
+  });
+
+  it("degrades a tokenless legacy record to null without contacting the bridge", async () => {
+    const { home, pidFile } = useSandboxedSession("snap-worker");
+    const fake = await startFakeCallBridge({ session: "snap-worker" });
+    try {
+      // Live pid, reachable port — but no token. The probe runs on every
+      // prompt, so the loud "how to retire it" error belongs to `stop`, not
+      // here; what matters is it never speaks to the bridge unauthenticated.
+      writeFileSync(
+        pidFile,
+        JSON.stringify({ pid: process.pid, port: fake.port }),
+      );
+      await expect(getSessionSnapshotIfRunning()).resolves.toBeNull();
+      expect(fake.tokens).toEqual([]);
+      expect(fake.calls).toEqual([]);
+    } finally {
+      await fake.close();
+      sandboxEnvTeardown(home);
+    }
+  });
+
+  it("degrades to null when the record's pid is dead", async () => {
+    const { home, pidFile } = useSandboxedSession("snap-worker");
+    const fake = await startFakeCallBridge({ session: "snap-worker" });
+    const child = spawn(process.execPath, ["-e", ""], { stdio: "ignore" });
+    const deadPid = child.pid as number;
+    await new Promise<void>((r) => child.on("exit", () => r()));
+    try {
+      writeFileSync(
+        pidFile,
+        JSON.stringify({
+          pid: deadPid,
+          port: fake.port,
+          token: "tok",
+          startedAt: "t",
+        }),
+      );
+      await expect(getSessionSnapshotIfRunning()).resolves.toBeNull();
+      expect(fake.tokens).toEqual([]);
+    } finally {
+      await fake.close();
+      sandboxEnvTeardown(home);
+    }
+  });
+
+  it("probes the authenticated endpoint and returns its snapshot", async () => {
+    const { home, pidFile } = useSandboxedSession("snap-worker");
+    const fake = await startFakeCallBridge({
+      session: "snap-worker",
+      result: "snap-content",
+    });
+    try {
+      writeFileSync(
+        pidFile,
+        JSON.stringify({
+          pid: process.pid,
+          port: fake.port,
+          token: "snap-token",
+          startedAt: "t",
+        }),
+      );
+      setSelectedPageId(9);
+      await expect(getSessionSnapshotIfRunning()).resolves.toBe("snap-content");
+      expect(fake.calls).toEqual([
+        { name: "take_snapshot", args: { pageId: 9 } },
+      ]);
+      expect(fake.tokens.every((t) => t === "snap-token")).toBe(true);
+    } finally {
+      await fake.close();
+      sandboxEnvTeardown(home);
+    }
+  });
+});
+
+describe("ensureBridge — record handling", () => {
+  const savedSession = process.env.CHROME_DEVTOOLS_AXI_SESSION;
+  const savedHome = process.env.HOME;
+  const savedPort = process.env.CHROME_DEVTOOLS_AXI_PORT;
+  const savedMode = process.env.CHROME_DEVTOOLS_AXI_MODE;
+
+  afterEach(() => {
+    for (const [key, value] of [
+      ["CHROME_DEVTOOLS_AXI_SESSION", savedSession],
+      ["HOME", savedHome],
+      ["CHROME_DEVTOOLS_AXI_PORT", savedPort],
+      ["CHROME_DEVTOOLS_AXI_MODE", savedMode],
+    ] as const) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+    vi.restoreAllMocks();
+  });
+
+  it("reuses a live bridge when the record's token passes the deep probe", async () => {
+    const { home, pidFile } = useSandboxedSession("ensure-worker");
+    const fake = await startFakeBridgeServer({
+      shallow: "ok",
+      deep: "ok",
+      session: "ensure-worker",
+      requireToken: "reuse-token",
+    });
+    const child = spawnMarkedBridge("setTimeout(() => {}, 30000);");
+    try {
+      writeFileSync(
+        pidFile,
+        JSON.stringify({
+          pid: child.pid as number,
+          port: fake.port,
+          token: "reuse-token",
+          startedAt: "t",
+        }),
+      );
+      const spawnBridge = vi.fn();
+
+      await expect(ensureBridge(spawnBridge)).resolves.toBe(fake.port);
+      // The record's token is what got presented — and no new bridge spawned.
+      expect(fake.tokens.length).toBeGreaterThan(0);
+      expect(fake.tokens).toEqual(
+        new Array<string>(fake.tokens.length).fill("reuse-token"),
+      );
+      expect(spawnBridge).not.toHaveBeenCalled();
+    } finally {
+      await fake.close();
+      try {
+        process.kill(child.pid as number, "SIGKILL");
+      } catch {
+        // Already gone.
+      }
+      sandboxEnvTeardown(home);
+    }
+  });
+
+  it("refuses to adopt a tokenless legacy record and names the stop remedy", async () => {
+    const { home, pidFile } = useSandboxedSession("ensure-worker");
+    try {
+      writeFileSync(pidFile, JSON.stringify({ pid: process.pid, port: 1 }));
+      const spawnBridge = vi.fn();
+
+      await expect(ensureBridge(spawnBridge)).rejects.toMatchObject({
+        code: "BRIDGE_NOT_READY",
+        message: expect.stringContaining("carries no capability token"),
+        suggestions: expect.arrayContaining([
+          expect.stringContaining("axis-browser stop"),
+        ]),
+      });
+      expect(spawnBridge).not.toHaveBeenCalled();
+    } finally {
+      sandboxEnvTeardown(home);
+    }
+  });
+
+  it("propagates an invalid CHROME_DEVTOOLS_AXI_PORT instead of falling back", async () => {
+    const { home } = useSandboxedSession("ensure-worker");
+    try {
+      process.env.CHROME_DEVTOOLS_AXI_PORT = "not-a-port";
+      const spawnBridge = vi.fn();
+      await expect(ensureBridge(spawnBridge)).rejects.toThrow(
+        /Invalid CHROME_DEVTOOLS_AXI_PORT "not-a-port"/,
+      );
+      expect(spawnBridge).not.toHaveBeenCalled();
+    } finally {
+      sandboxEnvTeardown(home);
+    }
+  });
+
+  it("spawns fresh when the record's pid is dead, and fast-fails on its early exit", async () => {
+    const { home, pidFile } = useSandboxedSession("ensure-worker");
+    try {
+      const dead = spawn(process.execPath, ["-e", ""], { stdio: "ignore" });
+      const deadPid = dead.pid as number;
+      await new Promise<void>((r) => dead.on("exit", () => r()));
+      writeFileSync(
+        pidFile,
+        JSON.stringify({
+          pid: deadPid,
+          port: 1,
+          token: "tok",
+          startedAt: "t",
+        }),
+      );
+
+      let spawnCalls = 0;
+      await expect(
+        ensureBridge(() => {
+          spawnCalls += 1;
+          const fake = new EventEmitter();
+          setImmediate(() => fake.emit("exit", 1, null));
+          return fake as unknown as SpawnedBridge;
+        }),
+      ).rejects.toMatchObject({
+        code: "BRIDGE_NOT_READY",
+        message: expect.stringContaining("before becoming ready"),
+      });
+      expect(spawnCalls).toBe(1);
+    } finally {
+      sandboxEnvTeardown(home);
+    }
+  });
+});
+
+/** Liveness probe used by the stop/terminate assertions. */
+function bridgeStillAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 describe("collectRootDirs", () => {
   it("always includes the invoking cwd", () => {

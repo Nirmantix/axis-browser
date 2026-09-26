@@ -30,7 +30,11 @@ import {
 } from "./reap.js";
 import {
   DEFAULT_SESSION_NAME,
+  defaultPortForSession,
+  isAuthedRecord,
+  readBridgeRecord,
   resolveSessionName,
+  resolveSessionPidFile,
   resolveSessionPort,
 } from "./sessions.js";
 import { chromeCheck } from "./setup.js";
@@ -139,7 +143,18 @@ export async function buildDoctorReport(
     blockers.push(error instanceof Error ? error.message : String(error));
     remedies.push("unset CHROME_DEVTOOLS_AXI_SESSION");
   }
-  const port = resolveSessionPort(sessionName);
+  // Same reasoning as the session name above: doctor exists to *report* a
+  // misconfiguration, so an unusable CHROME_DEVTOOLS_AXI_PORT has to become a
+  // blocker rather than an exception that replaces the whole diagnosis.
+  let port: number;
+  try {
+    port = resolveSessionPort(sessionName, env);
+  } catch (error) {
+    port = defaultPortForSession(sessionName);
+    status = "error";
+    blockers.push(error instanceof Error ? error.message : String(error));
+    remedies.push("unset CHROME_DEVTOOLS_AXI_PORT");
+  }
 
   const report: DoctorReport = {
     status,
@@ -155,7 +170,23 @@ export async function buildDoctorReport(
 
   // Established up front because the profile check below depends on it: a locked
   // profile is only a problem when it is NOT our own healthy bridge holding it.
-  const bridgeHealthy = await health(port, { expectedSession: sessionName });
+  // The bridge now requires a capability token, so doctor presents the same secret
+  // every other RPC path does: without it a perfectly healthy bridge answers 401
+  // and doctor would report the session as broken.
+  const record = readBridgeRecord(resolveSessionPidFile(sessionName, home));
+  const bridgeHealthy = await health(port, {
+    expectedSession: sessionName,
+    token: isAuthedRecord(record) ? record.token : undefined,
+  });
+  if (record && !isAuthedRecord(record)) {
+    if (status === "ok") status = "warn";
+    blockers.push(
+      `The bridge record for session "${sessionName}" predates capability tokens, so this CLI cannot authenticate to the bridge it names (pid ${record.pid}).`,
+    );
+    remedies.push(
+      "axis-browser stop   (verifies then retires the unauthenticated bridge)",
+    );
+  }
 
   // ── the target ────────────────────────────────────────────────────────────────
   if (mode === "attach") {

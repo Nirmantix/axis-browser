@@ -150,5 +150,71 @@ jobs:
           grep -q "button" snapshot.txt
           # A passive home view must not invalidate the refs it just printed.
           ./node_modules/.bin/axis-browser > /dev/null
+          # The security gates, asserted against the artifact a user installs and
+          # a bridge that is really running. Both are cheap here and impossible
+          # to fake: a 401 means the token gate is ahead of routing, and a 403
+          # for a foreign Host means the anti-rebinding gate is ahead of that.
+          # The record's mode and token shape are checked in the same breath —
+          # a 0644 record would hand the capability to every local user, and the
+          # token itself is never printed.
+          record="$HOME/.axis-browser/sessions/ci-floor/bridge.pid"
+          node -e '
+            const fs = require("node:fs");
+            const [record, out] = process.argv.slice(1);
+            const mode = fs.statSync(record).mode & 0o777;
+            if (mode !== 0o600) {
+              console.error("bridge record mode is 0" + mode.toString(8) + ", expected 0600");
+              process.exit(1);
+            }
+            const rec = JSON.parse(fs.readFileSync(record, "utf8"));
+            if (!/^[0-9a-f]{64}$/.test(rec.token ?? "")) {
+              console.error("bridge record has no 64-hex-char capability token");
+              process.exit(1);
+            }
+            if (typeof rec.startedAt !== "string" || rec.startedAt.length === 0) {
+              console.error("bridge record has no recorded start time; stop could never verify it");
+              process.exit(1);
+            }
+            fs.writeFileSync(out, String(rec.port));
+          ' "$record" port.txt
+          bridge_port=$(cat port.txt)
+          code=$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:$bridge_port/health")
+          [ "$code" = "401" ] || { echo "expected 401 without a capability token, got $code"; exit 1; }
+          code=$(curl -s -o /dev/null -w '%{http_code}' -H 'Host: evil.attacker.com' "http://127.0.0.1:$bridge_port/health")
+          [ "$code" = "403" ] || { echo "expected 403 for a rebound Host, got $code"; exit 1; }
+          echo "bridge refuses unauthenticated (401) and rebound (403) callers"
           ./node_modules/.bin/axis-browser stop
           kill "$server" 2>/dev/null || true
+
+  windows-state-security:
+    # The only place the Windows branches of the state hardening and the process
+    # identity probe are ever executed: `icacls` repair, effective-ACE
+    # verification, SID translation, and the `Get-CimInstance` start-time read
+    # that `stop`/`reap` rely on before signalling anything. On POSIX runners
+    # those tests are skipped, so without this job a regression in them would be
+    # invisible until a Windows user hit it.
+    #
+    # Scoped to the platform-sensitive units rather than the whole suite: the
+    # rest drives `ps -axo`, spawns detached process groups and launches Chrome,
+    # none of which is portable.
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run build
+      - name: State hardening and identity probing work on Windows
+        run: >
+          pnpm exec vitest run
+          test/state-dir.test.ts
+          test/process-identity.test.ts
+          test/sessions.test.ts

@@ -27,6 +27,7 @@ import {
 } from "node:fs";
 import { dirname, join } from "node:path";
 import { resolveSessionStateDir } from "./sessions.js";
+import { PRIVATE_DIR_MODE } from "./state-dir.js";
 
 /** Path to the active session's selected-page-id file. */
 function selectedPageFile(): string {
@@ -47,7 +48,11 @@ export function getSelectedPageId(): number | null {
 export function setSelectedPageId(pageId: number): void {
   const file = selectedPageFile();
   try {
-    mkdirSync(dirname(file), { recursive: true });
+    // Created owner-only: this is the same directory the bridge's capability
+    // record lives in, and the CLI can get here long before any bridge exists.
+    // The full hardenStateDirs probe (symlink/ownership/ACL) runs once per bridge
+    // lifetime instead — this path is too hot to spawn platform tools on.
+    mkdirSync(dirname(file), { recursive: true, mode: PRIVATE_DIR_MODE });
     writeFileSync(file, String(pageId));
   } catch {
     // Best-effort: a write failure still leaves this invocation with no

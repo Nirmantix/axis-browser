@@ -99,6 +99,22 @@ describe("getCommandHelp", () => {
     expect(help).toContain("upstream base");
     expect(help).not.toContain("latest published npm version");
   });
+
+  it("documents that fill requires the uid and the text", () => {
+    // The parser enforces both positionally; the help must say so, or the
+    // VALIDATION_ERROR an agent gets back is undiagnosable from --help alone.
+    const help = getCommandHelp("fill");
+    expect(help).toContain("fill @<uid> <text>");
+    expect(help).toContain("<text>  Text to fill (required)");
+    expect(help).toContain("--full");
+  });
+
+  it("documents that upload requires the uid and the path", () => {
+    const help = getCommandHelp("upload");
+    expect(help).toContain("upload @<uid> <path>");
+    expect(help).toContain("<path>  Local file path to upload (required)");
+    expect(help).toContain("--full");
+  });
 });
 
 describe("parseScreenshotArgs", () => {

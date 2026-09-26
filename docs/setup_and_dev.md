@@ -203,12 +203,17 @@ Bridge and runtime state live under:
 ~/.axis-browser/
 ```
 
+Directories are `0700` and the bridge record is `0600`, because it holds the session's
+capability token. Named sessions keep the same files under
+`~/.axis-browser/sessions/<name>/`.
+
 Known state files:
 
 | Path | Purpose |
 | --- | --- |
-| `~/.axis-browser/bridge.pid` | PID and port for the persistent local bridge. |
+| `~/.axis-browser/bridge.pid` | PID, port, capability token and recorded start time for the persistent local bridge. |
 | `~/.axis-browser/snapshot-generation` | Current generation counter for stale ref detection. |
+| `~/.axis-browser/selected-page-id` | Page this session last selected, injected into page-scoped tools. |
 
 If the CLI appears attached to an old browser session:
 
@@ -217,9 +222,15 @@ axis-browser stop
 axis-browser pages
 ```
 
+If a command reports that the record "carries no capability token", it was left by an older
+Axis Browser. `axis-browser stop` verifies the process twice and retires it; then re-run
+your command. No RPC path adopts an unauthenticated bridge, and nothing suggests killing a
+PID by hand — a recycled pid would take an unrelated process with it.
+
 If the state is unclear, ask the tool rather than probing a port by hand — launch modes drive
 the browser over `--remote-debugging-pipe`, so the browser's CDP endpoint has no TCP address
-to curl at all. (The Axis bridge still listens on its documented local port; it is the
+to curl at all. (The Axis bridge still listens on its documented local port, but it answers
+`401` without the session token, so a bare `curl` proves nothing either way; it is the
 *browser's* debugging endpoint that is off TCP.)
 
 ```bash
