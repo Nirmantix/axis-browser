@@ -91,6 +91,22 @@ Versions `0.1.18` and below, and everything under
   cannot reach the machine owner's OS password store. Attach modes
   (`AUTO_CONNECT`, `BROWSER_URL`, `wsEndpoint`) deliberately omit them — that
   browser's keychain policy belongs to whoever started it
+* **a high-severity transitive advisory is patched, and the rest are accounted
+  for.** `axi-sdk-js` pulled `@toon-format/toon@2.3.0`, which is vulnerable to
+  prototype pollution when *decoding* untrusted TOON (patched in 2.3.1).
+  `axi-sdk-js` imports `encode` only, so that path was never reachable from this
+  CLI — but a scoped pnpm override now guarantees the patched floor across
+  lockfile regeneration, inside the 2.x line the SDK was built against. Our own
+  direct TOON stays `4.1.1` and `chrome-devtools-mcp`'s optional peer still
+  resolves there, so no output format changes and the TOON goldens are untouched.
+  The advisories `pnpm audit --prod` still reports all sit in
+  `@modelcontextprotocol/sdk`'s *server* stack (hono, express, `express-rate-limit`,
+  qs, ajv→`fast-uri`, `ip-address`); this CLI imports only the SDK's client
+  entrypoints, which reference none of them, and the bridge is our own `node:http`
+  server. The one SDK release that could move them is inside the seven-day
+  `minimumReleaseAge` window, so it is deferred by policy rather than installed.
+  `docs/upstream_sync.md` records the reasoning and the condition that would make
+  it stale: importing anything from `@modelcontextprotocol/sdk/server/*`
 
 ### Fixed
 

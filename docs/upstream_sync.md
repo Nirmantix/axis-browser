@@ -250,6 +250,34 @@ TOON is a **wire-format** dependency, not an inert one: `src/cli.ts` feeds every
 machine-readable block through `encode`. `test/toon-output.test.ts` pins the
 exact bytes, so any future TOON bump must be reviewed against those goldens.
 
+### Audit position
+
+`pnpm audit --prod` is expected to report advisories in this tree, and each one
+has a decided answer rather than being left to rot:
+
+- `axi-sdk-js` pulls a transitive `@toon-format/toon` in the 2.x line, and 2.3.0
+  carries a high-severity prototype-pollution advisory for **decoding** untrusted
+  TOON. `axi-sdk-js` imports `encode` only, so the path is unreachable from this
+  CLI — but `pnpm-workspace.yaml` pins a scoped override
+  (`axi-sdk-js>@toon-format/toon: ^2.3.1`) so the patched floor survives
+  lockfile regeneration. It stays inside 2.x, the line the SDK was built against;
+  our direct TOON remains `^4.1.1` and `chrome-devtools-mcp`'s optional peer
+  still resolves there, so no output format changes. Do not widen that override
+  to 4.x without re-reviewing `test/toon-output.test.ts`.
+- Everything else sits under `@modelcontextprotocol/sdk`'s **server** stack
+  (hono, `@hono/node-server`, express, `express-rate-limit`, qs, ajv→`fast-uri`,
+  `ip-address`). This CLI imports only `client/index`, `client/stdio`,
+  `client/streamableHttp`, `shared/transport` and `types`; none of them reference
+  hono or express, and those imports exist only under the SDK's `esm/server/*`,
+  which is never loaded. The bridge is this fork's own `node:http` server, not an
+  SDK one. Re-check that claim if a future sync imports anything from
+  `@modelcontextprotocol/sdk/server/*` — at that point these advisories become
+  live and must be fixed, not explained.
+- The SDK release that could move those transitive deps is `1.30.1`, which is
+  inside the seven-day `minimumReleaseAge` window, so it is deferred by policy.
+  Bump `^1.30.0` only when the candidate is older than seven days, and re-run
+  `test/mcp-pin.test.ts` afterwards.
+
 Future routine upstream syncs stay within these reviewed majors. Do not run a
 broad `pnpm update --latest` during a sync, and keep the seven-day
 `minimumReleaseAge` policy in `pnpm-workspace.yaml`.

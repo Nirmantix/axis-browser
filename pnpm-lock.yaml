@@ -162,6 +162,9 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
+overrides:
+  axi-sdk-js>@toon-format/toon: ^2.3.1
+
 importers:
 
   .:
@@ -520,8 +523,8 @@ packages:
     cpu: [x64]
     os: [win32]
 
-  '@toon-format/toon@2.3.0':
-    resolution: {integrity: sha512-/Ew9etdRQKVMnm9fDaCG0JjyAOK/O7T0M97oum1aW4W+UR8ZhVVPBanIV7oWgHBiGlnVxV9M55PWQCHofDV07w==}
+  '@toon-format/toon@2.3.1':
+    resolution: {integrity: sha512-sWqEMeAJGMda9qRrfPKrX3C4c33CO9SJuvJzzrcBEn5sbDB+k6pSLkDsfN0rVnLQwR97MV3sDgVbcxQNsq8xVw==}
 
   '@toon-format/toon@4.1.1':
     resolution: {integrity: sha512-SGCkS7IjVpwRmGPgnY8ENKpAf0EdAnZDOQkvFW0d2cgOpdn9FEFl7sTgryESyypXrWr0YajHGpwsAUX4zw9ZvA==}
@@ -1433,7 +1436,7 @@ snapshots:
   '@rollup/rollup-win32-x64-msvc@4.62.2':
     optional: true
 
-  '@toon-format/toon@2.3.0': {}
+  '@toon-format/toon@2.3.1': {}
 
   '@toon-format/toon@4.1.1': {}
 
@@ -1541,7 +1544,7 @@ snapshots:
 
   axi-sdk-js@0.1.12:
     dependencies:
-      '@toon-format/toon': 2.3.0
+      '@toon-format/toon': 2.3.1
 
   body-parser@2.3.0:
     dependencies:
@@ -1712,6 +1715,10 @@ snapshots:
   fdir@6.5.0(picomatch@4.0.5):
     optionalDependencies:
       picomatch: 4.0.5
+
+  fdir@6.5.0(picomatch@4.0.7):
+    optionalDependencies:
+      picomatch: 4.0.7
 
   finalhandler@2.1.1:
     dependencies:
@@ -2037,8 +2044,8 @@ snapshots:
   vite@7.3.6(@types/node@22.20.4)(tsx@4.23.13):
     dependencies:
       esbuild: 0.28.1
-      fdir: 6.5.0(picomatch@4.0.5)
-      picomatch: 4.0.5
+      fdir: 6.5.0(picomatch@4.0.7)
+      picomatch: 4.0.7
       postcss: 8.5.19
       rollup: 4.62.2
       tinyglobby: 0.2.17
