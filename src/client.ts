@@ -5,10 +5,21 @@
 import { execFileSync, spawn } from "node:child_process";
 import { readFileSync, existsSync } from "node:fs";
 import { request } from "node:http";
+import { dirname } from "node:path";
 import { AxiError } from "axi-sdk-js";
-import { BRIDGE_PORT_IN_USE_EXIT_CODE, resolveBridgeScript } from "./bridge.js";
+import {
+  BRIDGE_PORT_IN_USE_EXIT_CODE,
+  PAGE_IDENTITY_CHANGED_ERROR,
+  resolveBridgeScript,
+} from "./bridge-script.js";
 import { type AxiMode, resolveModeSafe } from "./mode.js";
+import { needsPageId } from "./pages.js";
 import { autoReapOrphans } from "./reap.js";
+import {
+  clearSelectedPageId,
+  getSelectedPageId,
+  rememberToolRouting,
+} from "./selected-page.js";
 import {
   resolveSessionName,
   resolveSessionPidFile,
@@ -160,11 +171,18 @@ function httpPost(
  * `CHROME_DEVTOOLS_AXI_PORT`). A bridge that omits the field (older version) is
  * accepted, since there is no mismatch to detect.
  *
- * Exported for tests; production code uses it via `ensureBridge`.
+ * With `notice`, a healthy *deep* probe writes the bridge's `pageIdentityChanged`
+ * flag into that caller-owned holder (see {@link PageIdentityNotice}).
+ *
+ * Exported for tests; production code uses it via {@link ensureBridge}.
  */
 export async function checkBridgeHealth(
   port: number,
-  opts: { deep?: boolean; expectedSession?: string } = {},
+  opts: {
+    deep?: boolean;
+    expectedSession?: string;
+    notice?: PageIdentityNotice;
+  } = {},
 ): Promise<boolean> {
   try {
     const path = opts.deep ? "/health?deep=1" : "/health";
@@ -179,10 +197,43 @@ export async function checkBridgeHealth(
     ) {
       return false;
     }
+    if (opts.deep && opts.notice) {
+      opts.notice.pageIdentityChanged = data.pageIdentityChanged === true;
+    }
     return true;
   } catch {
     return false;
   }
+}
+
+/**
+ * One {@link callTool} invocation's reconnect notice: whether the deep probe
+ * that ran for *this* call reported that chrome-devtools-mcp had reissued every
+ * page id *and* that this took a selection with it. The bridge gates the flag
+ * on the clear having removed an id, so a session that never selected a page is
+ * never told it lost one.
+ *
+ * `ensureBridge` deep-probes before every command, and that probe's
+ * `list_pages` is what consumes chrome-devtools-mcp's one-shot reconnect marker
+ * and clears the persisted selection - so without this relay the command that
+ * follows finds no selection and blames the caller for never selecting a page.
+ *
+ * The holder is created by the caller and threaded through, never module state:
+ * a `run` script can have several `callTool`s in flight at once, and a shared
+ * slot would let one call's probe overwrite - or one call's resolution consume -
+ * another's attribution, so a reconnect could be reported against the wrong
+ * operation or dropped entirely. Per-invocation ownership also keeps the signal
+ * one-shot in the same spirit as the marker it relays: it explains only the call
+ * whose own probe consumed the marker, and is discarded with that call rather
+ * than relabelling later no-selection errors in the same process. A call that
+ * resolves no selection simply drops it - `pages` only calls `list_pages`, and
+ * the home view probe carries no holder at all, since its own health check is
+ * shallow and its `take_snapshot` carries the persisted id without coming
+ * through here.
+ */
+export interface PageIdentityNotice {
+  /** Written by the last deep probe of the owning `ensureBridge` call. */
+  pageIdentityChanged: boolean;
 }
 
 function sleep(ms: number): Promise<void> {
@@ -318,6 +369,28 @@ function spawnBridgeProcess(port: number, sessionName: string): SpawnedBridge {
   child.unref();
   return child;
 }
+type SharedMcpMode = "direct" | "proxy" | null;
+
+function resolveSharedMcpMode(): SharedMcpMode {
+  const sharedServerUrl =
+    process.env.CHROME_DEVTOOLS_AXI_MCP_SERVER_URL?.trim();
+  if (!sharedServerUrl) return null;
+  return process.env.CHROME_DEVTOOLS_AXI_MCP_PATH?.trim() ? "proxy" : "direct";
+}
+
+function sharedMcpSuggestions(mode: Exclude<SharedMcpMode, null>): string[] {
+  if (mode === "direct") {
+    return [
+      "Shared MCP direct mode is enabled by CHROME_DEVTOOLS_AXI_MCP_SERVER_URL; AXI connects directly to that Streamable HTTP endpoint without launching a local MCP process.",
+      "Verify CHROME_DEVTOOLS_AXI_MCP_SERVER_URL is an absolute http(s) MCP endpoint and that the service is running and reachable there.",
+    ];
+  }
+  return [
+    "Shared MCP proxy mode is enabled by CHROME_DEVTOOLS_AXI_MCP_SERVER_URL; this mode does not launch Chrome locally.",
+    "Set CHROME_DEVTOOLS_AXI_MCP_PATH to a runnable chrome-devtools-mcp build that advertises --serverUrl in --help.",
+    "Use the proxy-capable MCP build from the companion shared-server change, then restart this AXI session.",
+  ];
+}
 
 /**
  * Build the error thrown when a freshly spawned bridge exits before it ever
@@ -327,9 +400,10 @@ function spawnBridgeProcess(port: number, sessionName: string): SpawnedBridge {
  *
  * The guidance is attributed by exit code. Only {@link BRIDGE_PORT_IN_USE_EXIT_CODE}
  * (the bridge's EADDRINUSE sentinel) gets the port-in-use explanation; any
- * other early death is a startup failure (npx could not resolve/download
- * chrome-devtools-mcp, a broken `CHROME_DEVTOOLS_AXI_MCP_PATH`, or a
- * Chrome launch failure) and gets the generic startup guidance, so a
+ * other early death is a startup failure. Direct shared-MCP configuration gets
+ * endpoint-specific guidance; proxy configuration gets `MCP_PATH`/`--serverUrl`
+ * prerequisites; local mode covers npx resolution, a broken
+ * `CHROME_DEVTOOLS_AXI_MCP_PATH`, or a Chrome launch failure. In either mode, a
  * single-session user with a broken install is not misdirected to port advice.
  */
 export function buildBridgeEarlyExitError(
@@ -374,6 +448,14 @@ export function buildBridgeEarlyExitError(
       "Local CDP has no authentication. Do not request credentials, tokens, or a ws:// URL.",
     ]);
   }
+  const sharedMcpMode = resolveSharedMcpMode();
+  if (sharedMcpMode) {
+    return new CdpError(
+      message,
+      "BRIDGE_NOT_READY",
+      sharedMcpSuggestions(sharedMcpMode),
+    );
+  }
 
   const suggestions = [
     "Check that chrome-devtools-mcp can start: npx chrome-devtools-mcp@latest --help",
@@ -383,7 +465,7 @@ export function buildBridgeEarlyExitError(
       "Managed mode uses a persistent profile, and Chrome locks a profile to one process: if another Chrome already holds it, this launch fails. Run `axis-browser doctor` to see the lock holder.",
     );
   }
-  if (process.env.CHROME_DEVTOOLS_AXI_MCP_PATH) {
+  if (process.env.CHROME_DEVTOOLS_AXI_MCP_PATH?.trim()) {
     suggestions.push(
       "Verify CHROME_DEVTOOLS_AXI_MCP_PATH points to a valid chrome-devtools-mcp build.",
     );
@@ -408,12 +490,18 @@ export function buildBridgeEarlyExitError(
  * down + restarted instead of being reused as a stale endpoint.
  *
  * `spawnBridge` is injectable for tests; production uses {@link spawnBridgeProcess}.
+ *
+ * `notice` is the caller's own {@link PageIdentityNotice} holder; every deep
+ * probe this call makes writes its `pageIdentityChanged` flag there, so the
+ * reconnect attribution belongs to this invocation and cannot cross a
+ * concurrent one.
  */
 export async function ensureBridge(
   spawnBridge: (
     port: number,
     sessionName: string,
   ) => SpawnedBridge = spawnBridgeProcess,
+  notice?: PageIdentityNotice,
 ): Promise<number> {
   const sessionName = resolveSessionName();
   const port = resolveSessionPort(sessionName);
@@ -427,6 +515,7 @@ export async function ensureBridge(
       await checkBridgeHealth(pidInfo.port, {
         deep: true,
         expectedSession: sessionName,
+        notice,
       })
     ) {
       return pidInfo.port;
@@ -435,6 +524,13 @@ export async function ensureBridge(
       killProcessGroup: isBridgeProcess(pidInfo.pid),
     });
   }
+
+  // MCP page ids reset with a new process; a leftover session id would
+  // target the wrong tab (or none). Keep the file when reusing a live bridge.
+  // Clearing here is also why a respawn never reports a reconnect: the new
+  // bridge's first deep probe finds no selection left to drop, so its 200
+  // omits `pageIdentityChanged` and the poll loop below records no notice.
+  clearSelectedPageId();
 
   // We are about to start a bridge, which is the one moment it is both safe and
   // useful to clear abandoned ones: the reuse fast path above has already been
@@ -472,6 +568,7 @@ export async function ensureBridge(
       await checkBridgeHealth(port, {
         deep: true,
         expectedSession: sessionName,
+        notice,
       })
     ) {
       return port;
@@ -481,6 +578,7 @@ export async function ensureBridge(
         await checkBridgeHealth(port, {
           deep: true,
           expectedSession: sessionName,
+          notice,
         })
       ) {
         return port;
@@ -498,23 +596,34 @@ export async function ensureBridge(
 
   const seconds = Math.round(timeoutMs / 1000);
 
+  const sharedMcpMode = resolveSharedMcpMode();
   if (sawShallowReady) {
+    const suggestions = sharedMcpMode
+      ? [
+          ...sharedMcpSuggestions(sharedMcpMode),
+          "The shared MCP service may be reachable while its attached Chrome target is unavailable.",
+        ]
+      : [
+          "The Chrome/Electron instance the bridge was attached to may have exited.",
+          "Verify the target is still listening on its remote-debugging port, then re-run the command.",
+          "If the target was restarted, the bridge has already been recycled — this run will succeed once the target is reachable.",
+        ];
     throw new CdpError(
       "Bridge is running but the attached CDP target appears to have gone away",
       "BRIDGE_NOT_READY",
-      [
-        "The Chrome/Electron instance the bridge was attached to may have exited.",
-        "Verify the target is still listening on its remote-debugging port, then re-run the command.",
-        "If the target was restarted, the bridge has already been recycled — this run will succeed once the target is reachable.",
-      ],
+      suggestions,
     );
   }
 
-  const usingNpx = !process.env.CHROME_DEVTOOLS_AXI_MCP_PATH;
-  const suggestions = [
-    "Check that chrome-devtools-mcp is installed: npx chrome-devtools-mcp@latest --help",
-  ];
-  if (usingNpx) {
+  const suggestions =
+    sharedMcpMode === "direct"
+      ? sharedMcpSuggestions("direct")
+      : sharedMcpMode === "proxy"
+        ? sharedMcpSuggestions("proxy")
+        : [
+            "Check that chrome-devtools-mcp is installed: npx chrome-devtools-mcp@latest --help",
+          ];
+  if (!sharedMcpMode && !process.env.CHROME_DEVTOOLS_AXI_MCP_PATH?.trim()) {
     suggestions.push(
       "If `npx -y chrome-devtools-mcp@latest` is slow on this machine, install mcp globally and set:",
       '  export CHROME_DEVTOOLS_AXI_MCP_PATH="$(npm prefix -g)/lib/node_modules/chrome-devtools-mcp/build/src/bin/chrome-devtools-mcp.js"',
@@ -530,40 +639,270 @@ export async function ensureBridge(
   );
 }
 
+function parseCallResponse(resp: string): string {
+  // Remote input: the bridge always sends a string `result` (extractToolText),
+  // but parsing to `any` let a non-string escape through a Promise<string>
+  // signature untouched. Validate rather than trust the wire.
+  const data = JSON.parse(resp) as { error?: unknown; result?: unknown };
+  // Presence, not truthiness: the bridge sets `error` only on failure, so a
+  // falsy-but-present value ("" from a truncated message, 0, false) is still
+  // an error response and must not fall through as a successful result.
+  if (data.error != null) {
+    const detail =
+      typeof data.error === "string" ? data.error : JSON.stringify(data.error);
+    throw new Error(detail || "Bridge reported an error with no detail");
+  }
+  if (data.result == null) return "";
+  return typeof data.result === "string" ? data.result : String(data.result);
+}
+
+async function postTool(
+  port: number,
+  name: string,
+  args: Record<string, unknown>,
+  opts: { roots?: string[]; timeoutMs?: number } = {},
+): Promise<string> {
+  const body: Record<string, unknown> = { name, args };
+  if (opts.roots && opts.roots.length > 0) body.roots = opts.roots;
+  const resp = await httpPost(port, "/call", body, opts.timeoutMs);
+  return parseCallResponse(resp);
+}
+
+/**
+ * Tool argument keys whose value is a caller-supplied output path, resolved to
+ * an absolute path by `resolveOutputPath` before it reaches here. The nearest
+ * existing ancestor of their parent directory (or of a directory argument
+ * itself) is negotiated as an MCP workspace root, so the write is not restricted
+ * to the OS temp directory and missing directories can be created beneath an
+ * allowed root (issue #96). Add a key here when a new file-writing tool argument
+ * is introduced.
+ */
+const FILE_OUTPUT_ARGS_BY_TOOL = new Map<string, readonly string[]>([
+  ["take_screenshot", ["filePath"]],
+  ["get_network_request", ["responseFilePath", "requestFilePath"]],
+  ["performance_start_trace", ["filePath"]],
+  ["performance_stop_trace", ["filePath"]],
+  ["take_memory_snapshot", ["filePath"]],
+]);
+const DIR_OUTPUT_ARGS_BY_TOOL = new Map<string, readonly string[]>([
+  ["lighthouse_audit", ["outputDirPath"]],
+]);
+
+function nearestExistingAncestor(path: string): string {
+  let candidate = path;
+  while (!existsSync(candidate)) {
+    const parent = dirname(candidate);
+    if (parent === candidate) return candidate;
+    candidate = parent;
+  }
+  return candidate;
+}
+
+/**
+ * The workspace roots a call needs: always the invoking cwd (so writes under it
+ * pass), plus the nearest existing ancestor of any output path argument (so a
+ * write outside cwd, e.g. `$HOME/a.png`, passes too).
+ */
+export function collectRootDirs(
+  name: string,
+  args: Record<string, unknown>,
+): string[] {
+  const dirs = new Set<string>([process.cwd()]);
+  for (const key of FILE_OUTPUT_ARGS_BY_TOOL.get(name) ?? []) {
+    const value = args[key];
+    if (typeof value === "string" && value.length > 0) {
+      dirs.add(nearestExistingAncestor(dirname(value)));
+    }
+  }
+  for (const key of DIR_OUTPUT_ARGS_BY_TOOL.get(name) ?? []) {
+    const value = args[key];
+    if (typeof value === "string" && value.length > 0) {
+      dirs.add(nearestExistingAncestor(value));
+    }
+  }
+  return [...dirs];
+}
+
+/**
+ * Resolve the page AXI last selected in this session. Fails loudly when
+ * nothing has been selected — AXI will not guess a pageId from
+ * `list_pages` `[selected]` (titles/dialogs can forge that marker), and
+ * chrome-devtools-mcp 1.8+ will not either (`Required at pageId`).
+ *
+ * When this invocation's own deep probe reported a browser reconnect
+ * (`reconnected`), the missing selection is that reconnect's doing rather than
+ * the caller's, so the error names it. The two cases stay distinct: a session
+ * that never selected a page, or whose bridge was just respawned, still gets
+ * the plain message.
+ */
+function resolveSelectedPageId(reconnected: boolean): number {
+  const pageId = getSelectedPageId();
+  if (pageId === null) {
+    if (reconnected) throw pageIdentityClearedError();
+    throw new CdpError("No page is currently selected", "BROWSER_ERROR", [
+      "Run `chrome-devtools-axi open <url>` to open a page",
+      "Run `chrome-devtools-axi pages` to list tabs",
+      "Run `chrome-devtools-axi selectpage <id>` to select a tab",
+    ]);
+  }
+  return pageId;
+}
+
+function resolveToolArgs(
+  name: string,
+  args: Record<string, unknown>,
+  reconnected: boolean,
+): Record<string, unknown> {
+  if (!needsPageId(name, args)) return args;
+  return { ...args, pageId: resolveSelectedPageId(reconnected) };
+}
+
 /**
  * Call an MCP tool via the bridge. Returns the text result.
+ *
+ * Page-scoped tools (eval/snapshot/click/fill and the rest of
+ * `PAGE_SCOPED_TOOLS` in `src/pages.ts`) get the session's last
+ * `select_page` / url-matched `new_page` `pageId` injected so they satisfy
+ * chrome-devtools-mcp 1.8+ defaults. `list_pages` is never consulted.
  */
 export async function callTool(
   name: string,
   args: Record<string, unknown> = {},
 ): Promise<string> {
-  const port = await ensureBridge();
+  // Owned by this call alone, so a concurrent `run`-script call cannot
+  // overwrite or consume this one's reconnect attribution.
+  const notice: PageIdentityNotice = { pageIdentityChanged: false };
+  const port = await ensureBridge(undefined, notice);
+  let resolved = args;
 
   try {
-    const resp = await httpPost(port, "/call", { name, args });
-    // Remote input: the bridge always sends a string `result` (extractToolText),
-    // but parsing to `any` let a non-string escape through a Promise<string>
-    // signature untouched. Validate rather than trust the wire.
-    const data = JSON.parse(resp) as { error?: unknown; result?: unknown };
-    // Presence, not truthiness: the bridge sets `error` only on failure, so a
-    // falsy-but-present value ("" from a truncated message, 0, false) is still
-    // an error response and must not fall through as a successful result.
-    if (data.error != null) {
-      const detail =
-        typeof data.error === "string"
-          ? data.error
-          : JSON.stringify(data.error);
-      throw new Error(detail || "Bridge reported an error with no detail");
-    }
-    if (data.result == null) return "";
-    return typeof data.result === "string" ? data.result : String(data.result);
+    resolved = resolveToolArgs(name, args, notice.pageIdentityChanged);
+    const result = await postTool(port, name, resolved, {
+      roots: collectRootDirs(name, resolved),
+    });
+    rememberToolRouting(name, resolved, result);
+    return result;
   } catch (err) {
+    if (err instanceof CdpError) throw err;
     const message = err instanceof Error ? err.message : String(err);
+    if (isMissingPageError(message)) {
+      const pageId =
+        typeof resolved.pageId === "number" ? resolved.pageId : null;
+      if (pageId !== null && getSelectedPageId() === pageId) {
+        clearSelectedPageId();
+      }
+      throw missingPageError(pageId);
+    }
     throw mapErrorMessage(message);
   }
 }
 
+/**
+ * chrome-devtools-mcp text the bridge flattens into a `/call` error body: a
+ * bare line when the tool handler rethrows, or an `Error: `-prefixed line when
+ * the response builder appends it. `The selected page has been closed.` leads a
+ * sentence that interpolates the `list_pages` tool name, so only its stable
+ * clause is anchored.
+ */
+const MCP_MISSING_PAGE_LINE = "No page found";
+const MCP_CLOSED_PAGE_LINE_PREFIX = "The selected page has been closed.";
+
+/**
+ * Whether the bridge error body names a page chrome-devtools-mcp itself could
+ * not resolve. The body is the *whole* flattened MCP response, and page-owned
+ * strings upstream interpolates verbatim (a dialog message, a title) may carry
+ * raw newlines, so any line in the middle of the body can be page-controlled.
+ * Only the final non-empty line is consulted, which rules those out.
+ *
+ * It does NOT make the marker unforgeable. Upstream's last element is
+ * `Error: <errorMessage>` with the raw exception message interpolated, and
+ * that message can itself contain a raw newline, so a page that throws
+ * "\nNo page found" ends the body with a line that is exactly the sentence.
+ * No purely text-based matcher can separate page bytes inside `errorMessage`
+ * from upstream's own sentence. The consequence is fail-closed - a spurious
+ * loud error plus dropped routing, never a silent retarget - and the sibling
+ * reconnect matcher in `src/bridge.ts` is unaffected, because a forged first
+ * line still carries upstream's literal `Error: ` prefix.
+ *
+ * UNVERIFIED DEPENDENCY CONTRACT: this assumes chrome-devtools-mcp appends
+ * `Error: <message>` LAST, after every page-derived block (and, for the
+ * sibling reconnect matcher in `src/bridge.ts`, emits its notice FIRST).
+ * Nothing in the test suite pins that order - chrome-devtools-mcp is spawned
+ * via npx, not installed as a devDependency, so there is no build to assert
+ * against. If upstream reorders, a genuine missing page falls through to
+ * `mapErrorMessage` and surfaces as a less specific error rather than
+ * retargeting anything; upstream hands out page ids from a process-wide
+ * monotonic counter, so a stale id fails to resolve instead of landing on an
+ * unrelated page.
+ */
+function isMissingPageError(message: string): boolean {
+  const line = lastNonEmptyLine(message).replace(/^Error:\s*/, "");
+  return (
+    line === MCP_MISSING_PAGE_LINE ||
+    line.startsWith(MCP_CLOSED_PAGE_LINE_PREFIX)
+  );
+}
+
+function lastNonEmptyLine(message: string): string {
+  const lines = message.split(/\r?\n/);
+  for (let i = lines.length - 1; i >= 0; i -= 1) {
+    const line = lines[i].trim();
+    if (line) return line;
+  }
+  return "";
+}
+
+function missingPageError(pageId: number | null): CdpError {
+  return new CdpError(
+    pageId === null
+      ? "The selected page is no longer available"
+      : `Page ${pageId} is no longer available`,
+    "BROWSER_ERROR",
+    [
+      "Run `chrome-devtools-axi pages` to list the remaining tabs",
+      "Run `chrome-devtools-axi selectpage <id>` to select a tab, or `chrome-devtools-axi open <url>` to open one",
+    ],
+  );
+}
+
+const PAGE_IDENTITY_SUGGESTIONS = [
+  "Run `chrome-devtools-axi pages` to list the current tabs and their new ids",
+  "Run `chrome-devtools-axi selectpage <id>` to re-select a tab after the reconnect, then retry",
+];
+
+function pageIdentityChangedError(): CdpError {
+  return new CdpError(
+    PAGE_IDENTITY_CHANGED_ERROR,
+    "BROWSER_ERROR",
+    PAGE_IDENTITY_SUGGESTIONS,
+  );
+}
+
+/**
+ * The reconnect already happened before this command ran: the deep probe
+ * consumed the marker and dropped the routing it invalidated, so nothing was
+ * sent to a wrong tab and there is nothing to retarget — the caller just has
+ * to re-select. Keeps the `BROWSER_ERROR` code and the "no page" clause of the
+ * plain no-selection message so `open`'s existing recovery still applies (it
+ * creates a new tab; see AGENTS.md).
+ *
+ * Exported so the `open` / `page.open` recovery tests build their rejection
+ * from the message this ships rather than a copy of it, which is what makes
+ * them fail if a reword breaks that match.
+ */
+export function pageIdentityClearedError(): CdpError {
+  return new CdpError(
+    "The browser reconnected and every page id changed, so no page is currently selected",
+    "BROWSER_ERROR",
+    PAGE_IDENTITY_SUGGESTIONS,
+  );
+}
+
 export function mapErrorMessage(message: string): CdpError {
+  if (message === PAGE_IDENTITY_CHANGED_ERROR) {
+    return pageIdentityChangedError();
+  }
+  if (isMissingPageError(message)) return missingPageError(null);
   if (message.includes("ECONNREFUSED") || message.includes("ECONNRESET")) {
     return new CdpError("Bridge is not running", "BRIDGE_NOT_READY", [
       "Run `axis-browser open <url>` — the bridge starts automatically",
@@ -622,15 +961,14 @@ export async function getSessionSnapshotIfRunning(): Promise<string | null> {
     return null;
   }
   try {
-    const resp = await httpPost(
+    const pageId = getSelectedPageId();
+    if (pageId === null) return null;
+    return await postTool(
       pidInfo.port,
-      "/call",
-      { name: "take_snapshot", args: {} },
-      5000,
+      "take_snapshot",
+      { pageId },
+      { timeoutMs: 5000 },
     );
-    const data = JSON.parse(resp);
-    if (data.error) return null;
-    return data.result ?? null;
   } catch {
     return null;
   }
@@ -649,5 +987,6 @@ export async function stopBridge(): Promise<boolean> {
   await terminateBridgeProcess(pidInfo.pid, {
     killProcessGroup: isBridgeProcess(pidInfo.pid),
   });
+  clearSelectedPageId();
   return true;
 }

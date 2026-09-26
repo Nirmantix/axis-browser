@@ -2,8 +2,9 @@
 
 This changelog tracks public changes for Axis Browser.
 
-Versions `0.1.18` and below are inherited from the upstream `chrome-devtools-axi`
-release history.
+Versions `0.1.18` and below, and everything under
+`## Inherited upstream releases 0.1.28–0.1.35`, are inherited from the upstream
+`chrome-devtools-axi` release history.
 
 ## Unreleased
 
@@ -25,6 +26,12 @@ release history.
 
 ### Fixed
 
+* upstream 0.1.34's strict flag parser ships a per-command allow-list with no
+  entry for the fork-owned commands, so merging it silently rejected every flag
+  those commands document: `update --check`, `doctor --json`,
+  `reap --dry-run --min-age-hours <n>`, and `setup --install --yes --project <path>`.
+  The allow-list now covers them (including `-y` and the `--project`/`--min-age-hours`
+  value forms), and `test/main.test.ts` keeps `update --check` honest
 * installing the fork from GitHub produced a broken CLI: `dist/` is not
   committed and npm builds git installs via `prepare`, but only
   `prepublishOnly` was defined — so the packed tarball held 3 files and every
@@ -133,6 +140,50 @@ release history.
   resolver — the drift test failed until they were, which is what it is for
 ### Changed
 
+* **synced upstream `chrome-devtools-axi` 0.1.27 → 0.1.35** by merging the tagged
+  release `chrome-devtools-axi-v0.1.35`, not an unreleased branch tip. What that
+  brings: page-id injection on page-scoped MCP calls plus correct routing after a
+  browser reconnect (`src/pages.ts`, `src/selected-page.ts`), MCP `roots`
+  negotiation so file writes are no longer confined to the OS temp directory,
+  tool errors surfaced as errors instead of success, strict unknown-flag
+  rejection, callable `evaluate_script` payloads for `scroll`/`wait`/`run`
+  helpers, resolved screenshot paths in output, controlled React-aware fills, and
+  a fast `--version` path that no longer loads the MCP SDK (`src/version.ts`,
+  `src/bridge-script.ts`). Upstream's generated skill package, release-please
+  automation and policy files stay rejected per `docs/upstream_sync.md`
+* **breaking: `engines.node` is now `>=22.13`** (was `>=20.11`). The old floor
+  promised a Node nothing exercised — no job drove a browser on it — while CI's
+  packed-artifact job now installs the tarball on exactly 22.13, checks `setup
+  --json` and `doctor --json`, and drives an ephemeral session against a local
+  page. Neither `chrome-devtools-mcp` 1.9.0 (`^20.19.0 || ^22.12.0 || >=23`) nor
+  pnpm 12.5.1 (`>=18`) requires 22.13 on its own; this aligns the promise with
+  what is actually tested. Standalone BrowserBay still runs on Node 20 without Axis
+* toolchain modernization, reviewed separately from the upstream merge:
+  TypeScript `7.0.2` (with the explicit `"types": ["node"]` TS 7 requires, since
+  it no longer auto-includes `node_modules/@types`), Vitest `5.0.1`,
+  `@modelcontextprotocol/sdk` `^1.30.0`, `axi-sdk-js` `^0.1.12`,
+  `@types/node` `^22.20.4`, `prettier` `^3.9.8`, `tsx` `^4.23.13`, and
+  `packageManager` `pnpm@12.5.1`. `chrome-devtools-mcp` is now an exact `1.9.0`
+  production dependency instead of something the bridge hopes to find on the machine
+* **TOON `2.3.0` → `4.1.1` is an output-format change, not a routine bump.**
+  Every payload this CLI actually prints encodes byte-identically, and
+  `test/toon-output.test.ts` now pins those bytes. Two shapes did move: strings
+  leading with `#` or `+` are quoted (`color: "#ff0000"`,
+  `phone: "+15551234567"`) because a bare `#` reads as a comment, and array rows
+  holding nested objects keep the compact tabular form instead of falling back to
+  an indented list. Both decode to the same values, 2.3.0-era output still
+  decodes, and ref syntax (`g7:12_3`) is untouched
+* `src/refs.ts` is gone: UID freshness now lives in one module,
+  `src/uid-freshness.ts`, pairing upstream's capture-side mutation observer (a
+  snapshot taken while the page is still mutating is re-taken once, so the tree
+  you receive is settled) with this fork's validation rules. Refs stay valid
+  across unrelated DOM churn and untagged legacy refs are still accepted —
+  upstream 0.1.35 invalidates both, which is exactly the behavior this fork
+  removed on purpose
+* Vitest 5 narrowed `configDefaults.exclude` to `node_modules` and `.git`, so a
+  local `.tmp/` scratch checkout was globbed into the run and reported 268 failed
+  test files that were never this repo's (some needing `happy-dom`, which is not
+  installed). `vitest.config.ts` re-states the scratch, build and vendored trees
 * the CLI presents itself as `axis-browser` everywhere — help, usage, examples,
   suggestions, error hints, and bridge logs. `chrome-devtools-axi` is the
   upstream base tool, and is named only where that distinction is the point
@@ -219,6 +270,81 @@ release history.
   typechecked and could reference symbols that no longer exist
 * `pnpm format:check`, plus a CI quality job and a Node 20/22/24 matrix
   covering the range `engines` actually claims
+
+## Inherited upstream releases 0.1.28–0.1.35
+
+Upstream `kunchenguid/chrome-devtools-axi` release notes, reproduced verbatim
+from the `chrome-devtools-axi-v0.1.35` tag this fork synced. Upstream published
+those npm releases; this fork did not. Upstream's `0.1.27` entry is already
+folded into the fork `## Unreleased` narrative above.
+
+### [0.1.35](https://github.com/kunchenguid/chrome-devtools-axi/compare/chrome-devtools-axi-v0.1.34...chrome-devtools-axi-v0.1.35) (2026-09-21)
+
+
+#### Features
+
+* **bridge:** add shared MCP server transport modes ([#139](https://github.com/kunchenguid/chrome-devtools-axi/issues/139)) ([a970109](https://github.com/kunchenguid/chrome-devtools-axi/commit/a970109ced6a91e13f817581a7f05f07ad57f22d))
+
+
+#### Bug Fixes
+
+* **bridge:** detect Windows global MCP installs ([#141](https://github.com/kunchenguid/chrome-devtools-axi/issues/141)) ([7b8844f](https://github.com/kunchenguid/chrome-devtools-axi/commit/7b8844f2dec6f318f1f3a8053c492fa16a4a72dc))
+* **bridge:** treat MCP tool errors as unhealthy ([#143](https://github.com/kunchenguid/chrome-devtools-axi/issues/143)) ([cbc313e](https://github.com/kunchenguid/chrome-devtools-axi/commit/cbc313e871c82c917db4e43349c67206162c0980))
+* **cli:** report resolved screenshot output paths ([#140](https://github.com/kunchenguid/chrome-devtools-axi/issues/140)) ([d0834b6](https://github.com/kunchenguid/chrome-devtools-axi/commit/d0834b68d9b75ee196f76adccb05484e8bdc77db))
+* **cli:** restore controlled fills and stale ref safety ([#134](https://github.com/kunchenguid/chrome-devtools-axi/issues/134)) ([03bc156](https://github.com/kunchenguid/chrome-devtools-axi/commit/03bc156f0f71a9d8c25332f94f23f8f1ee4d81a7))
+* **cli:** send callable payloads to evaluate_script for scroll, wait, and run helpers ([#142](https://github.com/kunchenguid/chrome-devtools-axi/issues/142)) ([6c90a9a](https://github.com/kunchenguid/chrome-devtools-axi/commit/6c90a9a566fc510c30c69ff255e5212ee886d1ce))
+
+### [0.1.34](https://github.com/kunchenguid/chrome-devtools-axi/compare/chrome-devtools-axi-v0.1.33...chrome-devtools-axi-v0.1.34) (2026-09-03)
+
+
+#### Bug Fixes
+
+* **cli:** reject unknown command flags ([#129](https://github.com/kunchenguid/chrome-devtools-axi/issues/129)) ([deb13a3](https://github.com/kunchenguid/chrome-devtools-axi/commit/deb13a3de2429710f7be4b90b28432d91d11214c))
+
+### [0.1.33](https://github.com/kunchenguid/chrome-devtools-axi/compare/chrome-devtools-axi-v0.1.32...chrome-devtools-axi-v0.1.33) (2026-08-28)
+
+
+#### Bug Fixes
+
+* **bridge:** invalidate page routing after a browser reconnect ([#124](https://github.com/kunchenguid/chrome-devtools-axi/issues/124)) ([be54e07](https://github.com/kunchenguid/chrome-devtools-axi/commit/be54e07fafa198e8a90719a1bb381f9e9f23c17f))
+* **bridge:** name the browser reconnect on the next page-scoped call ([#126](https://github.com/kunchenguid/chrome-devtools-axi/issues/126)) ([52e5b31](https://github.com/kunchenguid/chrome-devtools-axi/commit/52e5b311a610e154651fa657ee8308fe7877f6e6))
+
+### [0.1.32](https://github.com/kunchenguid/chrome-devtools-axi/compare/chrome-devtools-axi-v0.1.31...chrome-devtools-axi-v0.1.32) (2026-08-28)
+
+
+#### Bug Fixes
+
+* negotiate roots and surface file-writing errors ([#122](https://github.com/kunchenguid/chrome-devtools-axi/issues/122)) ([0bb0473](https://github.com/kunchenguid/chrome-devtools-axi/commit/0bb0473da50e17d4d4c866afd85010a4817508da))
+
+### [0.1.31](https://github.com/kunchenguid/chrome-devtools-axi/compare/chrome-devtools-axi-v0.1.30...chrome-devtools-axi-v0.1.31) (2026-08-26)
+
+
+#### Bug Fixes
+
+* inject selected pageId on page-scoped MCP calls ([#120](https://github.com/kunchenguid/chrome-devtools-axi/issues/120)) ([6a9709e](https://github.com/kunchenguid/chrome-devtools-axi/commit/6a9709eb310d819777d36e2abf5e07f9b1013181))
+
+### [0.1.30](https://github.com/kunchenguid/chrome-devtools-axi/compare/chrome-devtools-axi-v0.1.29...chrome-devtools-axi-v0.1.30) (2026-08-23)
+
+
+#### Bug Fixes
+
+* **skill:** defer installed guidance to the current CLI ([#112](https://github.com/kunchenguid/chrome-devtools-axi/issues/112)) ([75dd6ca](https://github.com/kunchenguid/chrome-devtools-axi/commit/75dd6ca57eda1e160df82d73985d471cd405eee3))
+
+### [0.1.29](https://github.com/kunchenguid/chrome-devtools-axi/compare/chrome-devtools-axi-v0.1.28...chrome-devtools-axi-v0.1.29) (2026-08-07)
+
+
+#### Bug Fixes
+
+* **cli:** avoid loading MCP SDK for every command ([#102](https://github.com/kunchenguid/chrome-devtools-axi/issues/102)) ([22df96b](https://github.com/kunchenguid/chrome-devtools-axi/commit/22df96b8e3beda5d235e23e6959537537e281a0c))
+* **cli:** speed up version flag startup ([#104](https://github.com/kunchenguid/chrome-devtools-axi/issues/104)) ([8d31478](https://github.com/kunchenguid/chrome-devtools-axi/commit/8d31478136f564a9a1bbfd883b7403d0e441a5ec))
+
+### [0.1.28](https://github.com/kunchenguid/chrome-devtools-axi/compare/chrome-devtools-axi-v0.1.27...chrome-devtools-axi-v0.1.28) (2026-07-25)
+
+
+#### Bug Fixes
+
+* **bridge:** enforce keychain isolation for launched Chrome ([#91](https://github.com/kunchenguid/chrome-devtools-axi/issues/91)) ([aa162e8](https://github.com/kunchenguid/chrome-devtools-axi/commit/aa162e87f1894593470fd833c36942bdb04b78a3))
+* execute every PR body compliance event ([#89](https://github.com/kunchenguid/chrome-devtools-axi/issues/89)) ([3a1aa04](https://github.com/kunchenguid/chrome-devtools-axi/commit/3a1aa04be8eaa7006211f0ee6d3ff46bbe77d68e))
 
 ## 0.1.26 (2026-07-09)
 

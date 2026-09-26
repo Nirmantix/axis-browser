@@ -180,7 +180,8 @@ The fork-specific behavior is intentionally small:
 ## Install
 
 Requirements:
-- Node.js `20+`
+- Node.js `22.13+` for this CLI. Standalone BrowserBay (the router skill)
+  still runs on Node 20 without Axis; only the Axis CLI needs the newer floor.
 - Bun or npm
 - Chrome or Chromium for browser automation
 
@@ -302,6 +303,7 @@ help[2]:
 ```
 
 Refs in snapshot output carry a `g<N>:` generation prefix that bumps every time a new accessibility tree is captured. Pass refs back exactly as printed — if the page re-rendered between snapshot and action, the action fails loudly with `STALE_REF` instead of silently no-op'ing, so the agent re-snapshots and retries.
+Unrelated DOM churn alone does not stale a ref: the tag names the snapshot it came from, not the document's revision count. A capture taken while the page is still mutating is re-taken once, so the tree you receive is a settled one.
 After a state-changing action, confirm the outcome with a fresh `snapshot`, `eval`, or `screenshot` before reporting success. A current ref can still produce no visible page change; `STALE_REF` only catches stale refs.
 
 ## Setup Axis Workflow
@@ -450,6 +452,11 @@ For browser tasks that need auditable evidence, use the optional
 
 ## How It Works
 
+The bridge keeps one persistent MCP session across CLI invocations. With no
+shared URL (or a blank one), standalone mode uses the local stdio process chain
+below. See [Configuration](#configuration) for the shared-service choices,
+which need an MCP server you start and maintain yourself.
+
 ```text
 ┌───────────────────────┐
 │    Axis Browser       │  CLI — parse args, format output
@@ -471,6 +478,25 @@ For browser tasks that need auditable evidence, use the optional
 - **Snapshot parsing** — extracts accessibility-tree refs (`uid=`) for lightweight interaction
 - **Generation tagging** — refs carry a `g<N>:` prefix; stale refs from prior snapshots are rejected with `STALE_REF`
 - **TOON encoding** — keeps structured output compact compared with heavier browser payloads
+
+In URL-only shared mode — an advanced choice, not a default — the bridge speaks
+Streamable HTTP to a server you run yourself instead of starting a local one:
+
+```text
+┌───────────────────────┐
+│    Axis Browser       │  CLI — parse args, format output
+└──────────┬────────────┘
+           │ HTTP (localhost:9224)
+           ▼
+┌───────────────────────┐
+│     Bridge Server     │  Persistent per-session MCP client
+└──────────┬────────────┘
+           │ Streamable HTTP
+           ▼
+┌───────────────────────┐
+│  Shared MCP service   │  One remote MCP process + Chrome
+└───────────────────────┘
+```
 
 ## CLI Reference
 
@@ -585,6 +611,10 @@ reports it.
 Running with no command shows the CLI home view. It prepends `bin` and `description` metadata, then includes the current snapshot when a browser session is active or the no-session status/help block when one is not.
 
 ### Flags
+
+`--help`, `-v`, `-V`, and `--version` are top-level options. All other flags
+are command-specific; the CLI rejects a flag that is not listed by
+`chrome-devtools-axi <command> --help`.
 
 | Flag                        | Description                                 |
 | --------------------------- | ------------------------------------------- |
@@ -705,6 +735,49 @@ Set these **per command or per project**, not in a shell profile. A globally exp
 connection variable applies to every shell on the machine — including the non-interactive
 shells agents run in, where nobody sees it and nothing reports it.
 
+### Shared MCP service (advanced, bring your own server)
+
+To share one long-lived Chrome DevTools MCP service across Axis sessions on the
+same host, set `CHROME_DEVTOOLS_AXI_MCP_SERVER_URL` to the service's Streamable
+HTTP endpoint. The combination with `CHROME_DEVTOOLS_AXI_MCP_PATH` selects how
+Axis reaches it:
+
+1. **Direct:** the shared URL is nonblank and `CHROME_DEVTOOLS_AXI_MCP_PATH` is
+   absent or blank. The bridge constructs a `StreamableHTTPClientTransport`
+   directly, starts no local MCP child, and validates that the URL is an absolute
+   `http://` or `https://` endpoint. The shared service must already be running
+   and reachable. Each bridge still gets its own remote MCP session and
+   selected-page state.
+2. **Stdio proxy:** the shared URL and `CHROME_DEVTOOLS_AXI_MCP_PATH` are both
+   nonblank. Axis checks that executable's `--help` for `--serverUrl`, then starts
+   it with only `--server-url=<URL>` — one proxy child per named bridge.
+
+**Neither mode works with the official `chrome-devtools-mcp` build this fork pins.**
+Verified against `chrome-devtools-mcp@1.9.0`: its CLI exposes no `--http-port` and
+no `--server-url`/`--serverUrl`, so a shared endpoint requires a server build that
+adds them (for example the proxy mode proposed in
+[ChromeDevTools/chrome-devtools-mcp#2733](https://github.com/ChromeDevTools/chrome-devtools-mcp/pull/2733)).
+Treat this as an opt-in integration you operate, not as a supported default — and
+note that a remote server redacts nothing on your behalf: `--redactNetworkHeaders`
+applies to the local child Axis starts, so a shared service must redact for itself.
+
+If `CHROME_DEVTOOLS_AXI_MCP_SERVER_URL` is absent or blank, Axis keeps its
+standalone stdio behavior and launches or attaches Chrome according to the local
+settings below. A nonblank `CHROME_DEVTOOLS_AXI_MCP_PATH` without a shared URL is
+still local stdio mode.
+
+`CHROME_DEVTOOLS_AXI_MCP_SERVER_URL` takes precedence over the local Chrome launch
+and attach settings. Run any shared service on the same host and filesystem as
+Axis, and keep its endpoint loopback-only, so saved artifact paths refer to the
+same local files.
+
+Stop the bridges for those session names before switching between these
+configurations: a running bridge retains the transport settings it started with.
+`CHROME_DEVTOOLS_AXI_SESSION=<name> axis-browser stop` stops that session's bridge
+and any Axis-owned proxy child; the shared service's lifecycle stays yours.
+
+Connect to an existing Chrome instance instead of launching one:
+
 `CHROME_DEVTOOLS_AXI_BROWSER_URL` (attach mode) accepts both HTTP(S) and WebSocket endpoints:
 - `http(s)://` uses `--browserUrl` and discovers the WebSocket URL via `/json/version`
 - `ws(s)://` uses `--wsEndpoint` directly
@@ -760,6 +833,8 @@ the login keychain or its `Chrome Safe Storage` item. The isolation flags apply
 only to browsers this tool starts, and are deliberately not sent in the
 `CHROME_DEVTOOLS_AXI_AUTO_CONNECT`, `CHROME_DEVTOOLS_AXI_BROWSER_URL`, and
 `wsEndpoint` modes, where the browser belongs to whoever launched it.
+A shared MCP service is externally launched the same way: its operator owns
+Chrome's keychain policy.
 
 Run multiple isolated bridges at once with `CHROME_DEVTOOLS_AXI_SESSION` — one
 per agent session, worktree, or test worker:
@@ -772,6 +847,9 @@ CHROME_DEVTOOLS_AXI_SESSION=worker-2 axis-browser open https://example.org
 Each session name gets its own bridge process, port (auto-derived from the name,
 or pinned with `CHROME_DEVTOOLS_AXI_PORT`), and on-disk state under
 `~/.axis-browser/` (named sessions nest under `sessions/<name>/`).
+A session name does not choose a connection mode or a profile: for a locally
+launched persistent browser, give each session its own
+`CHROME_DEVTOOLS_AXI_USER_DATA_DIR`.
 
 In the default isolated and `CHROME_DEVTOOLS_AXI_USER_DATA_DIR` launch modes each
 bridge also launches its own Chrome, so concurrent sessions share neither browser

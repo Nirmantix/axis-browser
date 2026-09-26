@@ -6,8 +6,9 @@ a persistent local bridge.
 
 ## Requirements
 
-- Node.js `20+`
-- `pnpm` `11.1.1` through Corepack or a compatible local install
+- Node.js `22.13+`
+- `pnpm` `12.5.1` through Corepack (`corepack pnpm@12.5.1 …`) or a compatible
+  local install
 - Chrome or Chromium
 - Optional: npm or Bun for global GitHub installs
 

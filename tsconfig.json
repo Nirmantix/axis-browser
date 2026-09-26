@@ -9,7 +9,11 @@
     "esModuleInterop": true,
     "skipLibCheck": true,
     "declaration": true,
-    "sourceMap": true
+    "sourceMap": true,
+    // TypeScript 7 no longer auto-includes every package under node_modules/@types,
+    // so the Node ambient globals (process, NodeJS.*, node:* module shapes) must be
+    // named explicitly. Without this the build reports TS2591 for every `process`.
+    "types": ["node"]
   },
   "include": ["src/**/*.ts", "bin/**/*.ts"],
   "exclude": ["node_modules", "dist", "test"]

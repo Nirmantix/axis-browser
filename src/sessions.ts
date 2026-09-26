@@ -2,17 +2,16 @@
  * Named sessions - per-session bridge isolation.
  *
  * Setting `CHROME_DEVTOOLS_AXI_SESSION` to a non-default name binds the
- * bridge's port and on-disk state (PID file, snapshot-generation counter) to
- * that name, so multiple bridges can run concurrently - one per agent session,
- * worktree, or test worker - without sharing a single bridge or stepping on
- * each other's stale-ref tracking.
+ * bridge's port and on-disk state (PID file, snapshot-generation counter,
+ * selected-page-id) to that name, so multiple bridges can run concurrently -
+ * one per agent session, worktree, or test worker - without sharing a single
+ * bridge or stepping on each other's stale-ref tracking.
  *
  *   CHROME_DEVTOOLS_AXI_SESSION=worker-1 axis-browser open ...
  *   CHROME_DEVTOOLS_AXI_SESSION=worker-2 axis-browser open ...
  *
- * A session only isolates the bridge itself; the connection mode and profile
- * (AUTO_CONNECT / BROWSER_URL / USER_DATA_DIR / --isolated) are unchanged. For
- * a persistent per-session profile, combine with CHROME_DEVTOOLS_AXI_USER_DATA_DIR.
+ * Session identity does not choose a transport or browser profile. See README
+ * Configuration for local browser and shared MCP service setup.
  *
  * Precedence:
  *   port      - CHROME_DEVTOOLS_AXI_PORT > deterministic hash of the session name
@@ -39,7 +38,8 @@ const STATE_DIR_NAME = ".axis-browser";
  * A configured-but-unsafe name throws (via `validateSessionName`). This is the
  * single chokepoint through which every command obtains the active session, so
  * validating here guarantees that no entry point - `ensureBridge`, `stopBridge`,
- * `getSessionSnapshotIfRunning`, the generation counter, or the bridge itself -
+ * `getSessionSnapshotIfRunning`, the generation counter, the selected-page
+ * id, or the bridge itself -
  * can resolve an invalid name into a filesystem path that collapses onto the
  * default session's directory.
  */

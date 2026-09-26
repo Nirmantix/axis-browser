@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AxiError } from "axi-sdk-js";
 
 // --- Mock the client layer ---
@@ -25,23 +25,45 @@ vi.mock("../src/client.js", () => ({
 
 import { main, getCommandHelp } from "../src/cli.js";
 import { CdpError } from "../src/client.js";
-import { createPageHelper, isUidRef, runScript } from "../src/run.js";
+import {
+  createPageHelper,
+  isUidRef,
+  runScript,
+  type PageHelper,
+} from "../src/run.js";
 import { parseEvalOutput } from "../src/snapshot.js";
+import * as generation from "../src/generation.js";
 
 /** Mock response for the evaluate_script call that page.open() makes to read url+status. */
 const OPEN_INFO_RESPONSE =
   'Script ran on page and returned:\n```json\n{"url":"https://example.com","status":200}\n```';
 
 /** Mock response for the generation probe parseUidFresh makes before a uid action. */
-function pageGenerationResponse(n: number): string {
-  return `Script ran on page and returned:\n\`\`\`json\n${n}\n\`\`\``;
+function pageGenerationResponse(n: number, mutations = 0): string {
+  return `Script ran on page and returned:\n\`\`\`json\n{"generation":${n},"mutations":${mutations}}\n\`\`\``;
 }
 const PAGE_GENERATION_RESPONSE = pageGenerationResponse(7);
+
+/**
+ * The reconnect-cleared error exactly as `src/client.ts` ships it, rebuilt on
+ * the mocked `CdpError` so `isRecoverableOpenError`'s `instanceof` still holds.
+ * Taking the message from production rather than copying it is the point: it
+ * is what `page.open`'s documented post-reconnect recovery is pinned on.
+ */
+async function reconnectClearedError(): Promise<CdpError> {
+  const actual =
+    await vi.importActual<typeof import("../src/client.js")>(
+      "../src/client.js",
+    );
+  const shipped = actual.pageIdentityClearedError();
+  return new CdpError(shipped.message, shipped.code, shipped.suggestions);
+}
 
 afterEach(() => {
   callTool.mockReset();
   process.exitCode = undefined;
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
 });
 
 // --- 1. No-args output teaches `run` ---
@@ -115,6 +137,10 @@ describe("parseEvalOutput", () => {
 // --- 4. Script helper object maps commands to bridge calls ---
 
 describe("createPageHelper", () => {
+  beforeEach(() => {
+    vi.spyOn(generation, "getCurrentGeneration").mockReturnValue(7);
+  });
+
   it("page.open calls navigate_page, falls back to new_page, returns { url, status }", async () => {
     callTool
       .mockRejectedValueOnce(new CdpError("not connected", "BROWSER_ERROR"))
@@ -128,6 +154,21 @@ describe("createPageHelper", () => {
       type: "url",
       url: "https://example.com",
     });
+    expect(callTool).toHaveBeenCalledWith("new_page", {
+      url: "https://example.com",
+    });
+    expect(result).toEqual({ url: "https://example.com", status: 200 });
+  });
+
+  it("page.open falls back to new_page when a browser reconnect dropped the selection", async () => {
+    callTool
+      .mockRejectedValueOnce(await reconnectClearedError())
+      .mockResolvedValueOnce("")
+      .mockResolvedValueOnce(OPEN_INFO_RESPONSE);
+
+    const page = createPageHelper(callTool);
+    const result = await page.open("https://example.com");
+
     expect(callTool).toHaveBeenCalledWith("new_page", {
       url: "https://example.com",
     });
@@ -178,17 +219,53 @@ describe("createPageHelper", () => {
     expect(result).toBe(3);
   });
 
-  it("page.snapshot strips header", async () => {
-    callTool.mockResolvedValueOnce(
+  it("page.snapshot stamps refs with its generation", async () => {
+    vi.spyOn(generation, "bumpGeneration").mockReturnValue(7);
+    callTool.mockResolvedValue(
       '## Latest page snapshot\nRootWebArea "Title"\n  uid=1 link "Home"',
     );
 
     const page = createPageHelper(callTool);
     const snap = await page.snapshot();
 
+    expect(callTool.mock.calls.slice(0, 2).map(([name]) => name)).toEqual([
+      "evaluate_script",
+      "take_snapshot",
+    ]);
     expect(callTool).toHaveBeenCalledWith("take_snapshot");
     expect(snap).toContain("RootWebArea");
     expect(snap).not.toContain("## Latest");
+    expect(snap).toContain("uid=g7:1");
+  });
+
+  it("page.snapshot recaptures after a mutation during capture", async () => {
+    vi.spyOn(generation, "bumpGeneration")
+      .mockReturnValueOnce(7)
+      .mockReturnValueOnce(8);
+    callTool
+      .mockResolvedValueOnce("")
+      .mockResolvedValueOnce('RootWebArea "First"\n  uid=1 link "Home"')
+      .mockResolvedValueOnce(
+        'Script ran on page and returned:\n```json\n{"generation":7,"mutations":1}\n```',
+      )
+      .mockResolvedValueOnce("")
+      .mockResolvedValueOnce('RootWebArea "Second"\n  uid=2 link "Account"')
+      .mockResolvedValueOnce(
+        'Script ran on page and returned:\n```json\n{"generation":8,"mutations":0}\n```',
+      );
+
+    const snap = await createPageHelper(callTool).snapshot();
+
+    expect(callTool.mock.calls.map(([name]) => name)).toEqual([
+      "evaluate_script",
+      "take_snapshot",
+      "evaluate_script",
+      "evaluate_script",
+      "take_snapshot",
+      "evaluate_script",
+    ]);
+    expect(snap).toContain('RootWebArea "Second"');
+    expect(snap).toContain("uid=g8:2");
   });
 
   it("page.wait with number waits by duration", async () => {
@@ -198,36 +275,129 @@ describe("createPageHelper", () => {
     await page.wait(500);
 
     expect(callTool).toHaveBeenCalledWith("evaluate_script", {
-      function: "new Promise(r => setTimeout(r, 500))",
+      function: "() => (new Promise(r => setTimeout(r, 500)))",
     });
   });
 
-  it("page.wait with string waits for CSS selector via evaluate_script", async () => {
+  it("page.wait with string sends a callable that resolves once the selector matches", async () => {
     callTool.mockResolvedValueOnce("");
 
     const page = createPageHelper(callTool);
     await page.wait(".results");
 
-    expect(callTool).toHaveBeenCalledWith("evaluate_script", {
-      function: expect.stringContaining(".results"),
+    const [tool, args] = callTool.mock.calls[0];
+    expect(tool).toBe("evaluate_script");
+    let present = false;
+    const observers: Array<{ callback: () => void; observing: unknown[] }> = [];
+    class TestMutationObserver {
+      observing: unknown[] = [];
+      constructor(public readonly callback: () => void) {
+        observers.push(this);
+      }
+      observe(target: unknown, options: unknown) {
+        this.observing.push([target, options]);
+      }
+      disconnect() {
+        this.observing = [];
+      }
+    }
+    const timers: number[] = [];
+    vi.stubGlobal("document", {
+      body: "body",
+      querySelector: (selector: string) =>
+        selector === ".results" && present ? {} : null,
     });
-    // Default 30s timeout
-    expect(callTool.mock.calls[0][1].function).toContain("30000");
+    vi.stubGlobal("MutationObserver", TestMutationObserver);
+    vi.stubGlobal("setTimeout", (_fn: () => void, ms: number) => {
+      timers.push(ms);
+      return timers.length;
+    });
+    vi.stubGlobal("clearTimeout", () => {});
+
+    const pending = new Function(`return (${args.function})`)()();
+    expect(pending).toBeInstanceOf(Promise);
+    expect(observers).toHaveLength(1);
+    expect(observers[0].observing).toEqual([
+      ["body", { childList: true, subtree: true, attributes: true }],
+    ]);
+    expect(timers).toEqual([30000]);
+
+    present = true;
+    observers[0].callback();
+    await expect(pending).resolves.toBeUndefined();
+    expect(observers[0].observing).toEqual([]);
   });
 
-  it("page.wait with selector and custom timeout", async () => {
+  it("page.wait with selector resolves immediately when it already matches", async () => {
     callTool.mockResolvedValueOnce("");
 
     const page = createPageHelper(callTool);
     await page.wait("#loaded", 5000);
 
-    const fn = callTool.mock.calls[0][1].function;
-    expect(fn).toContain("#loaded");
-    expect(fn).toContain("5000");
+    const [tool, args] = callTool.mock.calls[0];
+    expect(tool).toBe("evaluate_script");
+    const observed: unknown[] = [];
+    vi.stubGlobal("document", {
+      body: "body",
+      querySelector: (selector: string) => (selector === "#loaded" ? {} : null),
+    });
+    vi.stubGlobal(
+      "MutationObserver",
+      class {
+        observe(...rest: unknown[]) {
+          observed.push(rest);
+        }
+      },
+    );
+    const timers: number[] = [];
+    vi.stubGlobal("setTimeout", (_fn: () => void, ms: number) => {
+      timers.push(ms);
+      return 1;
+    });
+
+    await expect(
+      new Function(`return (${args.function})`)()(),
+    ).resolves.toBeUndefined();
+    expect(observed).toEqual([]);
+    expect(timers).toEqual([]);
   });
 
-  it("page.click calls click with parsed uid", async () => {
+  it("page.wait with selector rejects with the timeout error", async () => {
     callTool.mockResolvedValueOnce("");
+
+    const page = createPageHelper(callTool);
+    await page.wait("#never", 5000);
+
+    const [, args] = callTool.mock.calls[0];
+    let fire: (() => void) | undefined;
+    const timers: number[] = [];
+    vi.stubGlobal("document", { body: "body", querySelector: () => null });
+    vi.stubGlobal(
+      "MutationObserver",
+      class {
+        observe() {}
+        disconnect() {}
+      },
+    );
+    vi.stubGlobal("setTimeout", (fn: () => void, ms: number) => {
+      fire = fn;
+      timers.push(ms);
+      return 1;
+    });
+
+    const pending = new Function(`return (${args.function})`)()();
+    expect(timers).toEqual([5000]);
+    fire!();
+    await expect(pending).rejects.toThrow("Timeout waiting for: #never");
+  });
+
+  it("page.click calls click with a fresh uid", async () => {
+    vi.spyOn(generation, "getCurrentGeneration").mockReturnValue(7);
+    callTool
+      .mockResolvedValueOnce(
+        'Script ran on page and returned:\n```json\n{"generation":7,"mutations":0}\n```',
+      )
+      .mockResolvedValueOnce("");
 
     const page = createPageHelper(callTool);
     await page.click("@12");
@@ -236,7 +406,11 @@ describe("createPageHelper", () => {
   });
 
   it("page.click accepts uid without @", async () => {
-    callTool.mockResolvedValueOnce("");
+    callTool
+      .mockResolvedValueOnce(
+        'Script ran on page and returned:\n```json\n{"generation":7,"mutations":0}\n```',
+      )
+      .mockResolvedValueOnce("");
 
     const page = createPageHelper(callTool);
     await page.click("5");
@@ -267,32 +441,54 @@ describe("createPageHelper", () => {
     expect(callTool).not.toHaveBeenCalledWith("click", expect.anything());
   });
 
-  it("page.click with CSS selector uses evaluate_script", async () => {
+  it("page.click with CSS selector sends a callable that clicks the element once", async () => {
     callTool.mockResolvedValueOnce("");
 
     const page = createPageHelper(callTool);
     await page.click("a[href='/wiki/Charles_Babbage']");
 
-    expect(callTool).toHaveBeenCalledWith("evaluate_script", {
-      function: expect.stringContaining("a[href='/wiki/Charles_Babbage']"),
-    });
     expect(callTool).not.toHaveBeenCalledWith("click", expect.anything());
+    const [tool, args] = callTool.mock.calls[0];
+    expect(tool).toBe("evaluate_script");
+    const calls: string[] = [];
+    vi.stubGlobal("document", {
+      querySelector: (selector: string) =>
+        selector === "a[href='/wiki/Charles_Babbage']"
+          ? {
+              scrollIntoView: (options: unknown) =>
+                calls.push(`scrollIntoView:${JSON.stringify(options)}`),
+              click: () => calls.push("click"),
+            }
+          : null,
+    });
+
+    const compiled = new Function(`return (${args.function})`)();
+    expect(typeof compiled).toBe("function");
+    compiled();
+    expect(calls).toEqual(['scrollIntoView:{"block":"center"}', "click"]);
   });
 
-  it("page.click with CSS class selector uses evaluate_script", async () => {
+  it("page.click with CSS selector throws when nothing matches", async () => {
     callTool.mockResolvedValueOnce("");
 
     const page = createPageHelper(callTool);
     await page.click(".submit-btn");
 
-    const fn = callTool.mock.calls[0][1].function;
-    expect(fn).toContain(".submit-btn");
-    expect(fn).toContain("scrollIntoView");
-    expect(fn).toContain(".click()");
+    const [, args] = callTool.mock.calls[0];
+    vi.stubGlobal("document", { querySelector: () => null });
+
+    expect(() => new Function(`return (${args.function})`)()()).toThrow(
+      "Element not found: .submit-btn",
+    );
   });
 
-  it("page.fill calls fill with uid and value", async () => {
-    callTool.mockResolvedValueOnce("");
+  it("page.fill calls fill with a fresh uid and value", async () => {
+    vi.spyOn(generation, "getCurrentGeneration").mockReturnValue(7);
+    callTool
+      .mockResolvedValueOnce(
+        'Script ran on page and returned:\n```json\n{"generation":7,"mutations":0}\n```',
+      )
+      .mockResolvedValueOnce("");
 
     const page = createPageHelper(callTool);
     await page.fill("@3", "hello");
@@ -321,19 +517,99 @@ describe("createPageHelper", () => {
     expect(callTool).not.toHaveBeenCalledWith("fill", expect.anything());
   });
 
-  it("page.fill with CSS selector uses evaluate_script", async () => {
+  it("page.fill with CSS selector updates the native value and sends events", async () => {
     callTool.mockResolvedValueOnce("");
 
     const page = createPageHelper(callTool);
     await page.fill("input[name='search']", "query");
 
-    expect(callTool).toHaveBeenCalledWith("evaluate_script", {
-      function: expect.stringContaining("input[name='search']"),
-    });
     const fn = callTool.mock.calls[0][1].function;
-    expect(fn).toContain("query");
-    expect(fn).toContain("dispatchEvent");
+    class Field {
+      currentValue = "";
+      trackerValue = "";
+      readonly events: string[] = [];
+      readonly observedExternalValues: boolean[] = [];
+
+      focus(): void {}
+
+      dispatchEvent(event: { type: string }): boolean {
+        if (event.type === "input") {
+          const changed = this.currentValue !== this.trackerValue;
+          this.observedExternalValues.push(changed);
+          if (changed) this.trackerValue = this.currentValue;
+        }
+        this.events.push(event.type);
+        return true;
+      }
+    }
+    class Input extends Field {}
+    class TextArea extends Field {}
+    class Select extends Field {}
+    for (const Element of [Input, TextArea, Select]) {
+      Object.defineProperty(Element.prototype, "value", {
+        get(this: Field): string {
+          return this.currentValue;
+        },
+        set(this: Field, value: string) {
+          this.currentValue = value;
+        },
+      });
+    }
+    class TestEvent {
+      constructor(public readonly type: string) {}
+    }
+    const elements = [new Input(), new TextArea(), new Select()];
+    let current = elements[0];
+    vi.stubGlobal("document", {
+      querySelector: (selector: string) =>
+        selector === "input[name='search']" ? current : null,
+    });
+    vi.stubGlobal("HTMLInputElement", Input);
+    vi.stubGlobal("HTMLTextAreaElement", TextArea);
+    vi.stubGlobal("HTMLSelectElement", Select);
+    vi.stubGlobal("Event", TestEvent);
+
+    for (const element of elements) {
+      const proto = Object.getPrototypeOf(element);
+      const nativeValue = Object.getOwnPropertyDescriptor(proto, "value")!;
+      Object.defineProperty(element, "value", {
+        get(this: Field): string {
+          return nativeValue.get!.call(this);
+        },
+        set(this: Field, value: string) {
+          nativeValue.set!.call(this, value);
+          this.trackerValue = value;
+        },
+      });
+      current = element;
+      new Function(`return (${fn})`)()();
+      expect(element.currentValue).toBe("query");
+      expect(element.events).toEqual(["input", "change"]);
+      expect(element.observedExternalValues).toEqual([true]);
+    }
   });
+
+  // Upstream writes these with an untagged `@12`. This fork accepts untagged
+  // legacy refs without probing (see src/uid-freshness.ts), so the "page never
+  // observed this uid" property is asserted with a generation-tagged ref — the
+  // form every ref this CLI mints today carries.
+  it.each([
+    ["click", (page: PageHelper) => page.click("@g7:12")],
+    ["fill", (page: PageHelper) => page.fill("@g7:12", "text")],
+  ])(
+    "page.%s rejects an unobserved uid before MCP acts",
+    async (_name, action) => {
+      callTool.mockResolvedValueOnce(
+        "Script ran on page and returned:\n```json\nnull\n```",
+      );
+
+      await expect(action(createPageHelper(callTool))).rejects.toMatchObject({
+        code: "STALE_REF",
+      });
+      expect(callTool).not.toHaveBeenCalledWith("click", expect.anything());
+      expect(callTool).not.toHaveBeenCalledWith("fill", expect.anything());
+    },
+  );
 
   it("page.type calls type_text", async () => {
     callTool.mockResolvedValueOnce("");
@@ -478,9 +754,11 @@ describe("page.open fallback", () => {
 
 describe("page.snapshot header stripping", () => {
   it("strips MCP preamble from snapshot", async () => {
-    callTool.mockResolvedValueOnce(
-      'Page snapshot captured.\n\n## Latest page snapshot\n\nRootWebArea "Hi"\n  uid=1 button "OK"',
-    );
+    callTool
+      .mockResolvedValueOnce("")
+      .mockResolvedValueOnce(
+        'Page snapshot captured.\n\n## Latest page snapshot\n\nRootWebArea "Hi"\n  uid=1 button "OK"',
+      );
 
     const page = createPageHelper(callTool);
     const snap = await page.snapshot();
@@ -517,6 +795,23 @@ describe("page.eval variants", () => {
 
     const fn = callTool.mock.calls[0][1].function;
     expect(fn).toContain("() => []");
+  });
+
+  it("sends a function value verbatim even when its parameter list spans lines", async () => {
+    callTool.mockResolvedValueOnce(
+      "Script ran on page and returned:\n```json\n3\n```",
+    );
+    const fn = new Function("return (\n  a,\n  b,\n) => a + b")() as (
+      ...args: unknown[]
+    ) => unknown;
+
+    const page = createPageHelper(callTool);
+    const result = await page.eval(fn);
+
+    const sent = callTool.mock.calls[0][1].function;
+    expect(sent).toBe(String(fn));
+    expect(new Function(`return (${sent})`)()(1, 2)).toBe(3);
+    expect(result).toBe(3);
   });
 
   it("unwraps an arrow IIFE so MCP receives a function (not a value)", async () => {
