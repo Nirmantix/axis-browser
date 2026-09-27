@@ -1,6 +1,7 @@
 # Axis Browser — Operator-Free Session Design
 
 **Status:** Phases 0-3 and the 0.1.27 upstream sync are **APPLIED and verified** — Phase 0/1 and the sync in §12, Phase 2 in §13, Phase 3 (browser-bay doctrine + ego lite routing) in §14.
+**Update 2026-09-27:** the fork has since synced to **0.1.35** (see `docs/upstream_sync.md`); §9 numbers below are the dated 0.1.27-era record. Mode handling now lives in `src/mode.ts` — the "nowhere in axis's own source" claims later in this doc were true at writing and are superseded.
 **Author:** Dev A (this session), with Nitesh
 **Date:** 2026-07-30
 **Context:** post-mortem of the `127.0.0.1:9222` escalation + permanent fix
@@ -32,9 +33,14 @@ That makes the entire port-squatting failure class *structurally impossible*.
 > `remote-debugging-pipe` still appear **nowhere in axis's own source** — the transport is
 > supplied by upstream `chrome-devtools-mcp`, which is why it needed proving rather than
 > asserting.
+>
+> *(Superseded 2026-09-27: `CHROME_DEVTOOLS_AXI_MODE` is now first-class in
+> `src/mode.ts`, read by the bridge, CLI, and doctor. The transport still comes from
+> `chrome-devtools-mcp`, pinned at exactly 1.9.0 and spawned package-locally.)*
 
 That mode was never reachable, because `CHROME_DEVTOOLS_AXI_BROWSER_URL` shadows it at
-`src/bridge.ts:494`. The permanent fix is therefore mostly **configuration and doctrine**,
+`src/bridge.ts:494`. *(at writing; mode inference is now `resolveMode()` in `src/mode.ts`,
+where explicit `MODE` wins over stale `BROWSER_URL`)* The permanent fix is therefore mostly **configuration and doctrine**,
 plus one genuinely missing passthrough (`--executablePath`) and a preflight/hygiene layer.
 
 ---
@@ -803,9 +809,13 @@ are confirmed live in managed mode. Test profile deleted; no leftover Chrome or 
 Ulaa (pid 96228) untouched.
 
 **Caveat that remains:** the pipe transport is supplied by upstream `chrome-devtools-mcp`,
-not by axis — `CHROME_DEVTOOLS_AXI_MODE` and `remote-debugging-pipe` appear nowhere in
-`src/`. An upstream change to its default launch could alter this without any axis change.
-Phase 2's `doctor` should assert the transport rather than trust it.
+not by axis. An upstream change to its default launch could still alter behavior without
+any axis change — which is why the fork pins `chrome-devtools-mcp` at exactly **1.9.0**,
+spawns it package-locally (default stdio mode; an explicit `CHROME_DEVTOOLS_AXI_MCP_PATH`
+override selects the operator's chosen build), and has `doctor` assert mode and transport
+explicitly.
+*(Updated 2026-09-27: `CHROME_DEVTOOLS_AXI_MODE` now lives in `src/mode.ts`; the "nowhere
+in `src/`" sentence was true at writing and is no longer.)*
 
 ### Still not verified this session
 

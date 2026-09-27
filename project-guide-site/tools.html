@@ -48,16 +48,17 @@
         <div class="tool-grid">
           <article class="tool-card">
             <strong>Axis Browser</strong>
-            <p>Fast shell-level diagnostics for browser and CDP workflows.</p>
+            <p>Fast shell-level diagnostics for browser and CDP workflows. <code>v0.1.35 · Node 22.13+ · aliases axib / chrome-devtools-axi</code></p>
             <a href="https://github.com/Nirmantix/axis-browser" target="_blank" rel="noopener">GitHub</a>
             <ul>
               <li>Use for snapshots, refs, console, network, Lighthouse, perf, and heap.</li>
+              <li>Default stdio mode spawns a pinned package-local <code>chrome-devtools-mcp@1.9.0</code> with <code>--redactNetworkHeaders</code> — never a global install or <code>npx …@latest</code>. An explicit <code>CHROME_DEVTOOLS_AXI_MCP_PATH</code> override selects the build you point it at.</li>
               <li>Does not own an LLM loop. Host agents compose commands.</li>
             </ul>
           </article>
           <article class="tool-card">
             <strong>Browser Harness</strong>
-            <p>Primary high-capability interactive browser tool in browser-bay.</p>
+            <p>Primary high-capability interactive browser tool in browser-bay. <code>v0.1.13 via uv — deliberately pinned</code></p>
             <a href="https://github.com/browser-use/browser-harness" target="_blank" rel="noopener">GitHub</a>
             <ul>
               <li>Use for visual control, iframes, odd widgets, and flexible browser operation.</li>
@@ -66,7 +67,7 @@
           </article>
           <article class="tool-card">
             <strong>Playwright library</strong>
-            <p>Deterministic browser automation library and test backend.</p>
+            <p>Deterministic browser automation library and test backend. <code>playwright@1.63.0, installed project-local</code></p>
             <a href="https://playwright.dev" target="_blank" rel="noopener">Official docs</a>
             <ul>
               <li>Use for repeatable scripts, traces, API mocking, CI, visual regression, and cross-browser checks.</li>
@@ -75,7 +76,7 @@
           </article>
           <article class="tool-card">
             <strong>Microsoft Playwright CLI</strong>
-            <p>Agent-oriented Playwright CLI, separate from project-local Playwright.</p>
+            <p>Agent-oriented Playwright CLI, separate from project-local Playwright. <code>@playwright/cli@0.1.21 · Node 20+</code></p>
             <a href="https://playwright.dev/agent-cli/installation" target="_blank" rel="noopener">Official docs</a>
             <ul>
               <li>Use when its CLI command surface or installed skills are useful.</li>
@@ -83,6 +84,7 @@
             </ul>
           </article>
         </div>
+        <p class="muted-lead">Node floors at a glance: Axis Browser 22.13+; standalone browser-bay and Playwright 20+; <code>@playwright/cli</code> 20+; firecrawl-mcp 22+; pa11y ^22.13 or 24+; agent-browser 24+.</p>
       </section>
 
       <section class="section" aria-labelledby="service-tools">
@@ -90,7 +92,7 @@
         <div class="tool-grid">
           <article class="tool-card">
             <strong>Firecrawl CLI/MCP</strong>
-            <p>Clean public-page markdown, crawl/search, structured extraction, and browser tools.</p>
+            <p>Clean public-page markdown, crawl/search, structured extraction, and browser tools. <code>firecrawl-cli@1.23.3 · firecrawl-mcp@3.24.0 (Node 22+)</code></p>
             <a href="https://docs.firecrawl.dev/quickstarts/codex-cli" target="_blank" rel="noopener">Codex MCP docs</a>
             <a href="https://github.com/firecrawl/cli" target="_blank" rel="noopener">CLI GitHub</a>
             <ul>
@@ -130,7 +132,7 @@
           </article>
           <article class="tool-card">
             <strong>agent-browser</strong>
-            <p>Optional fallback CLI with browser control, install flow, and skills.</p>
+            <p>Optional fallback CLI with browser control, install flow, and skills. <code>agent-browser@0.38.1 · Node 24+</code></p>
             <a href="https://agent-browser.dev/skills" target="_blank" rel="noopener">Skills docs</a>
             <ul>
               <li>Use when it is the quickest available native route.</li>
@@ -148,6 +150,34 @@
             </ul>
           </article>
           <article class="tool-card">
+            <strong>ego lite</strong>
+            <p>Authenticated interactive work reusing the operator's live logins. <code>ego-browser skill · macOS only · no headless/CI</code></p>
+            <a href="https://github.com/citrolabs/ego-lite" target="_blank" rel="noopener">GitHub</a>
+            <a href="https://lite.ego.app/document/" target="_blank" rel="noopener">Docs</a>
+            <ul>
+              <li>A browser, not a library: no CDP port, so no other tool can drive it.</li>
+              <li>Route to its skill — <code>npx skills@1.5.18 add citrolabs/ego-lite</code> — and never edit it; it is a symlink into the app bundle.</li>
+            </ul>
+          </article>
+          <article class="tool-card">
+            <strong>Pa11y</strong>
+            <p>Accessibility checks via WCAG rules in CI-able runs. <code>pa11y@10.0.0 · Node ^22.13 || &gt;=24</code></p>
+            <a href="https://pa11y.org/" target="_blank" rel="noopener">Website</a>
+            <ul>
+              <li>Use for automated accessibility sweeps; pair with manual screen-reader passes.</li>
+              <li>Skipped with an explicit note on Node 20, 21, or 23 — the engine refuses them.</li>
+            </ul>
+          </article>
+          <article class="tool-card">
+            <strong>Playwright MCP</strong>
+            <p>Separately published MCP server exposing Playwright to MCP clients. <code>@playwright/mcp · user-managed only</code></p>
+            <a href="https://github.com/microsoft/playwright-mcp" target="_blank" rel="noopener">GitHub</a>
+            <ul>
+              <li>Only when an MCP-capable client explicitly wants it; browser-bay never auto-installs it.</li>
+              <li>Not part of the <code>playwright</code> library install, and not the Axis Browser transport.</li>
+            </ul>
+          </article>
+          <article class="tool-card">
             <strong>Browserbase skills</strong>
             <p>Separate Browserbase cloud/session ecosystem with its own CLI, API key, and platform workflows.</p>
             <a href="https://github.com/browserbase/skills" target="_blank" rel="noopener">Skills GitHub</a>
@@ -155,6 +185,60 @@
             <ul>
               <li>Use only when the task intentionally targets Browserbase cloud sessions or platform features.</li>
               <li>Do not route normal Axis Browser work through Browserbase skills by default.</li>
+            </ul>
+          </article>
+        </div>
+      </section>
+
+      <section class="section" aria-labelledby="utility-tools">
+        <h2 id="utility-tools">Utilities the workflow leans on</h2>
+        <div class="tool-grid">
+          <article class="tool-card">
+            <strong>skills CLI</strong>
+            <p>Installs and updates skills, including browser-bay. <code>skills@1.5.18 · Node 20+</code></p>
+            <a href="https://www.npmjs.com/package/skills" target="_blank" rel="noopener">npm</a>
+            <ul>
+              <li><code>npx --yes skills@1.5.18 add &lt;repo&gt;</code> is the reproducible form; bare <code>skills@1.0.0</code> resolves to an unrelated 2016 package.</li>
+            </ul>
+          </article>
+          <article class="tool-card">
+            <strong>uv</strong>
+            <p>Python tool installer used for the durable editable browser-harness checkout.</p>
+            <a href="https://docs.astral.sh/uv/" target="_blank" rel="noopener">Docs</a>
+            <ul>
+              <li><code>uv tool install --force -e ./browser-harness</code> refreshes the pinned install.</li>
+            </ul>
+          </article>
+          <article class="tool-card">
+            <strong>ImageMagick compare</strong>
+            <p>Pixel-diff engine behind visual-regression and cross-browser screenshot checks.</p>
+            <a href="https://imagemagick.org/script/compare.php" target="_blank" rel="noopener">Docs</a>
+            <ul>
+              <li><code>compare -metric AE</code> produces the diff counts the references build on.</li>
+            </ul>
+          </article>
+          <article class="tool-card">
+            <strong>jq and pandoc</strong>
+            <p>Structured JSON inspection and document conversion in content workflows.</p>
+            <a href="https://jqlang.github.io/jq/" target="_blank" rel="noopener">jq</a>
+            <a href="https://pandoc.org/" target="_blank" rel="noopener">pandoc</a>
+            <ul>
+              <li>Skill scripts deliberately avoid depending on jq so bare-shelf machines still run.</li>
+            </ul>
+          </article>
+          <article class="tool-card">
+            <strong>Python 3</strong>
+            <p>Stdlib-only scripts, including this microsite's validator. <code>python3 · no pip packages</code></p>
+            <ul>
+              <li><code>validate_static_site.py</code> gates every PR through the <code>microsite</code> CI job.</li>
+            </ul>
+          </article>
+          <article class="tool-card">
+            <strong>ShellCheck and git</strong>
+            <p>Lint for the skill's shell scripts; git for the harness and skill checkouts.</p>
+            <a href="https://www.shellcheck.net/" target="_blank" rel="noopener">ShellCheck</a>
+            <ul>
+              <li>All browser-bay scripts stay ShellCheck-clean; CI enforces their test suite on Node 20 and 24.</li>
             </ul>
           </article>
         </div>
@@ -195,6 +279,16 @@
               <td>Use Browserbase cloud sessions</td>
               <td>Browserbase skills</td>
               <td>Separate ecosystem; only when Browserbase infrastructure is explicitly required.</td>
+            </tr>
+            <tr>
+              <td>Accessibility sweep</td>
+              <td>Pa11y</td>
+              <td>WCAG rules in CI-able runs; needs Node ^22.13 or 24+.</td>
+            </tr>
+            <tr>
+              <td>Install or update a skill</td>
+              <td>skills CLI</td>
+              <td>Reproducible installs at skills@1.5.18, including browser-bay itself.</td>
             </tr>
             <tr>
               <td>Need reusable proof</td>

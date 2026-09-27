@@ -172,7 +172,7 @@ axis-browser snapshot</pre>
           <article class="route-card">
             <div class="route-head"><h3>Bridge startup is slow</h3></div>
             <ul>
-              <li><span>fast</span> <code>npm install -g chrome-devtools-mcp</code></li>
+              <li><span>fast</span> Default stdio mode launches the pinned package-local <code>chrome-devtools-mcp@1.9.0</code> — no global install is used or detected. Only an explicit <code>CHROME_DEVTOOLS_AXI_MCP_PATH</code> override changes the executable; reinstalling some unrelated global copy changes nothing.</li>
               <li><span>timeout</span> <code>CHROME_DEVTOOLS_AXI_BRIDGE_TIMEOUT_MS=60000</code></li>
             </ul>
           </article>
