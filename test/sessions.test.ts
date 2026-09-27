@@ -271,23 +271,31 @@ describe("bridge record (pid/port + capability token)", () => {
     expect(readBridgeRecord(pidFile)).toEqual(authed);
   });
 
-  it("writes the record owner-read/write-only, never world-readable", () => {
-    // The token in this file is an ambient-capability secret — mode 0600 is
-    // part of the auth boundary, not cosmetic.
-    writeBridgeRecord(authed, pidFile);
-    expect(lstatSync(pidFile).mode & 0o777).toBe(0o600);
-    const persisted = JSON.parse(readFileSync(pidFile, "utf8")) as Record<
-      string,
-      unknown
-    >;
-    // No unexpected fields beyond what readers rely on.
-    expect(Object.keys(persisted).sort()).toEqual([
-      "pid",
-      "port",
-      "startedAt",
-      "token",
-    ]);
-  });
+  // POSIX mode bits are this invariant's expression on POSIX only: Windows
+  // reports a writable file as 0o666 and maps no owner/group/other
+  // distinction, so 0600 can never be observed there. On Windows the same
+  // boundary is the record's ACL (repairWindowsFileAcl grants only the user
+  // and LocalSystem), verified in the windows-state-security job.
+  it.skipIf(process.platform === "win32")(
+    "writes the record owner-read/write-only, never world-readable",
+    () => {
+      // The token in this file is an ambient-capability secret — mode 0600 is
+      // part of the auth boundary, not cosmetic.
+      writeBridgeRecord(authed, pidFile);
+      expect(lstatSync(pidFile).mode & 0o777).toBe(0o600);
+      const persisted = JSON.parse(readFileSync(pidFile, "utf8")) as Record<
+        string,
+        unknown
+      >;
+      // No unexpected fields beyond what readers rely on.
+      expect(Object.keys(persisted).sort()).toEqual([
+        "pid",
+        "port",
+        "startedAt",
+        "token",
+      ]);
+    },
+  );
 
   it("returns a bare pid/port record for tokenless legacy files", () => {
     // Pre-auth records are *readable* — they just are not adoptable for RPC;
