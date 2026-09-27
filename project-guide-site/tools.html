@@ -195,10 +195,10 @@
         <div class="tool-grid">
           <article class="tool-card">
             <strong>skills CLI</strong>
-            <p>Installs and updates skills, including browser-bay. <code>skills@1.5.18 · Node 20+</code></p>
+            <p>Installs and updates skills, including browser-bay. <code>skills@1.5.18 · Node 18+ (registry engines)</code></p>
             <a href="https://www.npmjs.com/package/skills" target="_blank" rel="noopener">npm</a>
             <ul>
-              <li><code>npx --yes skills@1.5.18 add &lt;repo&gt;</code> is the reproducible form; bare <code>skills@1.0.0</code> resolves to an unrelated 2016 package.</li>
+              <li><code>npx --yes skills@1.5.18 add &lt;repo&gt;</code> is the reproducible form; bare <code>skills@1.0.0</code> resolves to an unrelated package published in 2016 (registry <code>engines: &gt;=18</code> applies to 1.5.18, not that one).</li>
             </ul>
           </article>
           <article class="tool-card">
@@ -206,7 +206,7 @@
             <p>Python tool installer used for the durable editable browser-harness checkout.</p>
             <a href="https://docs.astral.sh/uv/" target="_blank" rel="noopener">Docs</a>
             <ul>
-              <li><code>uv tool install --force -e ./browser-harness</code> refreshes the pinned install.</li>
+              <li>Install from the harness checkout with <code>uv tool install -e .</code>; add <code>--force</code> only when refreshing an already-installed tool.</li>
             </ul>
           </article>
           <article class="tool-card">
@@ -238,7 +238,7 @@
             <p>Lint for the skill's shell scripts; git for the harness and skill checkouts.</p>
             <a href="https://www.shellcheck.net/" target="_blank" rel="noopener">ShellCheck</a>
             <ul>
-              <li>All browser-bay scripts stay ShellCheck-clean; CI enforces their test suite on Node 20 and 24.</li>
+              <li>browser-bay CI runs its test suite on Node 20 and 24; ShellCheck itself is a manual contributor step, and the scripts are held clean at that bar.</li>
             </ul>
           </article>
         </div>
