@@ -96,13 +96,19 @@ async function waitForAnnouncement(
 ): Promise<void> {
   const stdout = child.stdout;
   if (!stdout) throw new Error("test fixture: bridge stdout is not piped");
-  const timeout = setTimeout(() => stdout.destroy(), timeoutMs);
+  // EOF auto-destroys the stream, so `stdout.destroyed` cannot tell a timeout
+  // from an early exit — only the timer callback firing can.
+  let timedOut = false;
+  const timeout = setTimeout(() => {
+    timedOut = true;
+    stdout.destroy();
+  }, timeoutMs);
   try {
     for await (const chunk of stdout) {
       if (String(chunk).includes(marker)) return;
     }
     throw new Error(
-      stdout.destroyed
+      timedOut
         ? `test fixture: bridge did not announce "${marker}" within ${timeoutMs}ms`
         : `test fixture: bridge exited before announcing "${marker}"`,
     );
