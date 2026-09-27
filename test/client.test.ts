@@ -67,6 +67,57 @@ function spawnMarkedBridge(script: string, detached = false): ChildProcess {
 }
 
 /**
+ * Spawn a marked bridge whose script announces readiness on stdout after it
+ * has installed its signal handlers. The command marker is visible to `ps`
+ * at exec — before those handlers exist — so it cannot prove SIGTERM will be
+ * handled; only the child's own announcement can.
+ */
+function spawnReadyMarkedBridge(
+  script: string,
+  detached = false,
+): ChildProcess {
+  const child = spawn(process.execPath, ["-e", script, BRIDGE_COMMAND_MARKER], {
+    stdio: ["ignore", "pipe", "ignore"],
+    detached,
+  });
+  child.unref();
+  return child;
+}
+
+/**
+ * Resolve once the child has announced readiness on its piped stdout. The
+ * stream is destroyed on timeout so a silent child cannot hold the suite
+ * open, and the error says which of the two failures happened.
+ */
+async function waitForAnnouncement(
+  child: ChildProcess,
+  marker: string,
+  timeoutMs = 5_000,
+): Promise<void> {
+  const stdout = child.stdout;
+  if (!stdout) throw new Error("test fixture: bridge stdout is not piped");
+  // EOF auto-destroys the stream, so `stdout.destroyed` cannot tell a timeout
+  // from an early exit — only the timer callback firing can.
+  let timedOut = false;
+  const timeout = setTimeout(() => {
+    timedOut = true;
+    stdout.destroy();
+  }, timeoutMs);
+  try {
+    for await (const chunk of stdout) {
+      if (String(chunk).includes(marker)) return;
+    }
+    throw new Error(
+      timedOut
+        ? `test fixture: bridge did not announce "${marker}" within ${timeoutMs}ms`
+        : `test fixture: bridge exited before announcing "${marker}"`,
+    );
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+/**
  * The recorded start time a bridge record would carry for `pid`, read through
  * the same probe production uses. Retried briefly: the process table entry
  * exists at fork, but `ps` may need a tick before `command=` shows the `-e`
@@ -739,15 +790,18 @@ describe("terminateBridgeProcess", () => {
   it("waits for the bridge process to actually exit, and never signals a dead leader's group", async () => {
     // Mimics a well-behaved bridge: exits cleanly on SIGTERM.
     const killSpy = vi.spyOn(process, "kill");
-    const child = spawnMarkedBridge(
-      "process.on('SIGTERM', () => process.exit(0)); setTimeout(() => {}, 30000);",
+    const child = spawnReadyMarkedBridge(
+      "process.on('SIGTERM', () => process.exit(0)); process.stdout.write('READY\\n'); setTimeout(() => {}, 30000);",
       true,
     );
     const pid = child.pid as number;
     const startedAt = startedAtOf(pid);
 
-    // Give the listener a moment to register before we send the signal.
-    await new Promise((r) => setTimeout(r, 50));
+    // The child announces readiness only after its handler is installed, so
+    // the SIGTERM below is guaranteed to be handled rather than falling to
+    // the default disposition (which would exit before our exit-observer
+    // could tell the two apart).
+    await waitForAnnouncement(child, "READY");
     await terminateBridgeProcess(pid, startedAt, { killProcessGroup: true });
 
     expect(isAlive(pid)).toBe(false);
@@ -767,14 +821,17 @@ describe("terminateBridgeProcess", () => {
     // the test takes ~2s to drive the escalation path. `detached` makes the
     // child lead its own group, so the trusted path takes kill(-pid) first.
     const killSpy = vi.spyOn(process, "kill");
-    const child = spawnMarkedBridge(
-      "process.on('SIGTERM', () => {}); setTimeout(() => {}, 30000);",
+    const child = spawnReadyMarkedBridge(
+      "process.on('SIGTERM', () => {}); process.stdout.write('READY\\n'); setTimeout(() => {}, 30000);",
       true,
     );
     const pid = child.pid as number;
     const startedAt = startedAtOf(pid);
 
-    await new Promise((r) => setTimeout(r, 50));
+    // Readiness is proven by the child itself: the marker is visible to `ps`
+    // at exec — before the ignore handler exists — and a default-disposition
+    // SIGTERM kills the child instantly, skipping escalation entirely.
+    await waitForAnnouncement(child, "READY");
     await terminateBridgeProcess(pid, startedAt, { killProcessGroup: true });
 
     expect(killSpy).toHaveBeenCalledWith(-pid, "SIGKILL");
