@@ -354,6 +354,13 @@ function aclRunner(overrides: Partial<Record<string, ProbeRunner>> = {}): {
 
 describe("Windows ACL verification", () => {
   const chain = ["C:\\Users\\u\\.axis-browser"];
+  // These are unit tests of the ACL logic with fake probes on a path that
+  // does not exist, so they must not touch the real filesystem either: a real
+  // mkdir of `C:\Users\u\...` leaves a literal backslash-named directory on
+  // POSIX and fails outright on Windows, where no `C:\Users\u` parent exists.
+  // Filesystem behavior is covered separately, in the missing-chain describe
+  // below with real temp directories.
+  const noMkdir = () => {};
 
   // On a real Windows host this test would drive the real `whoami.exe` and, on
   // a missing chain, attempt a real mkdir under C:\Users — it exists to prove
@@ -368,12 +375,12 @@ describe("Windows ACL verification", () => {
       // `whoami.exe` does not exist on this platform the SID lookup fails, which is
       // the fail-closed answer the token write depends on. What must never happen
       // is a silent pass or a TypeError.
-      expect(() => hardenStateDirs(chain, { platform: "win32" })).toThrowError(
-        StateDirError,
-      );
-      expect(() => hardenStateDirs(chain, { platform: "win32" })).toThrow(
-        /current user's SID/,
-      );
+      expect(() =>
+        hardenStateDirs(chain, { platform: "win32", mkdir: noMkdir }),
+      ).toThrowError(StateDirError);
+      expect(() =>
+        hardenStateDirs(chain, { platform: "win32", mkdir: noMkdir }),
+      ).toThrow(/current user's SID/);
     },
   );
 
@@ -384,6 +391,7 @@ describe("Windows ACL verification", () => {
       hardenStateDirs(chain, {
         platform: "win32",
         runner: () => null,
+        mkdir: noMkdir,
       }),
     ).toThrowError(StateDirError);
   });
@@ -407,7 +415,7 @@ describe("Windows ACL verification", () => {
 
   it("repairs each directory's ACL before verifying it", () => {
     const { runner, calls } = aclRunner();
-    hardenStateDirs(chain, { platform: "win32", runner });
+    hardenStateDirs(chain, { platform: "win32", runner, mkdir: noMkdir });
 
     const icacls = calls.filter((c) => c.command === "icacls.exe");
     // Repair: drop inheritance, strip the well-known groups, grant user + system.
@@ -440,32 +448,32 @@ describe("Windows ACL verification", () => {
 
   it("fails closed when the SID cannot be determined", () => {
     const { runner } = aclRunner({ "whoami.exe": () => null });
-    expect(() => hardenStateDirs(chain, { platform: "win32", runner })).toThrow(
-      /Cannot determine the current user's SID/,
-    );
+    expect(() =>
+      hardenStateDirs(chain, { platform: "win32", runner, mkdir: noMkdir }),
+    ).toThrow(/Cannot determine the current user's SID/);
   });
 
   it("fails closed when PowerShell cannot return a readable SID list", () => {
     const { runner } = aclRunner({ "powershell.exe": () => null });
-    expect(() => hardenStateDirs(chain, { platform: "win32", runner })).toThrow(
-      /Cannot verify the ACL/,
-    );
+    expect(() =>
+      hardenStateDirs(chain, { platform: "win32", runner, mkdir: noMkdir }),
+    ).toThrow(/Cannot verify the ACL/);
   });
 
   it("rejects an ACL that grants access to anyone but the user and LocalSystem", () => {
     const { runner } = aclRunner({
       "powershell.exe": () => `${USER_SID}\r\n${SYSTEM_SID}\r\n${EVERYONE_SID}`,
     });
-    expect(() => hardenStateDirs(chain, { platform: "win32", runner })).toThrow(
-      new RegExp(`unexpected: ${EVERYONE_SID}`),
-    );
+    expect(() =>
+      hardenStateDirs(chain, { platform: "win32", runner, mkdir: noMkdir }),
+    ).toThrow(new RegExp(`unexpected: ${EVERYONE_SID}`));
   });
 
   it("rejects when LocalSystem is missing from the ACL", () => {
     const { runner } = aclRunner({ "powershell.exe": () => USER_SID });
-    expect(() => hardenStateDirs(chain, { platform: "win32", runner })).toThrow(
-      new RegExp(`missing: ${SYSTEM_SID}`),
-    );
+    expect(() =>
+      hardenStateDirs(chain, { platform: "win32", runner, mkdir: noMkdir }),
+    ).toThrow(new RegExp(`missing: ${SYSTEM_SID}`));
   });
 
   it("rejects when icacls still finds a forbidden SID the ACL read missed", () => {
