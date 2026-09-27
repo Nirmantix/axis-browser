@@ -9,7 +9,7 @@ import sys
 from html.parser import HTMLParser
 from pathlib import Path
 from typing import List, Optional, Tuple
-from urllib.parse import urlparse
+from urllib.parse import unquote, urlparse
 
 
 class LinkCollector(HTMLParser):
@@ -18,6 +18,9 @@ class LinkCollector(HTMLParser):
         self.links: List[str] = []
         self.has_theme_toggle: bool = False
         self.has_early_load: bool = False
+        self.has_meta_description: bool = False
+        self.has_og_image: bool = False
+        self.has_favicon_link: bool = False
         self._in_head: int = 0
 
     def handle_starttag(self, tag: str, attrs: List[Tuple[str, Optional[str]]]) -> None:
@@ -25,6 +28,19 @@ class LinkCollector(HTMLParser):
             for name, value in attrs:
                 if name == "href" and value:
                     self.links.append(value)
+        if tag == "meta":
+            attr_dict = dict(attrs)
+            name = (attr_dict.get("name") or "").strip().lower()
+            # OpenGraph is property= based; accept name= as a tolerated variant.
+            prop = (attr_dict.get("property") or attr_dict.get("name") or "").strip().lower()
+            if name == "description":
+                self.has_meta_description = True
+            if prop == "og:image":
+                self.has_og_image = True
+        if tag == "link":
+            attr_dict = dict(attrs)
+            if "icon" in (attr_dict.get("rel") or "").strip().lower():
+                self.has_favicon_link = True
         if tag == "head":
             self._in_head += 1
         if tag == "button":
@@ -43,7 +59,13 @@ class LinkCollector(HTMLParser):
 
 def should_skip_link(href: str) -> bool:
     parsed = urlparse(href)
-    return bool(parsed.scheme in {"http", "https", "mailto", "file"} or href.startswith("#"))
+    # netloc without scheme covers protocol-relative //host/path links: they
+    # are external, and resolving them as paths yields phantom breakage.
+    return bool(
+        parsed.scheme in {"http", "https", "mailto", "file"}
+        or parsed.netloc
+        or href.startswith("#")
+    )
 
 
 def validate_html(path: Path, enforce_design_system: bool) -> List[str]:
@@ -80,7 +102,10 @@ def validate_html(path: Path, enforce_design_system: bool) -> List[str]:
             errors.append(f"{path}: contains unresolved marker {marker!r}")
 
     # Design System v2 checks are opt-in so legacy generated sites remain valid.
-    if enforce_design_system and "{{" not in text:
+    # Template detection uses the stripped text: a page whose only {{ lives in
+    # a verbatim sample is a real page and must still pass design review, while
+    # prose {{ already fails the unresolved-marker check above.
+    if enforce_design_system and "{{" not in text_no_verbatim:
         if not parser.has_early_load:
             errors.append(f"{path}: missing early-load theme script in <head>")
         if not parser.has_theme_toggle:
@@ -93,20 +118,25 @@ def validate_html(path: Path, enforce_design_system: bool) -> List[str]:
         if problematic:
             errors.append(f"{path}: hardcoded colors (use var() tokens): {', '.join(problematic[:3])}")
 
-    if enforce_design_system and "{{" not in text:
-        if 'meta name="description"' not in text:
+    if enforce_design_system and "{{" not in text_no_verbatim:
+        # Required metadata must exist as parsed elements: a commented-out
+        # tag or a substring mention in prose is not a meta tag.
+        if not parser.has_meta_description:
             errors.append(f"{path}: missing meta description tag")
-        if 'og:image' not in text:
+        if not parser.has_og_image:
             errors.append(f"{path}: missing og:image meta tag")
-        if 'favicon' not in text:
+        if not parser.has_favicon_link:
             errors.append(f"{path}: missing favicon link tags")
 
     for href in parser.links:
         if should_skip_link(href):
             continue
-        target = (path.parent / href.split("#", 1)[0]).resolve()
-        if href.endswith("/") or not href.split("#", 1)[0]:
+        # Fragment and query belong to the URL, not the filesystem path; strip
+        # both, then decode percent-encoding, before resolving the target.
+        local = unquote(href.split("#", 1)[0].split("?", 1)[0])
+        if href.endswith("/") or not local:
             continue
+        target = (path.parent / local).resolve()
         if not target.exists():
             errors.append(f"{path}: broken relative link {href!r}")
     return errors
