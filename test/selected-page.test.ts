@@ -62,6 +62,40 @@ describe("createdPageIdFromNewPageDump", () => {
     ).toBe(2);
   });
 
+  it("keeps routing when an unrelated tab's URL itself contains ' ('", () => {
+    // matchTrailingUrl walks the ` (` candidates backward, so a URL such as
+    // file:///tmp/My Folder (work)/index.html still unwraps. The stricter
+    // lastIndexOf(" (") copy once read this row as incomplete, and because
+    // one incomplete row nulls the whole dump, every open/newpage cleared
+    // routing whenever the operator had one such tab open.
+    expect(
+      createdPageIdFromNewPageDump(
+        [
+          "## Pages",
+          "0: Notes (file:///tmp/My Folder (work)/index.html)",
+          `2: Doc (https://example.com/page)`,
+        ].join("\n"),
+        "https://example.com/page",
+      ),
+    ).toBe(2);
+  });
+
+  it("keeps routing when a title merely mentions isolatedContext=", () => {
+    // Only MCP's trailing ` isolatedContext=…` suffix is MCP's; stripTrailing-
+    // IsolatedContext keeps a title that mentions it mid-line intact, so the
+    // row still unwraps its URL instead of counting as incomplete.
+    expect(
+      createdPageIdFromNewPageDump(
+        [
+          "## Pages",
+          "1: uses isolatedContext=foo (https://other.example/)",
+          "2: Doc (https://example.com/) isolatedContext=work",
+        ].join("\n"),
+        "https://example.com/",
+      ),
+    ).toBe(2);
+  });
+
   it("does not treat a title continuation N: rest line as the created page id", () => {
     expect(
       createdPageIdFromNewPageDump(

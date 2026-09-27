@@ -169,8 +169,10 @@ Current Windows gaps:
 
 - stale bridge recovery relies on Unix-specific process inspection (`lsof` / `ps`) for some edge cases
 - the documented shared-session helper snippets are shell-first examples, not native PowerShell helpers
-- there is no Windows CI coverage in this repo yet
-  The `axis-browser setup` report detects Windows Chrome and Edge installs (machine-wide under `Program Files`/`Program Files (x86)` and per-user under `LOCALAPPDATA`), plus Chromium (machine-wide under `Program Files (x86)`).
+- Windows CI covers only the state-directory hardening, process-identity and
+  session-record units — not the browser path
+
+The `axis-browser setup` report detects Windows Chrome and Edge installs (machine-wide under `Program Files`/`Program Files (x86)` and per-user under `LOCALAPPDATA`), plus Chromium (machine-wide under `Program Files (x86)`).
 
 ## Why Axis Browser Exists
 

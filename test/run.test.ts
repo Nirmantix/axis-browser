@@ -507,6 +507,71 @@ describe("createPageHelper", () => {
     expect(callTool).toHaveBeenCalledWith("fill", { uid: "3", value: "hello" });
   });
 
+  it("page.fill with a selector sets the value through the native setter on inputs", async () => {
+    callTool.mockResolvedValueOnce("");
+
+    const page = createPageHelper(callTool);
+    await page.fill("#field", "typed");
+
+    const [tool, args] = callTool.mock.calls[0];
+    expect(tool).toBe("evaluate_script");
+
+    // Execute the generated page function against a stub DOM. The input is a
+    // real instance of the stubbed HTMLInputElement whose prototype carries a
+    // value setter, so this exercises the controlled-fill branch.
+    // Class accessors live on the prototype, so the page script's
+    // getOwnPropertyData(proto, "value") finds this setter: the controlled-
+    // fill branch runs against a real (stubbed) input.
+    class FakeInput {
+      assigned = "";
+      get value(): string {
+        return this.assigned;
+      }
+      set value(v: string) {
+        this.assigned = v;
+      }
+    }
+    const element = Object.assign(new FakeInput(), {
+      focus: () => {},
+      dispatchEvent: () => {},
+    });
+    vi.stubGlobal("document", { querySelector: () => element });
+    vi.stubGlobal("HTMLInputElement", FakeInput);
+    vi.stubGlobal("HTMLTextAreaElement", class {});
+    vi.stubGlobal("HTMLSelectElement", class {});
+    vi.stubGlobal("Event", class {});
+
+    // The fill script is a synchronous arrow: run it and read the stub.
+    new Function(`return (${args.function})`)()();
+    expect(element.value).toBe("typed");
+  });
+
+  it("page.fill with a selector falls back to direct assignment off native inputs", async () => {
+    callTool.mockResolvedValueOnce("");
+
+    const page = createPageHelper(callTool);
+    await page.fill("#contenteditable", "typed");
+
+    const [, args] = callTool.mock.calls[0];
+    // Not an instance of any native value-bearing element class: the old
+    // script called HTMLInputElement's setter on it and threw
+    // "Illegal invocation"; the fix assigns directly.
+    const element = {
+      value: "",
+      focus: () => {},
+      dispatchEvent: () => {},
+    };
+    vi.stubGlobal("document", { querySelector: () => element });
+    vi.stubGlobal("HTMLInputElement", class {});
+    vi.stubGlobal("HTMLTextAreaElement", class {});
+    vi.stubGlobal("HTMLSelectElement", class {});
+    vi.stubGlobal("Event", class {});
+
+    // The fill script is a synchronous arrow: run it and read the stub.
+    new Function(`return (${args.function})`)()();
+    expect(element.value).toBe("typed");
+  });
+
   it("page.fill rejects a stale stamped ref instead of acting on it", async () => {
     callTool.mockResolvedValueOnce(pageGenerationResponse(9));
 

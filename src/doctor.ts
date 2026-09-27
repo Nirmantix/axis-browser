@@ -181,11 +181,9 @@ export async function buildDoctorReport(
   if (record && !isAuthedRecord(record)) {
     if (status === "ok") status = "warn";
     blockers.push(
-      `The bridge record for session "${sessionName}" predates capability tokens, so this CLI cannot authenticate to the bridge it names (pid ${record.pid}).`,
+      `The bridge record for session "${sessionName}" predates capability tokens, so this CLI cannot authenticate to the bridge it names (pid ${record.pid}). \`axis-browser stop\` verifies the process twice and then retires it.`,
     );
-    remedies.push(
-      "axis-browser stop   (verifies then retires the unauthenticated bridge)",
-    );
+    remedies.push("axis-browser stop");
   }
 
   // ── the target ────────────────────────────────────────────────────────────────

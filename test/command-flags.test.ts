@@ -126,6 +126,18 @@ describe("documented flags are accepted flags", () => {
     },
   );
 
+  it("rejects a value flag that appears last, with no value after it", () => {
+    // `i += 1` used to skip past the end of args, so `screenshot ./a.png
+    // --format` validated cleanly and the handler silently rendered a PNG with
+    // the format ignored. The value flag must name its missing value.
+    expect(() =>
+      assertCommandFlagsAllowed("screenshot", ["./a.png", "--format"]),
+    ).toThrow(/Flag --format for `screenshot` needs a value/);
+    expect(() =>
+      assertCommandFlagsAllowed("screenshot", ["--format", "png", "./a.png"]),
+    ).not.toThrow();
+  });
+
   it("really has free-text commands, so that exception is not vacuous", () => {
     const freeText = listCommands().filter(isAllPositionalText);
     expect(freeText.length).toBeGreaterThan(0);

@@ -620,14 +620,21 @@ describe("main", () => {
     });
   });
 
-  it("handles perf-stop --file without a value without resolving it", async () => {
-    vi.spyOn(process, "cwd").mockReturnValue("/caller/dir");
-    vi.spyOn(process.stdout, "write").mockImplementation(() => true);
-    callTool.mockResolvedValueOnce("trace data");
+  it("rejects perf-stop --file without a value instead of silently ignoring it", async () => {
+    const write = vi
+      .spyOn(process.stdout, "write")
+      .mockImplementation(() => true);
 
+    // The handler used to tolerate a valueless --file and stop the trace
+    // without saving it; strict flag validation now names the missing value
+    // before anything runs, so the user cannot lose the trace by typo.
     await main(["perf-stop", "--file"]);
 
-    expect(callTool).toHaveBeenCalledWith("performance_stop_trace", {});
+    expect(callTool).not.toHaveBeenCalled();
+    expect(String(write.mock.calls[0]?.[0])).toContain(
+      "Flag --file for `perf-stop` needs a value",
+    );
+    expect(process.exitCode).toBe(2);
   });
 
   it.each([

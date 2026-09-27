@@ -237,8 +237,11 @@ export function createPageHelper(callTool: CallTool): PageHelper {
   el.focus();
   const proto = el instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype
     : el instanceof HTMLSelectElement ? HTMLSelectElement.prototype
-    : HTMLInputElement.prototype;
-  Object.getOwnPropertyDescriptor(proto, 'value').set.call(el, ${val});
+    : el instanceof HTMLInputElement ? HTMLInputElement.prototype
+    : null;
+  const descriptor = proto && Object.getOwnPropertyDescriptor(proto, 'value');
+  if (descriptor && descriptor.set) descriptor.set.call(el, ${val});
+  else el.value = ${val};
   el.dispatchEvent(new Event('input', { bubbles: true }));
   el.dispatchEvent(new Event('change', { bubbles: true }));
 }`);

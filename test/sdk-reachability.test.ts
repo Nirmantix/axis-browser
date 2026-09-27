@@ -107,13 +107,49 @@ function traceEntryGraph(): { modules: string[]; status: number | null } {
   }
 }
 
+/**
+ * Every way `src/bridge.ts` could start loading an SDK module, not just
+ * `from "..."`: a side-effect `import "..."` and a dynamic
+ * `import("...")` both add entrypoints to the traced graph, so a scan that
+ * only reads `from` clauses would wave them through while the trace below
+ * never exercised them.
+ */
+const SDK_IMPORT_PATTERNS: RegExp[] = [
+  /from\s+"(@modelcontextprotocol\/sdk\/[^"]+)"/g,
+  /^\s*import\s+"(@modelcontextprotocol\/sdk\/[^"]+)"/gm,
+  /import\(\s*"(@modelcontextprotocol\/sdk\/[^"]+)"\s*\)/g,
+];
+
+function sdkSpecifiersIn(source: string): string[] {
+  const found = new Set<string>();
+  for (const pattern of SDK_IMPORT_PATTERNS) {
+    for (const match of source.matchAll(pattern)) {
+      if (match[1]) found.add(match[1]);
+    }
+  }
+  return [...found];
+}
+
 describe("SDK advisory reachability", () => {
   it("imports exactly the allowed SDK entrypoints", () => {
     const source = readFileSync(BRIDGE_SOURCE, "utf8");
-    const imported = [
-      ...source.matchAll(/from\s+"(@modelcontextprotocol\/sdk\/[^"]+)"/g),
-    ].map((match) => match[1]);
-    expect([...imported].sort()).toEqual([...ALLOWED_SDK_SPECIFIERS].sort());
+    expect(sdkSpecifiersIn(source).sort()).toEqual(
+      [...ALLOWED_SDK_SPECIFIERS].sort(),
+    );
+  });
+
+  it("detects side-effect and dynamic SDK imports, not just `from` clauses", () => {
+    const synthetic = [
+      'import { Client } from "@modelcontextprotocol/sdk/client/index.js";',
+      'import "@modelcontextprotocol/sdk/client/stdio.js";',
+      'await import("@modelcontextprotocol/sdk/client/streamableHttp.js");',
+      'const url = "https://@modelcontextprotocol/sdk/mentions-only";',
+    ].join("\n");
+    expect(sdkSpecifiersIn(synthetic).sort()).toEqual([
+      "@modelcontextprotocol/sdk/client/index.js",
+      "@modelcontextprotocol/sdk/client/stdio.js",
+      "@modelcontextprotocol/sdk/client/streamableHttp.js",
+    ]);
   });
 
   it("loads none of the audited packages on the client path", () => {

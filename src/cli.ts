@@ -1964,7 +1964,21 @@ function validateCommandFlags(
     const arg = args[i];
     if (positionalArgs === positionalArgsBeforeText) return;
     if (arg === "--help" || allowedFlags.includes(arg)) {
-      if (valueFlags.includes(arg)) i += 1;
+      if (valueFlags.includes(arg)) {
+        // A value flag as the last argument would otherwise skip past the end
+        // of args and be silently accepted — `screenshot ./a.png --format`
+        // validated fine and then rendered a PNG with the format ignored.
+        if (i + 1 >= args.length) {
+          throw new CdpError(
+            `Flag ${arg} for \`${command}\` needs a value`,
+            "VALIDATION_ERROR",
+            [
+              `Run \`${PRIMARY_COMMAND_NAME} ${command} --help\` to see valid flags`,
+            ],
+          );
+        }
+        i += 1;
+      }
       continue;
     }
     if (

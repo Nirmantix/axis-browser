@@ -27,6 +27,11 @@ import {
 } from "node:fs";
 import { dirname, join } from "node:path";
 import { resolveSessionStateDir } from "./sessions.js";
+import {
+  isPageSchemeUrl,
+  matchTrailingUrl,
+  stripPageSuffixes,
+} from "./pages.js";
 import { PRIVATE_DIR_MODE } from "./state-dir.js";
 
 /** Path to the active session's selected-page-id file. */
@@ -133,45 +138,29 @@ export function rememberToolRouting(
 const MCP_PAGES_HEADER = /^## Pages$/;
 const MCP_OTHER_SECTION =
   /^##\s+(Extension Pages|Extension Service Workers|Third-party developer tools|WebMCP tools)$/;
-const GENERIC_SCHEME_SLASH_URL = /^[a-z][a-z0-9+.-]*:\/\//i;
-const COLON_ONLY_SCHEME_URL = /^(?:about:|data:|view-source:|blob:)/i;
 const PAGE_ID_LINE = /^(\d+):\s*(.*)$/;
-
-function isSchemeUrl(label: string): boolean {
-  return (
-    GENERIC_SCHEME_SLASH_URL.test(label) || COLON_ONLY_SCHEME_URL.test(label)
-  );
-}
-
-/** MCP suffixes only — not title text. */
-function stripMcpSuffixes(rest: string): string {
-  let label = rest.replace(/\s+isolatedContext=.*$/, "");
-  label = label.replace(/\s*\[selected\]\s*$/, "").trimEnd();
-  return label;
-}
 
 /**
  * True when `rest` is a complete MCP page label without joining title
  * newlines: untitled scheme URL, or a trailing ` (scheme-url)` wrapper.
- * Does not walk `collapsePageRows` and does not read `[selected]` as id.
+ * Delegates to the one parser `src/pages.ts` uses for `list_pages`, so the
+ * two cannot drift: `matchTrailingUrl` walks the ` (` candidates backward
+ * (a URL like `file:///My Folder (work)/x` still unwraps) and
+ * `stripTrailingIsolatedContext` removes only MCP's trailing suffix (a
+ * title that merely mentions `isolatedContext=` survives). A stricter local
+ * copy once read both of those rows as incomplete, and one unrelated tab
+ * with such a title cleared routing after every `open`.
  */
 function isCompletePageLabel(rest: string): boolean {
-  const body = stripMcpSuffixes(rest);
-  if (isSchemeUrl(body)) return true;
-  if (!body.endsWith(")")) return false;
-  const open = body.lastIndexOf(" (");
-  if (open === -1) return false;
-  return isSchemeUrl(body.slice(open + 2, -1));
+  const body = stripPageSuffixes(rest);
+  if (isPageSchemeUrl(body)) return true;
+  return matchTrailingUrl(body) !== null;
 }
 
 function pageUrlFromLabel(rest: string): string {
-  const body = stripMcpSuffixes(rest);
-  if (isSchemeUrl(body)) return body;
-  const open = body.lastIndexOf(" (");
-  if (open !== -1 && body.endsWith(")")) {
-    return body.slice(open + 2, -1);
-  }
-  return body;
+  const body = stripPageSuffixes(rest);
+  if (isPageSchemeUrl(body)) return body;
+  return matchTrailingUrl(body)?.url ?? body;
 }
 
 function urlsMatch(pageUrl: string, requested: string): boolean {

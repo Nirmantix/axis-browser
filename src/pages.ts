@@ -84,7 +84,7 @@ export function needsPageId(
 const GENERIC_SCHEME_SLASH_URL = /^[a-z][a-z0-9+.-]*:\/\//i;
 const COLON_ONLY_SCHEME_URL = /^(?:about:|data:|view-source:|blob:)/i;
 
-function isPageSchemeUrl(label: string): boolean {
+export function isPageSchemeUrl(label: string): boolean {
   return (
     GENERIC_SCHEME_SLASH_URL.test(label) || COLON_ONLY_SCHEME_URL.test(label)
   );
@@ -118,7 +118,7 @@ function stripTrailingIsolatedContext(label: string): string {
   return label;
 }
 
-function stripPageSuffixes(rest: string): string {
+export function stripPageSuffixes(rest: string): string {
   let label = stripTrailingIsolatedContext(rest);
   if (/(?:^|\s)\[selected\]\s*$/.test(label)) {
     label = label.replace(/\s*\[selected\]\s*$/, "").trimEnd();
@@ -133,7 +133,7 @@ function stripPageSuffixes(rest: string): string {
  * as a non-scheme slice. A title that contains `(https://…)` still loses
  * to the later scheme wrapper; `Foo_(bar)` wins on the first try.
  */
-function matchTrailingUrl(
+export function matchTrailingUrl(
   label: string,
 ): { title: string; url: string } | null {
   const trimmed = label.trimEnd();
