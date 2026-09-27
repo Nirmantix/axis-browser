@@ -5,7 +5,7 @@
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { request } from "node:http";
-import { dirname } from "node:path";
+import { dirname, isAbsolute, resolve } from "node:path";
 import { AxiError } from "axi-sdk-js";
 import {
   BRIDGE_PORT_IN_USE_EXIT_CODE,
@@ -41,6 +41,7 @@ import {
   resolveSessionStateChain,
   type BridgeRecord,
 } from "./sessions.js";
+import { PRIMARY_COMMAND_NAME } from "./version.js";
 
 const DEFAULT_BRIDGE_TIMEOUT_MS = 30_000;
 const MIN_BRIDGE_TIMEOUT_MS = 1_000;
@@ -498,7 +499,7 @@ export function buildBridgeEarlyExitError(
     return new CdpError(message, "BRIDGE_NOT_READY", [
       `Port ${port} is already in use. It may be held by another axis-browser session's bridge (a hashed-port collision, or a globally-exported CHROME_DEVTOOLS_AXI_PORT forcing every session onto one port), by a stale or crashed bridge that could not be reused, or by an unrelated process.`,
       "Set a distinct CHROME_DEVTOOLS_AXI_PORT for this session, unset a global CHROME_DEVTOOLS_AXI_PORT so every session derives its own, or free whatever is holding the port.",
-      "Run `axis-browser doctor` to see who holds it, and `axis-browser reap` to clear orphaned bridges.",
+      `Run \`${PRIMARY_COMMAND_NAME} doctor\` to see who holds it, and \`axis-browser reap\` to clear orphaned bridges.`,
     ]);
   }
 
@@ -510,7 +511,7 @@ export function buildBridgeEarlyExitError(
     const browserUrl = process.env.CHROME_DEVTOOLS_AXI_BROWSER_URL ?? "(unset)";
     return new CdpError(message, "BRIDGE_NOT_READY", [
       `Attach mode: axis did not launch a browser — it tried to connect to ${browserUrl}, which something else is expected to be serving.`,
-      "Run `axis-browser doctor` to probe that endpoint and name the process holding the port.",
+      `Run \`${PRIMARY_COMMAND_NAME} doctor\` to probe that endpoint and name the process holding the port.`,
       "If nothing is serving DevTools there, unset CHROME_DEVTOOLS_AXI_BROWSER_URL so axis launches and owns its own browser (or set CHROME_DEVTOOLS_AXI_MODE=managed).",
       "Local CDP has no authentication. Do not request credentials, tokens, or a ws:// URL.",
     ]);
@@ -538,7 +539,7 @@ export function buildBridgeEarlyExitError(
   ];
   if (mode === "managed") {
     suggestions.push(
-      "Managed mode uses a persistent profile, and Chrome locks a profile to one process: if another Chrome already holds it, this launch fails. Run `axis-browser doctor` to see the lock holder.",
+      `Managed mode uses a persistent profile, and Chrome locks a profile to one process: if another Chrome already holds it, this launch fails. Run \`${PRIMARY_COMMAND_NAME} doctor\` to see the lock holder.`,
     );
   }
   if (process.env.CHROME_DEVTOOLS_AXI_MCP_PATH?.trim()) {
@@ -586,8 +587,20 @@ export async function ensureBridge(
     // A tokenless record was left by an older CLI. Adopting it would put
     // unauthenticated browser control back on a predictable local port, so every
     // RPC path refuses and points at the one command that can retire it.
-    if (!isAuthedRecord(record)) throw legacyRecordError(sessionName, record);
-    if (isProcessAlive(record.pid)) {
+    if (!isAuthedRecord(record)) {
+      // A live tokenless bridge stays non-adoptable: this CLI will not put
+      // unauthenticated browser control back into use, and `stop` is the one
+      // verified way to retire it. But a record whose pid is confirmed dead
+      // names nothing at all — refusing forever would leave the session
+      // bricked behind a file only a manual `rm` clears, and every `open` an
+      // attacker could achieve by planting one. The pid is dead, nothing is
+      // signalled, and `clearLegacyBridgeRecord` still requires the on-disk
+      // record to be tokenless with this pid, so a bridge that restarted in
+      // the meantime keeps its own record.
+      if (isProcessAlive(record.pid))
+        throw legacyRecordError(sessionName, record);
+      clearLegacyBridgeRecord({ pid: record.pid }, pidFile);
+    } else if (isProcessAlive(record.pid)) {
       // Deep probe, so a bridge whose attached CDP target has gone away gets
       // recycled instead of returned.
       if (
@@ -600,9 +613,30 @@ export async function ensureBridge(
       ) {
         return record.port;
       }
-      await terminateBridgeProcess(record.pid, record.startedAt, {
-        killProcessGroup: true,
-      });
+      // The deep probe failed on a pid that is still alive. If that pid no
+      // longer names our bridge — it was recycled onto an unrelated process —
+      // `terminateBridgeProcess` would rightly refuse to signal it, but letting
+      // that refusal propagate would strand every later command on a record
+      // nothing will clear: `stop` refuses the same mismatch, so the recorded
+      // remediation is a manual `rm` of the pid file. The record is provably
+      // stale, so clear exactly it — `clearBridgeRecord` re-reads and requires
+      // pid and token to still match, so a bridge that restarted in the
+      // meantime keeps its own record — and let a fresh bridge take the
+      // session. If something else now holds the deterministic port, the spawn
+      // below fails fast with the collision attributed. A pid whose identity
+      // cannot be read at all still goes to `terminateBridgeProcess`, whose
+      // fail-closed refusal stands: unverifiable is not the same as stale.
+      const liveIdentity = readProcessIdentity(record.pid);
+      if (
+        liveIdentity !== null &&
+        !identityMatchesRecord(liveIdentity, record.startedAt)
+      ) {
+        clearBridgeRecord({ pid: record.pid, token: record.token }, pidFile);
+      } else {
+        await terminateBridgeProcess(record.pid, record.startedAt, {
+          killProcessGroup: true,
+        });
+      }
     }
   }
 
@@ -799,13 +833,13 @@ export function collectRootDirs(
   for (const key of FILE_OUTPUT_ARGS_BY_TOOL.get(name) ?? []) {
     const value = args[key];
     if (typeof value === "string" && value.length > 0) {
-      dirs.add(nearestExistingAncestor(dirname(value)));
+      dirs.add(nearestExistingAncestor(dirname(resolve(value))));
     }
   }
   for (const key of DIR_OUTPUT_ARGS_BY_TOOL.get(name) ?? []) {
     const value = args[key];
     if (typeof value === "string" && value.length > 0) {
-      dirs.add(nearestExistingAncestor(value));
+      dirs.add(nearestExistingAncestor(resolve(value)));
     }
   }
   return [...dirs];
@@ -828,9 +862,9 @@ function resolveSelectedPageId(reconnected: boolean): number {
   if (pageId === null) {
     if (reconnected) throw pageIdentityClearedError();
     throw new CdpError("No page is currently selected", "BROWSER_ERROR", [
-      "Run `chrome-devtools-axi open <url>` to open a page",
-      "Run `chrome-devtools-axi pages` to list tabs",
-      "Run `chrome-devtools-axi selectpage <id>` to select a tab",
+      `Run \`${PRIMARY_COMMAND_NAME} open <url>\` to open a page`,
+      `Run \`${PRIMARY_COMMAND_NAME} pages\` to list tabs`,
+      `Run \`${PRIMARY_COMMAND_NAME} selectpage <id>\` to select a tab`,
     ]);
   }
   return pageId;
@@ -953,15 +987,15 @@ function missingPageError(pageId: number | null): CdpError {
       : `Page ${pageId} is no longer available`,
     "BROWSER_ERROR",
     [
-      "Run `chrome-devtools-axi pages` to list the remaining tabs",
-      "Run `chrome-devtools-axi selectpage <id>` to select a tab, or `chrome-devtools-axi open <url>` to open one",
+      `Run \`${PRIMARY_COMMAND_NAME} pages\` to list the remaining tabs`,
+      `Run \`${PRIMARY_COMMAND_NAME} selectpage <id>\` to select a tab, or \`${PRIMARY_COMMAND_NAME} open <url>\` to open one`,
     ],
   );
 }
 
 const PAGE_IDENTITY_SUGGESTIONS = [
-  "Run `chrome-devtools-axi pages` to list the current tabs and their new ids",
-  "Run `chrome-devtools-axi selectpage <id>` to re-select a tab after the reconnect, then retry",
+  `Run \`${PRIMARY_COMMAND_NAME} pages\` to list the current tabs and their new ids`,
+  `Run \`${PRIMARY_COMMAND_NAME} selectpage <id>\` to re-select a tab after the reconnect, then retry`,
 ];
 
 function pageIdentityChangedError(): CdpError {
@@ -999,7 +1033,7 @@ export function mapErrorMessage(message: string): CdpError {
   if (isMissingPageError(message)) return missingPageError(null);
   if (message.includes("ECONNREFUSED") || message.includes("ECONNRESET")) {
     return new CdpError("Bridge is not running", "BRIDGE_NOT_READY", [
-      "Run `axis-browser open <url>` — the bridge starts automatically",
+      `Run \`${PRIMARY_COMMAND_NAME} open <url>\` — the bridge starts automatically`,
     ]);
   }
   if (
@@ -1007,12 +1041,12 @@ export function mapErrorMessage(message: string): CdpError {
     (message.includes("not found") || message.includes("invalid"))
   ) {
     return new CdpError(message, "REF_NOT_FOUND", [
-      "Run `axis-browser snapshot` to see available elements and their @uid refs",
+      `Run \`${PRIMARY_COMMAND_NAME} snapshot\` to see available elements and their @uid refs`,
     ]);
   }
   if (message.includes("timeout") || message.includes("timed out")) {
     return new CdpError(message, "TIMEOUT", [
-      "Run `axis-browser snapshot` to see current page state",
+      `Run \`${PRIMARY_COMMAND_NAME} snapshot\` to see current page state`,
     ]);
   }
   // Try to parse JSON error
@@ -1020,7 +1054,7 @@ export function mapErrorMessage(message: string): CdpError {
     const parsed = JSON.parse(message);
     if (parsed.error) {
       return new CdpError(parsed.error, "BROWSER_ERROR", [
-        "Run `axis-browser snapshot` to see current page state",
+        `Run \`${PRIMARY_COMMAND_NAME} snapshot\` to see current page state`,
       ]);
     }
   } catch {
@@ -1092,7 +1126,19 @@ export async function stopBridge(): Promise<boolean> {
   const pidFile = resolveSessionPidFile(sessionName);
   const record = readBridgeRecord(pidFile);
   if (!record) return false;
-  if (!isProcessAlive(record.pid)) return false;
+  if (!isProcessAlive(record.pid)) {
+    // Nothing to signal, but a tokenless record left in place keeps refusing
+    // every later `open` — retire it here so `stop` actually clears the
+    // session instead of reporting a no-op forever. Authenticated records
+    // keep their lifecycle: a dead one is simply overwritten by the next
+    // bridge this session starts, and its token is useless without a process.
+    // No ownership proof is needed for a deletion the directory's writer could
+    // already perform; the verified path above is what guards *signalling*.
+    if (!isAuthedRecord(record)) {
+      clearLegacyBridgeRecord({ pid: record.pid }, pidFile);
+    }
+    return false;
+  }
 
   if (isAuthedRecord(record)) {
     await terminateBridgeProcess(record.pid, record.startedAt, {

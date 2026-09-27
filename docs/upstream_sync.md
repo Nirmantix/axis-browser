@@ -64,7 +64,7 @@ touches them as a conflict to resolve in the fork's favour:
   is written (POSIX `0700`, symlink/ownership rejection, tightening and
   verification; Windows `icacls` repair plus effective-ACE verification). Fails
   closed with `StateDirError.repair` steps.
-- `src/process-identity.ts` — the only source of "is this pid still *our*
+- `src/process-identity.ts` — the only source of "is this pid still _our_
   bridge": command-line marker **and** start time, on POSIX via `ps` and on
   Windows via `Get-CimInstance`. Returns `null` on any failure so callers skip
   the signal rather than guess.
@@ -76,7 +76,7 @@ touches them as a conflict to resolve in the fork's favour:
 - `src/client.ts` — every probe and tool call presents the token and re-reads the
   record per call; `checkBridgeHealth` rejects a body without the auth marker;
   `terminateBridgeProcess(pid, expectedStartedAt, opts)` verifies identity before
-  *each* signal, group-signals only when the live pgid equals the pid, and has no
+  _each_ signal, group-signals only when the live pgid equals the pid, and has no
   post-exit group kill; a tokenless record is refused on RPC paths and retired
   only by the twice-verified `stop` path.
 - `src/reap.ts` — `BridgeProcess.startedAt` is re-checked immediately before each
@@ -107,7 +107,7 @@ on the validation side:
 - Fork-only: untagged legacy refs are accepted and skip the page probe entirely.
   Upstream rejects them when the freshness marker is missing.
 - Fork-only: a page that answers the probe with no state rejects a tagged ref
-  (`STALE_REF`, "no snapshot from this session"), while a probe that *fails*
+  (`STALE_REF`, "no snapshot from this session"), while a probe that _fails_
   stays permissive and defers to the session counter.
 
 `test/interaction.test.ts` and `test/run.test.ts` pin all four rules; upstream
@@ -285,7 +285,7 @@ has a decided answer rather than being left to rot:
     `validation/ajv-provider.js`. `fast-uri` still is not, because ajv reaches it
     only via `dist/runtime/uri.js`, which compiles cross-document `$ref`/`$id`
     resolution and is not exercised by MCP tool schemas. The advisories are
-    therefore unreachable for a *narrower* reason than "ajv is absent" — do not
+    therefore unreachable for a _narrower_ reason than "ajv is absent" — do not
     restate it that way, and re-measure if a schema with `$id`/`$ref` ever joins
     the validated path.
   - `chrome-devtools-mcp@1.9.0` is a **separate spawned process** that resolves
@@ -294,9 +294,9 @@ has a decided answer rather than being left to rot:
     `tools/list` handshake it resolved 88 modules and loaded no ajv, `fast-uri`,
     qs, express, hono or `ip-address`: it is stdio-only and starts no SDK HTTP
     server. Re-measure it if a shared/HTTP MCP mode ever becomes a default.
-  Re-check all three if a future sync imports anything from
-  `@modelcontextprotocol/sdk/server/*` — at that point these advisories become
-  live and must be fixed, not explained.
+    Re-check all three if a future sync imports anything from
+    `@modelcontextprotocol/sdk/server/*` — at that point these advisories become
+    live and must be fixed, not explained.
 - The SDK release that could move those transitive deps is `1.30.1`, which is
   inside the seven-day `minimumReleaseAge` window, so it is deferred by policy.
   Bump `^1.30.0` only when the candidate is older than seven days, and re-run
@@ -341,7 +341,7 @@ Verify the third alias the way a user gets it — from a packed install, which i
 also what CI's packed-artifact job does:
 
 ```bash
-npm pack --pack-destination /tmp/axis-pack && cd /tmp/axis-pack
+mkdir -p /tmp/axis-pack && npm pack --pack-destination /tmp/axis-pack && cd /tmp/axis-pack
 npm install ./chrome-devtools-axi-*.tgz
 ./node_modules/.bin/chrome-devtools-axi --version
 ./node_modules/.bin/axis-browser --version

@@ -324,15 +324,22 @@ describe("bridge record (pid/port + capability token)", () => {
     expect(readBridgeRecord(pidFile)).toBeNull();
   });
 
-  it("returns null when the file is unreadable", () => {
-    writeBridgeRecord(authed, pidFile);
-    chmodSync(pidFile, 0o000);
-    try {
-      expect(readBridgeRecord(pidFile)).toBeNull();
-    } finally {
-      chmodSync(pidFile, 0o600);
-    }
-  });
+  // chmod-based unreadability only denies the reader on POSIX and when not
+  // running as root: root reads through 0o000, and Windows does not map the
+  // mode bits onto the owner's ACL. Everywhere else the test would assert a
+  // denial that never happened.
+  it.skipIf(process.platform === "win32" || process.getuid?.() === 0)(
+    "returns null when the file is unreadable",
+    () => {
+      writeBridgeRecord(authed, pidFile);
+      chmodSync(pidFile, 0o000);
+      try {
+        expect(readBridgeRecord(pidFile)).toBeNull();
+      } finally {
+        chmodSync(pidFile, 0o600);
+      }
+    },
+  );
 
   it("returns null when reading a different session's record path", () => {
     writeBridgeRecord(authed, pidFile);

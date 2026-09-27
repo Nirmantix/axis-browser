@@ -1,5 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import type { Stats } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import {
   assertStateDirOwned,
   assertWindowsAclPrivate,
@@ -332,7 +335,11 @@ function aclRunner(overrides: Partial<Record<string, ProbeRunner>> = {}): {
     if (command === "powershell.exe") return `${USER_SID}\r\n${SYSTEM_SID}`;
     if (command === "icacls.exe" && args[1] === "/findsid") {
       const sid = String(args[2]).slice(1);
-      return sid === USER_SID || sid === SYSTEM_SID ? "found" : null;
+      // Shaped like a real /findsid hit: the ACE line icacls prints, so the
+      // cross-check has to parse it rather than trust the exit code.
+      return sid === USER_SID || sid === SYSTEM_SID
+        ? `NT AUTHORITY\\SYSTEM:(OI)(CI)F`
+        : null;
     }
     return "";
   };
@@ -348,20 +355,27 @@ function aclRunner(overrides: Partial<Record<string, ProbeRunner>> = {}): {
 describe("Windows ACL verification", () => {
   const chain = ["C:\\Users\\u\\.axis-browser"];
 
-  it("falls back to the default runner on Windows and still fails closed", () => {
-    // `publishBridgeCapability` calls hardenStateDirs with no deps at all, so a
-    // missing runner cannot be an error — that would make every Windows bridge
-    // refuse to start. The default runner is used instead, and because
-    // `whoami.exe` does not exist on this platform the SID lookup fails, which is
-    // the fail-closed answer the token write depends on. What must never happen
-    // is a silent pass or a TypeError.
-    expect(() => hardenStateDirs(chain, { platform: "win32" })).toThrowError(
-      StateDirError,
-    );
-    expect(() => hardenStateDirs(chain, { platform: "win32" })).toThrow(
-      /current user's SID/,
-    );
-  });
+  // On a real Windows host this test would drive the real `whoami.exe` and, on
+  // a missing chain, attempt a real mkdir under C:\Users — it exists to prove
+  // the non-Windows fallback fails closed, which only means something off
+  // Windows.
+  it.skipIf(process.platform === "win32")(
+    "falls back to the default runner on Windows and still fails closed",
+    () => {
+      // `publishBridgeCapability` calls hardenStateDirs with no deps at all, so a
+      // missing runner cannot be an error — that would make every Windows bridge
+      // refuse to start. The default runner is used instead, and because
+      // `whoami.exe` does not exist on this platform the SID lookup fails, which is
+      // the fail-closed answer the token write depends on. What must never happen
+      // is a silent pass or a TypeError.
+      expect(() => hardenStateDirs(chain, { platform: "win32" })).toThrowError(
+        StateDirError,
+      );
+      expect(() => hardenStateDirs(chain, { platform: "win32" })).toThrow(
+        /current user's SID/,
+      );
+    },
+  );
 
   it("fails closed when the default runner cannot verify an ACL", () => {
     // Same contract, injected: a runner that answers nothing must produce a
@@ -372,6 +386,23 @@ describe("Windows ACL verification", () => {
         runner: () => null,
       }),
     ).toThrowError(StateDirError);
+  });
+
+  it("does not read a zero-exit 'No ACEs found' banner as a match", () => {
+    // A zero exit carrying "No ACEs found" is icacls saying the SID holds
+    // nothing. Treating any non-null probe as a match would let that banner
+    // satisfy the required-ACE cross-check — exactly the direction that
+    // decides whether a token may be written.
+    const banner =
+      "No ACEs found for user.\r\nSuccessfully processed 1 files; Failed processing 0 files";
+    const runner: ProbeRunner = (command) => {
+      if (command === "whoami.exe") return `"laptop\\nites","${USER_SID}"`;
+      if (command === "powershell.exe") return `${USER_SID}\r\n${SYSTEM_SID}`;
+      return banner;
+    };
+    expect(() =>
+      assertWindowsAclPrivate("C:\\Users\\u\\.axis-browser", USER_SID, runner),
+    ).toThrow(/cannot find the required ACE/);
   });
 
   it("repairs each directory's ACL before verifying it", () => {
@@ -444,7 +475,7 @@ describe("Windows ACL verification", () => {
       if (command === "icacls.exe" && args[1] === "/findsid") {
         // PowerShell lied: icacls still finds Everyone.
         const sid = String(args[2]).slice(1);
-        return sid !== "S-1-5-21-1" ? "found" : null;
+        return sid !== "S-1-5-21-1" ? "Everyone:(OI)(CI)F" : null;
       }
       return "";
     };
@@ -457,7 +488,7 @@ describe("Windows ACL verification", () => {
     const runner: ProbeRunner = (command, args) => {
       if (command === "powershell.exe") return `${USER_SID}\r\n${SYSTEM_SID}`;
       if (command === "icacls.exe" && args[1] === "/findsid") {
-        return String(args[2]) === `*${USER_SID}` ? "found" : null;
+        return String(args[2]) === `*${USER_SID}` ? `${USER_SID}:(F)` : null;
       }
       return "";
     };
@@ -504,5 +535,82 @@ describe("repairWindowsAcl / repairWindowsFileAcl", () => {
       `*${USER_SID}:(OI)(CI)F`,
       `*${SYSTEM_SID}:(OI)(CI)F`,
     ]);
+  });
+});
+
+describe("Windows hardening creates a missing directory chain", () => {
+  it("creates each missing directory before repairing its ACL", () => {
+    const home = mkdtempSync(join(tmpdir(), "axi-win-chain-"));
+    try {
+      const chain = [
+        join(home, ".axis-browser"),
+        join(home, ".axis-browser", "sessions"),
+        join(home, ".axis-browser", "sessions", "w1"),
+      ];
+      const { runner, calls } = aclRunner();
+      // A real mkdir, so the test proves the directories actually appear on
+      // disk rather than only observing the injected call being made.
+      const mkdir = (path: string, mode: number) => mkdirSync(path, { mode });
+      expect(() =>
+        hardenStateDirs(chain, { platform: "win32", runner, mkdir }),
+      ).not.toThrow();
+      for (const dir of chain) {
+        expect(existsSync(dir), `${dir} should exist after hardening`).toBe(
+          true,
+        );
+      }
+      // Creation must precede the ACL work it exists for: the deepest
+      // directory gets repaired and verified too, not just created.
+      expect(
+        calls.some(
+          (call) =>
+            call.command === "icacls.exe" &&
+            call.args[0] === chain[2] &&
+            call.args[1] === "/inheritancelevel:r",
+        ),
+      ).toBe(true);
+    } finally {
+      rmSync(home, { recursive: true, force: true });
+    }
+  });
+
+  it("tolerates an already-existing chain (EEXIST) and still verifies it", () => {
+    const home = mkdtempSync(join(tmpdir(), "axi-win-exist-"));
+    try {
+      const chain = [
+        join(home, ".axis-browser"),
+        join(home, ".axis-browser", "sessions"),
+      ];
+      for (const dir of chain) mkdirSync(dir);
+      const { runner } = aclRunner();
+      // Every mkdir now throws EEXIST — the same concurrent-creator race the
+      // POSIX branch tolerates — and hardening must continue to the ACL
+      // verification rather than treat it as a failure.
+      expect(() =>
+        hardenStateDirs(chain, {
+          platform: "win32",
+          runner,
+          mkdir: (path) => mkdirSync(path),
+        }),
+      ).not.toThrow();
+    } finally {
+      rmSync(home, { recursive: true, force: true });
+    }
+  });
+
+  it("reports a real creation failure as StateDirError", () => {
+    const mkdir = () => {
+      throw Object.assign(new Error("EACCES: permission denied"), {
+        code: "EACCES",
+      });
+    };
+    const attempt = () =>
+      hardenStateDirs(["C:\\Users\\u\\.axis-browser"], {
+        platform: "win32",
+        runner: aclRunner().runner,
+        mkdir,
+      });
+    expect(attempt).toThrowError(StateDirError);
+    expect(attempt).toThrow(/Cannot create the session state directory/);
   });
 });

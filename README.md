@@ -12,6 +12,7 @@
 `Axis Browser` is a lightweight CLI for browser automation, debugging, and persistent-profile Chrome workflows.
 
 It is optimized for:
+
 - a browser Axis launches and owns — throwaway (`ephemeral`) or persistent-profile (`managed`)
 - low-token page inspection
 - repeatable debugging with console, network, and snapshots
@@ -53,6 +54,7 @@ and AGENTS.md hosts. It routes tasks across Browser Harness, Playwright, Axis
 Browser, Notte, CloakBrowser, BrowserAct, Firecrawl, and related tools.
 
 Key boundaries:
+
 - The skill is not shipped as part of the parent Axis Browser package.
 - The parent repo keeps `skills/` ignored on purpose.
 - Publish or share the skill from its nested repo, not from the Axis Browser
@@ -73,6 +75,7 @@ bash scripts/check-prerequisites.sh --print-install-commands
 ```
 
 Portability note:
+
 - On a workstation with this repo checked out, other local projects can point at
   the checkout's skill with `BROWSER_BAY_DIR=/path/to/axis-browser/skills/browser-bay`
   or set `AXIS_BROWSER_HOME=/path/to/axis-browser` so setup can resolve
@@ -123,6 +126,7 @@ Portability note:
 
   The legacy alias `BROWSER_SKILL_DIR` is still honoured by `axis-browser setup`
   itself; prefer `BROWSER_BAY_DIR` in new shells.
+
 - **BrowserAct**: machine CLI auth is separate from optional **project-scoped**
   remote MCP (published workflows). See
   [docs/browseract-mcp-per-project.md](docs/browseract-mcp-per-project.md) and
@@ -138,11 +142,13 @@ Portability note:
 ## Command Names
 
 Built-in commands exposed by this project:
+
 - `axis-browser` — the command. Use this one; it is what the docs, the CLI's own help, and BrowserBay all refer to.
 - `axib` — built-in shorthand
 - `chrome-devtools-axi` — legacy alias, kept so scripts written against the upstream base tool keep working. Not documented elsewhere; prefer `axis-browser`.
 
 Not built in:
+
 - `axis`
 - `axi`
 - `axisb`
@@ -160,19 +166,22 @@ Those are only user-defined aliases or shell helpers if you create them yourself
 - `Windows`: partially supported today
 
 Current Windows gaps:
+
 - stale bridge recovery relies on Unix-specific process inspection (`lsof` / `ps`) for some edge cases
 - the documented shared-session helper snippets are shell-first examples, not native PowerShell helpers
 - there is no Windows CI coverage in this repo yet
-The `axis-browser setup` report detects Windows Chrome and Edge installs (machine-wide under `Program Files`/`Program Files (x86)` and per-user under `LOCALAPPDATA`), plus Chromium (machine-wide under `Program Files (x86)`).
+  The `axis-browser setup` report detects Windows Chrome and Edge installs (machine-wide under `Program Files`/`Program Files (x86)` and per-user under `LOCALAPPDATA`), plus Chromium (machine-wide under `Program Files (x86)`).
 
 ## Why Axis Browser Exists
 
 Axis Browser is designed around three practical goals:
+
 - fast feedback while debugging live browser state
 - low token overhead for agent-driven workflows
 - stable attachment to already-running Chrome sessions
 
 The fork-specific behavior is intentionally small:
+
 - Axis Browser branding and compatibility aliases (`axis-browser`, `axib`)
 - runtime state under `~/.axis-browser` instead of `~/.chrome-devtools-axi`
 - cross-platform-safe build chmod step
@@ -180,6 +189,7 @@ The fork-specific behavior is intentionally small:
 ## Install
 
 Requirements:
+
 - Node.js `22.13+` for this CLI. Standalone BrowserBay (the router skill)
   still runs on Node 20 without Axis; only the Axis CLI needs the newer floor.
 - Bun or npm
@@ -202,6 +212,7 @@ npm install -g github:Nirmantix/axis-browser
 ```
 
 That install exposes:
+
 - `axis-browser`
 - `axib`
 - `chrome-devtools-axi`
@@ -215,6 +226,7 @@ chrome-devtools-axi --version
 ```
 
 Important:
+
 - `bun add -g chrome-devtools-axi` installs the upstream npm package, not this fork
 - `npx -y chrome-devtools-axi` also resolves the upstream npm package
 - the package name remains `chrome-devtools-axi` for compatibility, but this fork should be installed from GitHub
@@ -386,19 +398,21 @@ run unattended. Run the reversible ones (`unset …`) directly; confirm the dest
 outright: `NEEDS_INTERACTIVE_LOGIN` and `PORT_HELD_BY_FOREIGN_PROCESS`.
 
 Why stop the bridge before changing connection settings:
+
 - the bridge is persistent and can outlive your shell session
 - it captured the environment it was started with, so a stale bridge silently ignores new
   settings — `axis-browser stop` then re-running guarantees the current environment is used
 
 > **Why there is no shared-`9222` quick start any more.** This section used to export
 > `CHROME_DEVTOOLS_AXI_BROWSER_URL=http://127.0.0.1:9222`. Exporting that from a shell
-> profile put *every* shell — including every agent's non-interactive shell — permanently
+> profile put _every_ shell — including every agent's non-interactive shell — permanently
 > into `attach` mode, and on a machine where another Chromium-based browser already held
 > `9222`, every browser command failed with a diagnostic that named neither the mode nor the
 > port holder. `axis-browser doctor` now names both in about two seconds. The full account
 > is in [docs/shared-session-design.md](docs/shared-session-design.md).
 
 For the full public shared-browser operating model, read:
+
 - [docs/vibe-coding-browser-workflow.md](docs/vibe-coding-browser-workflow.md)
 
 ## Session Hook Setup
@@ -581,8 +595,8 @@ For large request or response bodies, prefer `network-get <id> --response-file <
 
 ### Diagnostics And Session
 
-| Command                    | Description                                                                    |
-| -------------------------- | ------------------------------------------------------------------------------ |
+| Command                    | Description                                                                     |
+| -------------------------- | ------------------------------------------------------------------------------- |
 | `doctor`                   | Preflight report: mode, endpoint, browser, profile, bridges, blockers, remedies |
 | `doctor --json`            | The same report as JSON — the contract agents should key on                     |
 | `login <url>`              | One-time interactive sign-in on the managed profile (requires a terminal)       |
@@ -605,10 +619,10 @@ reports it.
 
 ### Maintenance
 
-| Command          | Description                                            |
-| ---------------- | ------------------------------------------------------ |
-| `update`         | Show GitHub update guidance for this fork              |
-| `update --check` | Show GitHub update guidance without contacting npm     |
+| Command          | Description                                        |
+| ---------------- | -------------------------------------------------- |
+| `update`         | Show GitHub update guidance for this fork          |
+| `update --check` | Show GitHub update guidance without contacting npm |
 
 Running with no command shows the CLI home view. It prepends `bin` and `description` metadata, then includes the current snapshot when a browser session is active or the no-session status/help block when one is not.
 
@@ -616,35 +630,35 @@ Running with no command shows the CLI home view. It prepends `bin` and `descript
 
 `--help`, `-v`, `-V`, and `--version` are top-level options. All other flags
 are command-specific; the CLI rejects a flag that is not listed by
-`chrome-devtools-axi <command> --help`.
+`axis-browser <command> --help`.
 
-| Flag                        | Description                                 |
-| --------------------------- | ------------------------------------------- |
-| `--help`                    | Show usage information                      |
-| `-v`, `-V`, `--version`     | Show the installed CLI version              |
-| `--check`                   | Show GitHub update guidance (update)        |
+| Flag                        | Description                                                                                                                                                |
+| --------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--help`                    | Show usage information                                                                                                                                     |
+| `-v`, `-V`, `--version`     | Show the installed CLI version                                                                                                                             |
+| `--check`                   | Show GitHub update guidance (update)                                                                                                                       |
 | `--full`                    | Show complete output without truncation (open, snapshot, click, fill, type, press, scroll, back, eval, hover, drag, fillform, upload, newpage, selectpage) |
-| `--background`              | Open new page in background (newpage)       |
-| `--uid @<uid>`              | Target a specific element (screenshot)      |
-| `--full-page`               | Capture entire scrollable page (screenshot) |
-| `--format <fmt>`            | Image format: png, jpeg, webp (screenshot)  |
-| `--viewport <spec>`         | Viewport like `390x844x3,mobile` (emulate)  |
-| `--color-scheme <value>`    | dark, light, or auto (emulate)              |
-| `--network <condition>`     | Network throttle: Slow 3G, etc. (emulate)   |
-| `--cpu <rate>`              | CPU throttling rate 1-20 (emulate)          |
-| `--geolocation <lat>x<lon>` | Set geolocation (emulate)                   |
-| `--user-agent <string>`     | Custom user agent (emulate)                 |
-| `--type <type>`             | Filter by type (console, network)           |
-| `--limit <n>`               | Max items to return (console, network)      |
-| `--page <n>`                | Pagination (console, network)               |
-| `--device <device>`         | desktop or mobile (lighthouse)              |
-| `--mode <mode>`             | navigation or snapshot (lighthouse)         |
-| `--output-dir <path>`       | Directory for reports (lighthouse)          |
-| `--no-reload`               | Skip page reload (perf-start)               |
-| `--no-auto-stop`            | Disable auto-stop (perf-start)              |
-| `--file <path>`             | Save trace data to file (perf-start/stop)   |
-| `--response-file <path>`    | Save response body (network-get)            |
-| `--request-file <path>`     | Save request body (network-get)             |
+| `--background`              | Open new page in background (newpage)                                                                                                                      |
+| `--uid @<uid>`              | Target a specific element (screenshot)                                                                                                                     |
+| `--full-page`               | Capture entire scrollable page (screenshot)                                                                                                                |
+| `--format <fmt>`            | Image format: png, jpeg, webp (screenshot)                                                                                                                 |
+| `--viewport <spec>`         | Viewport like `390x844x3,mobile` (emulate)                                                                                                                 |
+| `--color-scheme <value>`    | dark, light, or auto (emulate)                                                                                                                             |
+| `--network <condition>`     | Network throttle: Slow 3G, etc. (emulate)                                                                                                                  |
+| `--cpu <rate>`              | CPU throttling rate 1-20 (emulate)                                                                                                                         |
+| `--geolocation <lat>x<lon>` | Set geolocation (emulate)                                                                                                                                  |
+| `--user-agent <string>`     | Custom user agent (emulate)                                                                                                                                |
+| `--type <type>`             | Filter by type (console, network)                                                                                                                          |
+| `--limit <n>`               | Max items to return (console, network)                                                                                                                     |
+| `--page <n>`                | Pagination (console, network)                                                                                                                              |
+| `--device <device>`         | desktop or mobile (lighthouse)                                                                                                                             |
+| `--mode <mode>`             | navigation or snapshot (lighthouse)                                                                                                                        |
+| `--output-dir <path>`       | Directory for reports (lighthouse)                                                                                                                         |
+| `--no-reload`               | Skip page reload (perf-start)                                                                                                                              |
+| `--no-auto-stop`            | Disable auto-stop (perf-start)                                                                                                                             |
+| `--file <path>`             | Save trace data to file (perf-start/stop)                                                                                                                  |
+| `--response-file <path>`    | Save response body (network-get)                                                                                                                           |
+| `--request-file <path>`     | Save request body (network-get)                                                                                                                            |
 
 `--full` is accepted only by the commands listed above; other commands strip it
 and ignore it silently. Note that `console` and `network` always truncate at
@@ -665,12 +679,12 @@ For both commands, `all` or an omitted `--type` returns every item.
 
 There are four, and you can now name the one you want instead of having it inferred:
 
-| Mode | Browser | Profile | Use it when |
-| --- | --- | --- | --- |
-| `ephemeral` | Axis launches it | throwaway (`--isolated`) | the default; nothing to remember between runs |
-| `managed` | Axis launches it | persistent, Axis-owned | the task needs a logged-in session |
-| `attach` | someone else's | theirs | you deliberately want a browser Axis did not start |
-| `autoconnect` | your running Chrome | your real profile | Chrome 144+ `chrome://inspect` debugging |
+| Mode          | Browser             | Profile                  | Use it when                                        |
+| ------------- | ------------------- | ------------------------ | -------------------------------------------------- |
+| `ephemeral`   | Axis launches it    | throwaway (`--isolated`) | the default; nothing to remember between runs      |
+| `managed`     | Axis launches it    | persistent, Axis-owned   | the task needs a logged-in session                 |
+| `attach`      | someone else's      | theirs                   | you deliberately want a browser Axis did not start |
+| `autoconnect` | your running Chrome | your real profile        | Chrome 144+ `chrome://inspect` debugging           |
 
 ```bash
 export CHROME_DEVTOOLS_AXI_MODE=managed
@@ -690,11 +704,12 @@ apply. Prefer `managed`.
 #### Profiles are per session
 
 `managed` resolves `CHROME_DEVTOOLS_AXI_USER_DATA_DIR` (default `~/.axis-browser-data`) for
-the **default** session, and `<dir>/sessions/<name>` for any *named*
+the **default** session, and `<dir>/sessions/<name>` for any _named_
 `CHROME_DEVTOOLS_AXI_SESSION`. Chrome locks a profile to one process, so two concurrent named
 sessions sharing one directory would not merely interfere — the second fails to launch.
 
 Two consequences worth knowing before they surprise you:
+
 - A **named** session starts logged out even if the default profile is signed in. `doctor`
   reports this as `NEEDS_INTERACTIVE_LOGIN` rather than failing opaquely.
 - A `user-data-dir` that resolves inside a **real** browser profile (yours, Chrome's default,
@@ -704,25 +719,25 @@ Two consequences worth knowing before they surprise you:
 
 ### Environment Variables
 
-| Variable | Purpose |
-| --- | --- |
-| `CHROME_DEVTOOLS_AXI_MODE` | `ephemeral` \| `managed` \| `attach` \| `autoconnect`. Overrides inference |
-| `CHROME_DEVTOOLS_AXI_EXECUTABLE_PATH` | Absolute path to the Chrome/Chromium binary to launch. Launch modes only |
-| `CHROME_DEVTOOLS_AXI_AUTO_REAP` | Set to `0` to disable automatic cleanup of orphaned bridges on bridge startup |
-| `CHROME_DEVTOOLS_AXI_AUTO_CONNECT` | Set to `1` to attach to the user's running Chrome through Chrome 144+ auto-connect |
-| `CHROME_DEVTOOLS_AXI_BROWSER_URL` | Connect to an existing Chrome instance instead of launching one |
-| `CHROME_DEVTOOLS_AXI_WS_HEADERS` | JSON headers for authenticated `ws://` / `wss://` browser endpoints. **Refused unless `CHROME_DEVTOOLS_AXI_ALLOW_WS_HEADERS_ARGV=1`** — see below |
-| `CHROME_DEVTOOLS_AXI_USER_DATA_DIR` | Use a persistent Chrome profile instead of `--isolated` |
-| `CHROME_DEVTOOLS_AXI_HEADED` | Set to `1` to run the managed browser in headed mode |
-| `CHROME_DEVTOOLS_AXI_CHROME_ARGS` | Whitespace-separated Chrome flags forwarded to the browser |
-| `CHROME_DEVTOOLS_AXI_PORT` | Override the bridge port (default: `9224`). Must be a plain decimal port in 1-65535 — an unusable value is an error, not a silent fallback, because falling back can land on another session's port |
-| `CHROME_DEVTOOLS_AXI_MCP_PATH` | Optional absolute path to a `chrome-devtools-mcp` build you reviewed yourself. Unset, the bridge runs the version this package pins |
-| `CHROME_DEVTOOLS_AXI_ALLOW_WS_HEADERS_ARGV` | Set to `1` to accept the `--wsHeaders` argv exposure described below |
-| `CHROME_DEVTOOLS_AXI_BRIDGE_TIMEOUT_MS` | Bridge readiness deadline in ms (default: `30000`; raise it for a slow Chrome launch) |
-| `BROWSER_BAY_DIR` | Absolute path to a local `browser-bay` checkout. Highest setup resolver priority |
-| `AXIS_BROWSER_HOME` | Axis Browser checkout root; setup looks for `skills/browser-bay` below it |
-| `AXIS_PORTABLE_SKILLS_DIR` | Directory containing portable skills; setup looks for `browser-bay` below it |
-| `BROWSER_BAY_SOURCE_URL` | Approved source URL shown when no local router is configured; no public router URL is assumed |
+| Variable                                    | Purpose                                                                                                                                                                                             |
+| ------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `CHROME_DEVTOOLS_AXI_MODE`                  | `ephemeral` \| `managed` \| `attach` \| `autoconnect`. Overrides inference                                                                                                                          |
+| `CHROME_DEVTOOLS_AXI_EXECUTABLE_PATH`       | Absolute path to the Chrome/Chromium binary to launch. Launch modes only                                                                                                                            |
+| `CHROME_DEVTOOLS_AXI_AUTO_REAP`             | Set to `0` to disable automatic cleanup of orphaned bridges on bridge startup                                                                                                                       |
+| `CHROME_DEVTOOLS_AXI_AUTO_CONNECT`          | Set to `1` to attach to the user's running Chrome through Chrome 144+ auto-connect                                                                                                                  |
+| `CHROME_DEVTOOLS_AXI_BROWSER_URL`           | Connect to an existing Chrome instance instead of launching one                                                                                                                                     |
+| `CHROME_DEVTOOLS_AXI_WS_HEADERS`            | JSON headers for authenticated `ws://` / `wss://` browser endpoints. **Refused unless `CHROME_DEVTOOLS_AXI_ALLOW_WS_HEADERS_ARGV=1`** — see below                                                   |
+| `CHROME_DEVTOOLS_AXI_USER_DATA_DIR`         | Use a persistent Chrome profile instead of `--isolated`                                                                                                                                             |
+| `CHROME_DEVTOOLS_AXI_HEADED`                | Set to `1` to run the managed browser in headed mode                                                                                                                                                |
+| `CHROME_DEVTOOLS_AXI_CHROME_ARGS`           | Whitespace-separated Chrome flags forwarded to the browser                                                                                                                                          |
+| `CHROME_DEVTOOLS_AXI_PORT`                  | Override the bridge port (default: `9224`). Must be a plain decimal port in 1-65535 — an unusable value is an error, not a silent fallback, because falling back can land on another session's port |
+| `CHROME_DEVTOOLS_AXI_MCP_PATH`              | Optional absolute path to a `chrome-devtools-mcp` build you reviewed yourself. Unset, the bridge runs the version this package pins                                                                 |
+| `CHROME_DEVTOOLS_AXI_ALLOW_WS_HEADERS_ARGV` | Set to `1` to accept the `--wsHeaders` argv exposure described below                                                                                                                                |
+| `CHROME_DEVTOOLS_AXI_BRIDGE_TIMEOUT_MS`     | Bridge readiness deadline in ms (default: `30000`; raise it for a slow Chrome launch)                                                                                                               |
+| `BROWSER_BAY_DIR`                           | Absolute path to a local `browser-bay` checkout. Highest setup resolver priority                                                                                                                    |
+| `AXIS_BROWSER_HOME`                         | Axis Browser checkout root; setup looks for `skills/browser-bay` below it                                                                                                                           |
+| `AXIS_PORTABLE_SKILLS_DIR`                  | Directory containing portable skills; setup looks for `browser-bay` below it                                                                                                                        |
+| `BROWSER_BAY_SOURCE_URL`                    | Approved source URL shown when no local router is configured; no public router URL is assumed                                                                                                       |
 
 Examples:
 
@@ -779,9 +794,13 @@ configurations: a running bridge retains the transport settings it started with.
 `CHROME_DEVTOOLS_AXI_SESSION=<name> axis-browser stop` stops that session's bridge
 and any Axis-owned proxy child; the shared service's lifecycle stays yours.
 
-Connect to an existing Chrome instance instead of launching one:
+### Connect to an existing Chrome instance
+
+Attach mode connects to a Chrome instance that is already running instead of
+launching one:
 
 `CHROME_DEVTOOLS_AXI_BROWSER_URL` (attach mode) accepts both HTTP(S) and WebSocket endpoints:
+
 - `http(s)://` uses `--browserUrl` and discovers the WebSocket URL via `/json/version`
 - `ws(s)://` uses `--wsEndpoint` directly
 
@@ -912,10 +931,12 @@ it holds a secret:
 ### Session Hooks
 
 Run `axis-browser setup hooks` to install or repair a `SessionStart` hook in:
+
 - `~/.claude/settings.json`
 - `~/.codex/hooks.json`
 
 It also enables `hooks` in:
+
 - `~/.codex/config.toml`
 
 Development entrypoints such as `pnpm run dev` and `bin/chrome-devtools-axi.ts` do not modify those hook files.
@@ -966,7 +987,7 @@ victim's browser then issues same-origin requests that arrive on loopback like a
 The one thing a rebound request cannot hide is that it carries the attacker's domain in its
 `Host` (and `Origin`) header, and page JavaScript cannot forge either. Every request to
 `/health`, `/tools`, and `/call` is therefore rejected with `403 {"error":"Forbidden host"}`
-unless both headers name loopback — and that gate runs *before* the token check, so a
+unless both headers name loopback — and that gate runs _before_ the token check, so a
 rebound page cannot even probe for a valid token. This addresses
 **GHSA-x439-jhfh-v9x2** in the upstream project.
 
@@ -991,7 +1012,7 @@ temp file and rename so a half-written record can never be read.
 ### Nothing is killed on the strength of a stale pid
 
 `stop`, the bridge-recycle path and `reap` re-read the live process identity — command line
-*and* start time — immediately before every `SIGTERM` and `SIGKILL`. A pid the OS recycled
+_and_ start time — immediately before every `SIGTERM` and `SIGKILL`. A pid the OS recycled
 in between is skipped and reported, not signalled. A process group is only signalled when
 the target still leads it, and there is no post-exit group kill: once a leader exits, its
 pid and pgid are free for the OS to hand to an unrelated tree.

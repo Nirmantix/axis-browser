@@ -1157,6 +1157,19 @@ function createBridgeClient(): Client {
  * cap stops a server that never re-reads from wedging the call. */
 const ROOTS_FETCH_WAIT_MS = 2_000;
 
+/**
+ * The bounded wait expired without the server re-reading our roots. Kept as a
+ * distinct type so `callTool` can degrade on exactly this failure — a server
+ * that did not re-fetch in time — without swallowing real transport errors,
+ * while the explicit `applyRoots` API still surfaces it to its caller.
+ */
+class RootsNegotiationTimeout extends Error {
+  constructor() {
+    super("Timed out waiting for roots negotiation");
+    this.name = "RootsNegotiationTimeout";
+  }
+}
+
 function toRoots(dirs: string[]): Array<{ uri: string; name: string }> {
   const seen = new Set<string>();
   const roots: Array<{ uri: string; name: string }> = [];
@@ -1228,7 +1241,7 @@ export function createRootsAwareBridgeClient(client: Client): RootsAwareClient {
         })(),
         new Promise<void>((_resolve, reject) => {
           timeout = setTimeout(
-            () => reject(new Error("Timed out waiting for roots negotiation")),
+            () => reject(new RootsNegotiationTimeout()),
             ROOTS_FETCH_WAIT_MS,
           );
         }),
@@ -1253,7 +1266,21 @@ export function createRootsAwareBridgeClient(client: Client): RootsAwareClient {
     listTools: () => client.listTools(),
     callTool: (request, roots) =>
       enqueue(async () => {
-        if (roots) await applyRootsNow(roots);
+        if (roots) {
+          try {
+            await applyRootsNow(roots);
+          } catch (error) {
+            if (!(error instanceof RootsNegotiationTimeout)) throw error;
+            // Roots are an optional precursor, not a precondition: a server
+            // that did not re-read them within the bounded wait still holds
+            // the roots it had. Failing the tool call here would convert a
+            // degraded negotiation into a hard browser-command failure, so
+            // proceed and leave the timeout visible in the bridge log.
+            logBridgeMessage(
+              `Roots negotiation timed out after ${ROOTS_FETCH_WAIT_MS}ms; proceeding with the server's existing roots`,
+            );
+          }
+        }
         return client.callTool(request);
       }),
     close: () => client.close(),

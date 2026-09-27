@@ -315,11 +315,26 @@ export function readWindowsAceSids(
 
 /**
  * Cross-check `readWindowsAceSids` with icacls' own SID search, so a single
- * lying probe cannot make an unsafe directory look safe. `/findsid` exits
- * non-zero (and so returns null through the runner) when the SID is absent.
+ * lying probe cannot make an unsafe directory look safe. `/findsid` lists the
+ * matching ACEs on success and answers "No ACEs found" with a non-zero exit
+ * when the SID holds nothing — which the guarded runner reports as null.
+ *
+ * A non-null result is not by itself proof: the required-SID direction below
+ * treats a match as "the ACE is present", so a zero exit carrying an
+ * unparsed error banner would otherwise weaken the cross-check into a rubber
+ * stamp. The output must therefore also name an access entry — an ACE line
+ * (`NAME:(OI)(CI)F`, matched by its parenthesised flags or grant) or the SID
+ * itself. Null stays a failed probe with no match, and the fail-closed error
+ * paths in `assertWindowsAclPrivate` still fire on anything unreadable.
  */
 function icaclsHasSid(dir: string, sid: string, runner: ProbeRunner): boolean {
-  return runner("icacls.exe", [dir, "/findsid", `*${sid}`]) !== null;
+  const output = runner("icacls.exe", [dir, "/findsid", `*${sid}`]);
+  if (output === null) return false;
+  if (/no aces? found/i.test(output)) return false;
+  return (
+    output.includes(sid) ||
+    /\((?:OI|CI|NP|IO|F|M|R|W|D|GA|GR|GW|GE)\)/.test(output)
+  );
 }
 
 /**
@@ -381,6 +396,7 @@ export function assertWindowsAclPrivate(
 function hardenWindowsDirs(
   chain: readonly string[],
   runner: ProbeRunner,
+  mkdir: (path: string, mode: number) => void,
 ): void {
   const sid = currentUserSid(runner);
   if (sid === null) {
@@ -390,6 +406,24 @@ function hardenWindowsDirs(
     );
   }
   for (const dir of chain) {
+    // Create before repair, as the POSIX branch does: on a fresh install the
+    // chain does not exist yet, and `icacls` cannot repair or verify a path
+    // that is not there — failing closed there would make every first run on
+    // Windows a dead end. The mode argument is ignored by Windows; the ACL
+    // repair below is what makes the directory private. EEXIST is the same
+    // benign race the POSIX branch tolerates (two sessions concurrently
+    // creating a shared `sessions/` parent), and the verification that
+    // follows re-validates whatever the winner created.
+    try {
+      mkdir(dir, PRIVATE_DIR_MODE);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException)?.code !== "EEXIST") {
+        throw new StateDirError(
+          `Cannot create the session state directory ${dir}: ${(error as Error).message}`,
+          [`Create it manually: mkdir ${dir}`],
+        );
+      }
+    }
     // Repair before verify: a directory created by an older release inherits
     // Users/Authenticated Users, and failing on that without trying would make
     // the upgrade path a dead end.
@@ -416,6 +450,7 @@ export function hardenStateDirs(
     hardenWindowsDirs(
       chain,
       guardedProbeRunner(deps.runner ?? defaultProbeRunner),
+      deps.mkdir ?? defaultDeps.mkdir,
     );
     return;
   }

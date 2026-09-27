@@ -14,7 +14,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, isAbsolute, join } from "node:path";
 import { AxiError } from "axi-sdk-js";
 import {
   BRIDGE_PORT_IN_USE_EXIT_CODE,
@@ -124,7 +124,7 @@ describe("mapErrorMessage", () => {
     expect(error.code).toBe("BROWSER_ERROR");
     expect(error.message).toBe("The selected page is no longer available");
     expect(error.suggestions).toContain(
-      "Run `chrome-devtools-axi pages` to list the remaining tabs",
+      "Run `axis-browser pages` to list the remaining tabs",
     );
   });
 
@@ -1331,7 +1331,7 @@ describe("callTool pageId routing", () => {
           code: "BROWSER_ERROR",
           message: "Page 2 is no longer available",
           suggestions: expect.arrayContaining([
-            "Run `chrome-devtools-axi pages` to list the remaining tabs",
+            "Run `axis-browser pages` to list the remaining tabs",
           ]),
         });
         await expect(callTool("take_snapshot")).rejects.toMatchObject({
@@ -1473,7 +1473,7 @@ describe("callTool pageId routing", () => {
           code: "BROWSER_ERROR",
           message: PAGE_IDENTITY_CHANGED_ERROR,
           suggestions: expect.arrayContaining([
-            "Run `chrome-devtools-axi pages` to list the current tabs and their new ids",
+            "Run `axis-browser pages` to list the current tabs and their new ids",
           ]),
         });
       },
@@ -1674,7 +1674,7 @@ describe("reconnect reporting through the deep health probe", () => {
           code: "BROWSER_ERROR",
           message: RECONNECT_MESSAGE,
           suggestions: expect.arrayContaining([
-            "Run `chrome-devtools-axi selectpage <id>` to re-select a tab after the reconnect, then retry",
+            "Run `axis-browser selectpage <id>` to re-select a tab after the reconnect, then retry",
           ]),
         });
 
@@ -1720,7 +1720,7 @@ describe("reconnect reporting through the deep health probe", () => {
           code: "BROWSER_ERROR",
           message: "No page is currently selected",
           suggestions: expect.arrayContaining([
-            "Run `chrome-devtools-axi open <url>` to open a page",
+            "Run `axis-browser open <url>` to open a page",
           ]),
         });
       },
@@ -1870,12 +1870,13 @@ describe("stopBridge", () => {
     }
   });
 
-  it("returns false when the record's pid is already dead, without touching it", async () => {
+  it("signals nothing for a dead tokenless record and retires the record", async () => {
     const { home, pidFile } = useSandboxedSession("stop-worker");
     try {
-      // Spawn-and-reap so the pid is real but dead; a tokenless record is the
-      // legacy path, which also reaches for the state dir first — the point
-      // is that none of that runs for a dead pid.
+      // Spawn-and-reap so the pid is real but dead. A tokenless record is the
+      // legacy path: nothing is alive to verify or signal, but leaving the
+      // file would keep refusing every `open` in this session behind a manual
+      // `rm` — so `stop` clears it and reports that nothing was stopped.
       const child = spawn(process.execPath, ["-e", ""], { stdio: "ignore" });
       const deadPid = child.pid as number;
       await new Promise<void>((r) => child.on("exit", () => r()));
@@ -1884,8 +1885,8 @@ describe("stopBridge", () => {
       const killSpy = vi.spyOn(process, "kill");
       await expect(stopBridge()).resolves.toBe(false);
       expect(killSpy.mock.calls.filter(([, s]) => s !== 0)).toEqual([]);
-      // The dead record is left in place for a future reap, not deleted.
-      expect(existsSync(pidFile)).toBe(true);
+      // Retired, not preserved: the record named a dead pid and is gone.
+      expect(existsSync(pidFile)).toBe(false);
     } finally {
       sandboxEnvTeardown(home);
     }
@@ -2253,6 +2254,97 @@ describe("ensureBridge — record handling", () => {
     }
   });
 
+  it("clears a recycled pid's stale record and spawns a replacement without signalling", async () => {
+    const { home, pidFile } = useSandboxedSession("ensure-recycled");
+    // The reuse probe must fail (deep: "error") so ensureBridge reaches the
+    // terminate decision; the respawn poll's deep probe must then succeed, so
+    // the fake's outcome is flipped inside the spawn stub — the one callback
+    // that runs after the record is cleared and before the poll starts.
+    const opts = {
+      shallow: "ok",
+      deep: "error",
+      session: "ensure-recycled",
+    } as { shallow: "ok"; deep: "ok" | "error"; session: string };
+    const fake = await startFakeBridgeServer(opts);
+    const child = spawnMarkedBridge("setTimeout(() => {}, 30000);");
+    try {
+      process.env.CHROME_DEVTOOLS_AXI_PORT = String(fake.port);
+      // A startedAt that names no live process: the pid holds a marked bridge,
+      // but not the one this record was written for.
+      writeFileSync(
+        pidFile,
+        JSON.stringify({
+          pid: child.pid as number,
+          port: fake.port,
+          token: "recycled-token",
+          startedAt: "Mon Sep  1 00:00:00 2020",
+        }),
+      );
+      const spawnBridge = vi.fn(() => {
+        opts.deep = "ok";
+        return new EventEmitter() as unknown as SpawnedBridge;
+      });
+
+      await expect(ensureBridge(spawnBridge)).resolves.toBe(fake.port);
+
+      expect(spawnBridge).toHaveBeenCalledTimes(1);
+      // The provably stale record is gone; a replacement was started; and the
+      // unrelated process behind the recycled pid was never signalled.
+      expect(existsSync(pidFile)).toBe(false);
+      expect(() => process.kill(child.pid as number, 0)).not.toThrow();
+    } finally {
+      await fake.close();
+      try {
+        process.kill(child.pid as number, "SIGKILL");
+      } catch {
+        // Already gone.
+      }
+      sandboxEnvTeardown(home);
+    }
+  });
+
+  it("still terminates a matching bridge whose deep probe failed", async () => {
+    const { home, pidFile } = useSandboxedSession("ensure-unhealthy");
+    const opts = {
+      shallow: "ok",
+      deep: "error",
+      session: "ensure-unhealthy",
+    } as { shallow: "ok"; deep: "ok" | "error"; session: string };
+    const fake = await startFakeBridgeServer(opts);
+    const child = spawnMarkedBridge("setTimeout(() => {}, 30000);");
+    try {
+      process.env.CHROME_DEVTOOLS_AXI_PORT = String(fake.port);
+      writeFileSync(
+        pidFile,
+        JSON.stringify({
+          pid: child.pid as number,
+          port: fake.port,
+          token: "unhealthy-token",
+          startedAt: startedAtOf(child.pid as number),
+        }),
+      );
+      const spawnBridge = vi.fn(() => {
+        opts.deep = "ok";
+        return new EventEmitter() as unknown as SpawnedBridge;
+      });
+
+      await expect(ensureBridge(spawnBridge)).resolves.toBe(fake.port);
+
+      expect(spawnBridge).toHaveBeenCalledTimes(1);
+      // The identity matched, so the unhealthy bridge was terminated rather
+      // than merely recorded over: its pid no longer exists.
+      expect(() => process.kill(child.pid as number, 0)).toThrow();
+    } finally {
+      await fake.close();
+      try {
+        process.kill(child.pid as number, "SIGKILL");
+      } catch {
+        // Already gone.
+      }
+      sandboxEnvTeardown(home);
+    }
+  });
+
   it("refuses to adopt a tokenless legacy record and names the stop remedy", async () => {
     const { home, pidFile } = useSandboxedSession("ensure-worker");
     try {
@@ -2268,6 +2360,39 @@ describe("ensureBridge — record handling", () => {
       });
       expect(spawnBridge).not.toHaveBeenCalled();
     } finally {
+      sandboxEnvTeardown(home);
+    }
+  });
+
+  it("clears a dead tokenless record and starts a fresh bridge", async () => {
+    const { home, pidFile } = useSandboxedSession("ensure-dead-legacy");
+    const fake = await startFakeBridgeServer({
+      shallow: "ok",
+      deep: "ok",
+      session: "ensure-dead-legacy",
+    });
+    try {
+      process.env.CHROME_DEVTOOLS_AXI_PORT = String(fake.port);
+      // A pid that is provably gone: exit immediately, then wait for the table
+      // entry to disappear so isProcessAlive cannot race the reap.
+      const dead = spawnMarkedBridge("process.exit(0);");
+      await new Promise<void>((resolve) => dead.on("exit", () => resolve()));
+      writeFileSync(
+        pidFile,
+        JSON.stringify({ pid: dead.pid as number, port: fake.port }),
+      );
+      const spawnBridge = vi.fn(
+        () => new EventEmitter() as unknown as SpawnedBridge,
+      );
+
+      await expect(ensureBridge(spawnBridge)).resolves.toBe(fake.port);
+
+      // The inert record was retired instead of refusing forever, and the
+      // replacement bridge took the session.
+      expect(spawnBridge).toHaveBeenCalledTimes(1);
+      expect(existsSync(pidFile)).toBe(false);
+    } finally {
+      await fake.close();
       sandboxEnvTeardown(home);
     }
   });
@@ -2352,6 +2477,21 @@ describe("collectRootDirs", () => {
       ).toEqual([process.cwd()]);
     } finally {
       rmSync(outputRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("resolves relative output paths to absolute roots", () => {
+    // A relative root would cross into the detached bridge process and be
+    // re-resolved against *its* cwd — wherever the session's first command
+    // happened to run — naming a different directory than the CLI meant.
+    const fileRoots = collectRootDirs("get_network_request", {
+      responseFilePath: "out/resp.json",
+    });
+    const dirRoots = collectRootDirs("lighthouse_audit", {
+      outputDirPath: "./reports/run-1",
+    });
+    for (const root of [...fileRoots, ...dirRoots]) {
+      expect(isAbsolute(root), `root must be absolute: ${root}`).toBe(true);
     }
   });
 

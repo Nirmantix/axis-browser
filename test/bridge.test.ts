@@ -2034,6 +2034,43 @@ describe("createRootsAwareBridgeClient", () => {
     }
   });
 
+  it("proceeds with the tool call when roots negotiation times out", async () => {
+    const workspaceRoot = resolve("workspace");
+    vi.useFakeTimers();
+    try {
+      let toolCalls = 0;
+      const client = {
+        // The server never registers a roots handler response, so the fetch
+        // never resolves and applyRootsNow can only time out.
+        setRequestHandler: () => {},
+        notification: async () => {},
+        ping: async () => ({}),
+        listTools: async () => ({ tools: [] }),
+        callTool: async () => {
+          toolCalls += 1;
+          return { content: [{ type: "text", text: "ran" }] };
+        },
+        close: async () => {},
+      };
+      const rootsClient = createRootsAwareBridgeClient(client as any);
+
+      const pending = rootsClient.callTool(
+        { name: "take_snapshot", arguments: {} } as any,
+        [workspaceRoot],
+      );
+      await vi.advanceTimersByTimeAsync(2_100);
+
+      // Roots are a precursor, not a precondition: the browser command still
+      // runs, and only the negotiation degraded.
+      await expect(pending).resolves.toMatchObject({
+        content: [{ type: "text", text: "ran" }],
+      });
+      expect(toolCalls).toBe(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("renegotiates previously confirmed roots after ambiguous failure", async () => {
     const firstRoot = resolve("first-root");
     const secondRoot = resolve("second-root");

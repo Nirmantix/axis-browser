@@ -27,3 +27,13 @@ function readPackageVersion(): string {
 }
 
 export const VERSION = readPackageVersion();
+
+/**
+ * The command name this fork documents and suggests: the `axis-browser` bin,
+ * not the upstream-inherited `chrome-devtools-axi` alias. Every string that
+ * tells the operator what to type next builds from this constant, and
+ * `test/command-name.test.ts` holds the whole repo to it — the alias may be
+ * *shown* in a list of all three bins, but never presented as the command to
+ * run.
+ */
+export const PRIMARY_COMMAND_NAME = "axis-browser";

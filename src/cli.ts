@@ -37,7 +37,7 @@ import { installHooksOrThrow } from "./hooks.js";
 import { parsePagesList } from "./pages.js";
 import { overlaySessionSelected } from "./selected-page.js";
 import { resolveOutputPath } from "./paths.js";
-import { VERSION } from "./version.js";
+import { PRIMARY_COMMAND_NAME, VERSION } from "./version.js";
 import { captureFreshSnapshot, parseUidFresh } from "./uid-freshness.js";
 
 export { parsePagesList };
@@ -332,7 +332,7 @@ script API (available as global \`page\`):
   await page.press(key)             Press a keyboard key
   await page.back()                 Navigate back
 
-click and fill accept either @uid refs (from snapshot) or CSS selectors. UID actions verify that the page has not mutated since the snapshot and fail with STALE_REF when freshness cannot be confirmed, including for legacy untagged refs.
+click and fill accept either @uid refs (from snapshot) or CSS selectors. A tagged @uid ref goes stale only when the page's snapshot generation has moved past it — a later snapshot or a navigation — so unrelated DOM mutations do not invalidate it; untagged legacy refs are accepted without a freshness check.
 page.eval accepts functions, arrow functions, and bare expression strings; no-arg IIFE strings are unwrapped automatically.
 
 examples:
@@ -1975,7 +1975,9 @@ function validateCommandFlags(
       throw new CdpError(
         `Unknown flag ${arg} for \`${command}\``,
         "VALIDATION_ERROR",
-        [`Run \`chrome-devtools-axi ${command} --help\` to see valid flags`],
+        [
+          `Run \`${PRIMARY_COMMAND_NAME} ${command} --help\` to see valid flags`,
+        ],
       );
     }
     positionalArgs += 1;
