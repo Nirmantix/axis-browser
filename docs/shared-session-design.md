@@ -811,7 +811,9 @@ Ulaa (pid 96228) untouched.
 **Caveat that remains:** the pipe transport is supplied by upstream `chrome-devtools-mcp`,
 not by axis. An upstream change to its default launch could still alter behavior without
 any axis change — which is why the fork pins `chrome-devtools-mcp` at exactly **1.9.0**,
-spawns it package-locally, and has `doctor` assert mode and transport explicitly.
+spawns it package-locally (default stdio mode; an explicit `CHROME_DEVTOOLS_AXI_MCP_PATH`
+override selects the operator's chosen build), and has `doctor` assert mode and transport
+explicitly.
 *(Updated 2026-09-27: `CHROME_DEVTOOLS_AXI_MODE` now lives in `src/mode.ts`; the "nowhere
 in `src/`" sentence was true at writing and is no longer.)*
 

@@ -52,7 +52,7 @@
             <a href="https://github.com/Nirmantix/axis-browser" target="_blank" rel="noopener">GitHub</a>
             <ul>
               <li>Use for snapshots, refs, console, network, Lighthouse, perf, and heap.</li>
-              <li>Spawns a pinned package-local <code>chrome-devtools-mcp@1.9.0</code> with <code>--redactNetworkHeaders</code>; never a global install or <code>npx …@latest</code>.</li>
+              <li>Default stdio mode spawns a pinned package-local <code>chrome-devtools-mcp@1.9.0</code> with <code>--redactNetworkHeaders</code> — never a global install or <code>npx …@latest</code>. An explicit <code>CHROME_DEVTOOLS_AXI_MCP_PATH</code> override selects the build you point it at.</li>
               <li>Does not own an LLM loop. Host agents compose commands.</li>
             </ul>
           </article>
