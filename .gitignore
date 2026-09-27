@@ -18,9 +18,17 @@ maintainance.md
 chrome-devtools-axi-repomix-full.xml
 *.repomix-*.xml
 
-# Local/private personal guides and skills
+# Local/private personal guides and skills. Exception: the microsite
+# validator is tracked because the site verification gate depends on it —
+# everything else under skills/ (including the nested browser-bay checkout)
+# stays local.
 .local-docs/
-skills/
+skills/*
+!skills/project-guide-microsite/
+skills/project-guide-microsite/*
+!skills/project-guide-microsite/scripts/
+skills/project-guide-microsite/scripts/*
+!skills/project-guide-microsite/scripts/validate_static_site.py
 personal-browser-automation-guide.md
 
 # Vendored browser tools (installed standalone, not part of this repo)
