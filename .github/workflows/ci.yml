@@ -218,3 +218,17 @@ jobs:
           test/state-dir.test.ts
           test/process-identity.test.ts
           test/sessions.test.ts
+
+  # The static guide site and its validator (skills/project-guide-microsite/
+  # scripts/validate_static_site.py) are both tracked, so gate edits to either
+  # on the same check the manual verification step runs: unresolved template
+  # markers, lorem ipsum, broken relative links, and the opt-in Design System
+  # v2 rules. Stdlib-only Python; ubuntu-latest ships a suitable python3.
+  microsite:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Static guide site validates
+        run: >
+          python3 skills/project-guide-microsite/scripts/validate_static_site.py
+          project-guide-site
