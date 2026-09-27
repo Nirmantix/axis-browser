@@ -264,13 +264,31 @@ has a decided answer rather than being left to rot:
   our direct TOON remains `^4.1.1` and `chrome-devtools-mcp`'s optional peer
   still resolves there, so no output format changes. Do not widen that override
   to 4.x without re-reviewing `test/toon-output.test.ts`.
-- Everything else sits under `@modelcontextprotocol/sdk`'s **server** stack
+- Everything else sits under `@modelcontextprotocol/sdk`'s dependency graph
   (hono, `@hono/node-server`, express, `express-rate-limit`, qs, ajv→`fast-uri`,
-  `ip-address`). This CLI imports only `client/index`, `client/stdio`,
-  `client/streamableHttp`, `shared/transport` and `types`; none of them reference
-  hono or express, and those imports exist only under the SDK's `esm/server/*`,
-  which is never loaded. The bridge is this fork's own `node:http` server, not an
-  SDK one. Re-check that claim if a future sync imports anything from
+  `ip-address`). Reachability is **measured, not assumed**: `test/fixtures/module-trace-hook.mjs`
+  records every module the loader actually resolves, and both processes this CLI
+  runs were traced.
+  - The **bridge** imports only `client/index`, `client/stdio`,
+    `client/streamableHttp`, `shared/transport` and `types`. Across a full
+    real-browser run it resolved 796 modules and loaded **zero** of hono,
+    `@hono/node-server`, express, `express-rate-limit`, qs, `fast-uri` or
+    `ip-address`; nothing under the SDK's `esm/server/*` is reached. The bridge is
+    this fork's own `node:http` server, not an SDK one.
+  - `ajv` **is** loaded on that client path, through the SDK's
+    `validation/ajv-provider.js`. `fast-uri` still is not, because ajv reaches it
+    only via `dist/runtime/uri.js`, which compiles cross-document `$ref`/`$id`
+    resolution and is not exercised by MCP tool schemas. The advisories are
+    therefore unreachable for a *narrower* reason than "ajv is absent" — do not
+    restate it that way, and re-measure if a schema with `$id`/`$ref` ever joins
+    the validated path.
+  - `chrome-devtools-mcp@1.9.0` is a **separate spawned process** that resolves
+    the same SDK copy out of this tree, so the bridge's trace proves nothing
+    about it and it needs its own. Driven through a real `initialize` +
+    `tools/list` handshake it resolved 88 modules and loaded no ajv, `fast-uri`,
+    qs, express, hono or `ip-address`: it is stdio-only and starts no SDK HTTP
+    server. Re-measure it if a shared/HTTP MCP mode ever becomes a default.
+  Re-check all three if a future sync imports anything from
   `@modelcontextprotocol/sdk/server/*` — at that point these advisories become
   live and must be fixed, not explained.
 - The SDK release that could move those transitive deps is `1.30.1`, which is
