@@ -268,7 +268,13 @@ has a decided answer rather than being left to rot:
   (hono, `@hono/node-server`, express, `express-rate-limit`, qs, ajv→`fast-uri`,
   `ip-address`). Reachability is **measured, not assumed**: `test/fixtures/module-trace-hook.mjs`
   records every module the loader actually resolves, and both processes this CLI
-  runs were traced.
+  runs were traced. The client-side half of that measurement is a standing
+  gate: `test/sdk-reachability.test.ts` re-traces the entrypoint graph on
+  every suite run, fails if `src/bridge.ts` imports any SDK specifier outside
+  the reviewed set, and fails if a dependency bump makes any audited package
+  load — so a lockfile change that invalidates this position fails CI rather
+  than quietly ageing it into an assumption. Re-measure the spawned-MCP half
+  by hand when `chrome-devtools-mcp`'s pin moves.
   - The **bridge** imports only `client/index`, `client/stdio`,
     `client/streamableHttp`, `shared/transport` and `types`. Across a full
     real-browser run it resolved 796 modules and loaded **zero** of hono,
