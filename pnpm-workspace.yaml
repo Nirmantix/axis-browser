@@ -19,3 +19,16 @@ allowBuilds:
 # too, so this changes no output format.
 overrides:
   axi-sdk-js>@toon-format/toon: ^2.3.1
+  # 2026-09-27 audit: every high-severity advisory in the graph sits in the
+  # MCP SDK's transitive dependencies, plus one dev-only via vitest. None is
+  # practically reachable from this CLI (fast-uri only resolves ajv $refs and
+  # our schemas are local literals; ip-address is only used by the SDK's
+  # express-based HTTP transport, which the bridge never starts - MCP runs
+  # over stdio; nanoid is dev-only test tooling), but every patched floor
+  # below was already past minimumReleaseAge, so the fixes cost one lockfile
+  # refresh. Scoped to the direct parent so no future cross-major resolution
+  # is silently rewritten.
+  ajv>fast-uri: ^3.1.6            # GHSA-7p8r-x3mc-p8w7, -v2hh-gcrm-f6hx, -jqff-g426-hqxp, -5jgf-p345-68v8, -f65p-4m7j-42xc
+  ajv-formats>fast-uri: ^3.1.6
+  express-rate-limit>ip-address: ^10.3.1  # GHSA-mwp4-54f8-5fhr
+  postcss>nanoid: ^3.3.18          # infinite-loop-with-zero-size advisory, dev-only
