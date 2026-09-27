@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, it, expect, vi } from "vitest";
 import { getCommandHelp, parseFillFormArgs } from "../src/cli.js";
-import { parseUidFresh } from "../src/refs.js";
+import { parseUidFresh } from "../src/uid-freshness.js";
 import * as generation from "../src/generation.js";
 
 /** A page that reports it is on snapshot generation `n`. */
@@ -181,5 +181,39 @@ describe("parseUidFresh (generation validation)", () => {
     await expect(parseUidFresh("@g7:237_15", brokenProbe)).resolves.toBe(
       "237_15",
     );
+  });
+
+  it.each(["@g7:237_15", "@237_15"])(
+    "keeps %s valid when the page reports mutations at the same generation",
+    async (ref) => {
+      // Upstream 0.1.35 invalidates a ref as soon as its MutationObserver saw
+      // any DOM activity. This fork deliberately does not: the observer drives
+      // the capture-side re-capture in captureFreshSnapshot, not validation.
+      // Otherwise one spinner tick between `snapshot` and `click` would stale
+      // every ref in the tree.
+      const callTool = vi
+        .fn()
+        .mockResolvedValue(
+          'Script ran on page and returned:\n```json\n{"generation":7,"mutations":1}\n```',
+        );
+
+      await expect(parseUidFresh(ref, callTool)).resolves.toBe(
+        ref.replace(/^@?(?:g\d+:)?/, ""),
+      );
+    },
+  );
+
+  it("accepts an untagged legacy ref without probing a page that has no marker", async () => {
+    // Upstream rejects untagged refs when the freshness marker is missing. The
+    // fork keeps accepting them: an untagged ref predates generations entirely,
+    // so there is no tag to contradict, and probing only adds a round trip.
+    const callTool = vi
+      .fn()
+      .mockResolvedValue(
+        "Script ran on page and returned:\n```json\nnull\n```",
+      );
+
+    await expect(parseUidFresh("@237_15", callTool)).resolves.toBe("237_15");
+    expect(callTool).not.toHaveBeenCalled();
   });
 });

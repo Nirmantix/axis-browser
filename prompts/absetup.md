@@ -27,7 +27,8 @@ c="${BROWSER_BAY_DIR:-${BROWSER_SKILL_DIR:-}}"
 for p in "${AXIS_BROWSER_HOME:+$AXIS_BROWSER_HOME/skills}" "${AXIS_PORTABLE_SKILLS_DIR:-}" \
          ./skills "$HOME/.codex/skills" "$HOME/.config/agents/skills" \
          "$HOME/.claude/skills" "$HOME/.config/opencode/skills" \
-         "$HOME/.pi/agent/skills" "$HOME/.agents/skills"; do
+         "$HOME/.pi/agent/skills" "$HOME/.agents/skills" \
+         "$HOME/.cursor/skills" "$HOME/.kiro/skills" "$HOME/.gemini/skills"; do
   [ -n "$BB" ] && break
   [ -n "$p" ] || continue
   for n in browser-bay browser-skill; do
@@ -44,14 +45,23 @@ Use `"$BB"` in place of `"$BROWSER_BAY_DIR"` in the commands below.
    bash "$BB/scripts/check-prerequisites.sh" --install
 
 4. Treat install groups exactly this way:
-   - Core machine tools: Axis Browser CLI, Browser Harness, Microsoft Playwright CLI.
-   - Optional tools: Firecrawl CLI/MCP, BrowserAct CLI (+ skill handshake via
-     `browser-act get-skills main` / `get-skills core --skill-version`), Notte,
-     CloakBrowser, agent-browser.
+   - Core machine tools: Axis Browser CLI (Node.js >=22.13) and Browser Harness.
+   - Optional tools: Microsoft Playwright CLI (`@playwright/cli`, command
+     `playwright-cli`) and Playwright MCP (`@playwright/mcp`) — each separately
+     published and user-managed, NOT bundled with the Playwright library; Firecrawl
+     CLI/MCP (MCP config is user-local, never written by the setup script);
+     BrowserAct CLI (+ skill handshake via `browser-act get-skills main` /
+     `get-skills core --skill-version`); Notte; CloakBrowser; agent-browser
+     (Node.js 24+); Pa11y (Node.js ^22.13.0 || >=24).
    - BrowserAct **remote MCP** is optional and should be **project-scoped**
      (`claude mcp add --scope project`), not a global install — see
      docs/browseract-mcp-per-project.md when present.
-   - Project-local libraries: Playwright and CloakBrowser must be installed inside target projects, not globally.
+   - Project-local libraries: Playwright and CloakBrowser must be installed inside
+     target projects, not globally. Scaffold new suites only with
+     `npm init playwright@latest` (create-playwright has no version matching
+     Playwright's, so never pin it), then pin the Playwright packages inside the
+     created project per the skill's `references/tool-stack.md`, and use
+     project-local `npx playwright` for every Playwright command.
    - Webwright is an external pattern/plugin reference, not an Axis Browser workflow install target.
    - Remind: project `.tmp/` hygiene is **not** machine setup — each app needs
      `ensure-project-ready.sh` / `setup.sh` in its own CWD.

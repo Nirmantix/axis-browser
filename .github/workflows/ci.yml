@@ -41,12 +41,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # The 20.11 floor that engines.node claims cannot run this job: pnpm
-        # 11.1.1 (packageManager) requires Node >=22.13, so `pnpm install` fails
-        # on the toolchain before any of our code executes. That entry was a
-        # permanently-red check testing nothing. The floor is verified instead
-        # by `engines-floor` below, which smoke-tests the built artifact on
-        # 20.11 with plain node — no pnpm involved.
+        # Supported LTS lines. The `engines.node` floor itself (22.13) is not
+        # guesswork left to this matrix: the `engines-floor` job below installs
+        # the packed tarball on exactly that Node and drives a real browser.
         node-version: ["22", "24"]
     steps:
       - uses: actions/checkout@v4
@@ -66,15 +63,17 @@ jobs:
       - run: pnpm test
 
   engines-floor:
-    # engines.node claims ">=20.11" (import.meta.dirname landed there) and no
-    # other job runs on it, so without this the floor is a promise nothing checks.
+    # engines.node claims ">=22.13", and this job is the only thing that proves
+    # it. It proves it on the artifact a user actually installs — the packed
+    # tarball, exercised through its `bin` wiring rather than by path. Running
+    # dist/ directly skips that wiring, which is exactly what broke once before:
+    # every alias pointed at a missing dist/bin entry, so the published CLI did
+    # not exist (see the first "Fixed" entry in CHANGELOG.md).
     #
-    # This installs the packed tarball rather than executing dist/ in place. The
-    # difference matters: running dist/ by path skips the `bin` wiring entirely,
-    # and that wiring is exactly what broke once before — every alias pointed at
-    # a missing dist/bin entry, so the published CLI did not exist (see the first
-    # "Fixed" entry in CHANGELOG.md). A floor check that cannot catch that is not
-    # worth having.
+    # It also goes past --version/--help into the browser path. The floor moved
+    # 20.11 -> 22.13 in the 0.1.35 sync precisely because 20.11 had no
+    # browser-path coverage anywhere: a version string printed on a Node where
+    # nothing else was tested is not a supported floor.
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -83,8 +82,8 @@ jobs:
 
       - uses: pnpm/action-setup@v4
 
-      # pnpm 11 requires Node >=22.13, so pack on a Node it supports. `npm pack`
-      # runs `prepare`, which is what builds dist/ into the tarball.
+      # Pack on a current Node. `npm pack` runs `prepare`, which is what builds
+      # dist/ into the tarball.
       - uses: actions/setup-node@v6
         with:
           node-version: 24
@@ -98,7 +97,7 @@ jobs:
       # Everything below runs on the floor itself, with plain npm and node.
       - uses: actions/setup-node@v6
         with:
-          node-version: "20.11"
+          node-version: "22.13"
 
       - name: Installed CLI works on the engines.node floor
         run: |
@@ -112,3 +111,110 @@ jobs:
           ./node_modules/.bin/axis-browser --help > /dev/null
           ./node_modules/.bin/axib --version
           ./node_modules/.bin/chrome-devtools-axi --version
+
+      # Chrome presence is asserted, not assumed. Skipping the browser path when
+      # Chrome is missing would silently degrade this job back into the
+      # version-only check it replaces.
+      - name: Chrome is available for the browser path
+        run: google-chrome --version
+
+      - name: Read-only reports run on the floor
+        run: |
+          cd "$RUNNER_TEMP/floor"
+          ./node_modules/.bin/axis-browser setup --json > setup.json
+          ./node_modules/.bin/axis-browser doctor --json > doctor.json
+          node -e 'for (const f of ["setup.json","doctor.json"]) { JSON.parse(require("node:fs").readFileSync(f,"utf8")); console.log(f+" is valid JSON"); }'
+
+      - name: Ephemeral session drives a local page on the floor
+        run: |
+          cd "$RUNNER_TEMP/floor"
+          # No external site: a loopback page keeps the check hermetic and
+          # offline-safe, and ephemeral mode guarantees no profile is reused and
+          # no logged-in browser is touched.
+          node -e 'require("node:http").createServer((_,r)=>{r.setHeader("Content-Type","text/html");r.end("<title>ci-floor</title><main><input value=\"x\"><button>ok</button></main>")}).listen(8877,"127.0.0.1")' &
+          server=$!
+          for _ in $(seq 1 50); do
+            curl -sf http://127.0.0.1:8877/ > /dev/null && break
+            sleep 0.2
+          done
+          curl -sf http://127.0.0.1:8877/ > /dev/null
+
+          unset CHROME_DEVTOOLS_AXI_AUTO_CONNECT CHROME_DEVTOOLS_AXI_BROWSER_URL
+          unset CHROME_DEVTOOLS_AXI_PORT CHROME_DEVTOOLS_AXI_MCP_SERVER_URL
+          export CHROME_DEVTOOLS_AXI_MODE=ephemeral
+          export CHROME_DEVTOOLS_AXI_SESSION=ci-floor
+
+          ./node_modules/.bin/axis-browser open http://127.0.0.1:8877 | tee open.txt
+          grep -q "127.0.0.1:8877" open.txt
+          ./node_modules/.bin/axis-browser snapshot | tee snapshot.txt
+          grep -q "button" snapshot.txt
+          # A passive home view must not invalidate the refs it just printed.
+          ./node_modules/.bin/axis-browser > /dev/null
+          # The security gates, asserted against the artifact a user installs and
+          # a bridge that is really running. Both are cheap here and impossible
+          # to fake: a 401 means the token gate is ahead of routing, and a 403
+          # for a foreign Host means the anti-rebinding gate is ahead of that.
+          # The record's mode and token shape are checked in the same breath —
+          # a 0644 record would hand the capability to every local user, and the
+          # token itself is never printed.
+          record="$HOME/.axis-browser/sessions/ci-floor/bridge.pid"
+          node -e '
+            const fs = require("node:fs");
+            const [record, out] = process.argv.slice(1);
+            const mode = fs.statSync(record).mode & 0o777;
+            if (mode !== 0o600) {
+              console.error("bridge record mode is 0" + mode.toString(8) + ", expected 0600");
+              process.exit(1);
+            }
+            const rec = JSON.parse(fs.readFileSync(record, "utf8"));
+            if (!/^[0-9a-f]{64}$/.test(rec.token ?? "")) {
+              console.error("bridge record has no 64-hex-char capability token");
+              process.exit(1);
+            }
+            if (typeof rec.startedAt !== "string" || rec.startedAt.length === 0) {
+              console.error("bridge record has no recorded start time; stop could never verify it");
+              process.exit(1);
+            }
+            fs.writeFileSync(out, String(rec.port));
+          ' "$record" port.txt
+          bridge_port=$(cat port.txt)
+          code=$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:$bridge_port/health")
+          [ "$code" = "401" ] || { echo "expected 401 without a capability token, got $code"; exit 1; }
+          code=$(curl -s -o /dev/null -w '%{http_code}' -H 'Host: evil.attacker.com' "http://127.0.0.1:$bridge_port/health")
+          [ "$code" = "403" ] || { echo "expected 403 for a rebound Host, got $code"; exit 1; }
+          echo "bridge refuses unauthenticated (401) and rebound (403) callers"
+          ./node_modules/.bin/axis-browser stop
+          kill "$server" 2>/dev/null || true
+
+  windows-state-security:
+    # The only place the Windows branches of the state hardening and the process
+    # identity probe are ever executed: `icacls` repair, effective-ACE
+    # verification, SID translation, and the `Get-CimInstance` start-time read
+    # that `stop`/`reap` rely on before signalling anything. On POSIX runners
+    # those tests are skipped, so without this job a regression in them would be
+    # invisible until a Windows user hit it.
+    #
+    # Scoped to the platform-sensitive units rather than the whole suite: the
+    # rest drives `ps -axo`, spawns detached process groups and launches Chrome,
+    # none of which is portable.
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run build
+      - name: State hardening and identity probing work on Windows
+        run: >
+          pnpm exec vitest run
+          test/state-dir.test.ts
+          test/process-identity.test.ts
+          test/sessions.test.ts

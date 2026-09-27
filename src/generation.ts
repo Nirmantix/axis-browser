@@ -9,6 +9,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { resolveSessionStateDir } from "./sessions.js";
+import { PRIVATE_DIR_MODE } from "./state-dir.js";
 
 /** Path to the active session's snapshot-generation counter file. */
 function genFile(): string {
@@ -30,7 +31,10 @@ export function bumpGeneration(): number {
   const next = getCurrentGeneration() + 1;
   const file = genFile();
   try {
-    mkdirSync(dirname(file), { recursive: true });
+    // Owner-only, for the same reason as selected-page.ts: this directory also
+    // holds the bridge capability record, and the CLI can create it before any
+    // bridge runs. The expensive hardenStateDirs probe stays on the bridge path.
+    mkdirSync(dirname(file), { recursive: true, mode: PRIVATE_DIR_MODE });
     writeFileSync(file, String(next));
   } catch {
     // Best-effort: a write failure still returns the bumped value so the

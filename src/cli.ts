@@ -1,6 +1,3 @@
-import { existsSync, readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
 import { encode } from "@toon-format/toon";
 import { runAxiCli } from "axi-sdk-js";
 import {
@@ -11,9 +8,7 @@ import {
   stopBridge,
 } from "./client.js";
 import { isRecoverableOpenError } from "./errors.js";
-import { bumpGeneration } from "./generation.js";
 import { readStdin, runScript, wrapJsExpression } from "./run.js";
-import { PAGE_GENERATION_KEY, parseUidFresh, type ToolCaller } from "./refs.js";
 import {
   formatSetupReport,
   parseSetupArgs,
@@ -24,8 +19,6 @@ import {
 import {
   countRefs,
   extractTitle,
-  parseEvalOutput,
-  stampSnapshotGeneration,
   stripSnapshotHeader,
   truncateSnapshot,
   truncateText,
@@ -41,12 +34,17 @@ import {
 } from "./reap.js";
 import { resolveSessionName } from "./sessions.js";
 import { installHooksOrThrow } from "./hooks.js";
+import { parsePagesList } from "./pages.js";
+import { overlaySessionSelected } from "./selected-page.js";
 import { resolveOutputPath } from "./paths.js";
+import { PRIMARY_COMMAND_NAME, VERSION } from "./version.js";
+import { captureFreshSnapshot, parseUidFresh } from "./uid-freshness.js";
+
+export { parsePagesList };
 
 const HOME_DESCRIPTION =
   "Axis Browser is a fast, agent-first CLI for Chrome automation and shared CDP workflows. Also runs as the `axib` shorthand.";
 
-const VERSION = readPackageVersion();
 const RAW_STDOUT_MARKER = "__CHROME_DEVTOOLS_AXI_RAW__";
 
 type CliStdout = Pick<NodeJS.WriteStream, "write">;
@@ -117,16 +115,32 @@ environment:
                                     http(s):// uses --browserUrl (fetches /json/version).
                                     ws(s):// uses --wsEndpoint (direct WebSocket).
                                     e.g. "http://127.0.0.1:9222" or "wss://cluster.example/launch"
-  CHROME_DEVTOOLS_AXI_WS_HEADERS    JSON headers for ws(s):// endpoints (only with BROWSER_URL=wss?://)
+  CHROME_DEVTOOLS_AXI_WS_HEADERS    JSON headers for ws(s):// endpoints (only with BROWSER_URL=wss?://).
+                                    Refused by default: chrome-devtools-mcp accepts these only as a
+                                    command-line argument, which any other local process can read
+                                    from the process table. Opt in per invocation with
+                                    CHROME_DEVTOOLS_AXI_ALLOW_WS_HEADERS_ARGV=1. The value is never
+                                    echoed back.
                                     e.g. '{"Authorization":"Bearer token"}'
   CHROME_DEVTOOLS_AXI_USER_DATA_DIR Persistent Chrome profile directory (skips --isolated mode)
                                     e.g. "/path/to/.chrome-profile"
-  CHROME_DEVTOOLS_AXI_MCP_PATH      Absolute path to a chrome-devtools-mcp script. When set, the
-                                    bridge spawns 'node \$MCP_PATH' directly instead of
-                                    'npx -y chrome-devtools-mcp@latest'. Avoids ~30s npx bootstrap
-                                    on slow/cold systems. Recommended:
-                                      npm install -g chrome-devtools-mcp
-                                      export CHROME_DEVTOOLS_AXI_MCP_PATH="\$(npm prefix -g)/lib/node_modules/chrome-devtools-mcp/build/src/bin/chrome-devtools-mcp.js"
+  CHROME_DEVTOOLS_AXI_MCP_PATH      Absolute path to a chrome-devtools-mcp build you reviewed
+                                    yourself. Optional — by default the bridge spawns the
+                                    chrome-devtools-mcp this package pins as its own dependency.
+                                    There is no global-install scan and no 'npx …@latest' download,
+                                    so what runs is what this release was tested against.
+                                    With MCP_SERVER_URL also set, selects stdio proxy mode:
+                                    the executable must advertise --serverUrl in --help.
+  CHROME_DEVTOOLS_AXI_MCP_SERVER_URL
+                                    Shared MCP service URL — bring your own server. With MCP_PATH,
+                                    starts a verified stdio proxy and passes --server-url=<URL>.
+                                    Without MCP_PATH, connects directly over Streamable HTTP (no
+                                    local MCP child); use an absolute http(s) MCP endpoint.
+                                    The pinned official chrome-devtools-mcp advertises neither
+                                    --serverUrl nor an HTTP listener, so both modes require a server
+                                    build that adds them, and that server must redact sensitive
+                                    headers itself. If unset or blank, the bridge uses standalone
+                                    stdio mode.
   CHROME_DEVTOOLS_AXI_BRIDGE_TIMEOUT_MS
                                     Bridge readiness deadline in ms (default: 30000, min: 1000)
 
@@ -306,19 +320,19 @@ Pipe a script via heredoc or stdin — no file path needed.
 script API (available as global \`page\`):
   await page.open(url)              Navigate, returns { url, status }
   await page.eval(jsOrFn)           Evaluate JS in the page, returns the value
-  await page.snapshot()             Get the accessibility tree as text
+  await page.snapshot()             Get the generation-tagged accessibility tree
   await page.wait(ms)               Wait by duration
   await page.wait(selector)         Wait for CSS selector (30s timeout)
   await page.wait(selector, ms)     Wait for CSS selector with timeout
-  await page.click("@uid")          Click an element by ref
+  await page.click("@uid")          Click an element by fresh ref
   await page.click(selector)        Click via CSS selector
-  await page.fill("@uid", text)     Fill a form field by ref
-  await page.fill(selector, text)   Fill via CSS selector
+  await page.fill("@uid", text)     Fill a form field by fresh ref
+  await page.fill(selector, text)   Fill via CSS selector, including controlled fields
   await page.type(text)             Type at the focused element
   await page.press(key)             Press a keyboard key
   await page.back()                 Navigate back
 
-click and fill accept either @uid refs (from snapshot) or CSS selectors.
+click and fill accept either @uid refs (from snapshot) or CSS selectors. A tagged @uid ref goes stale only when the page's snapshot generation has moved past it — a later snapshot or a navigation — so unrelated DOM mutations do not invalidate it; untagged legacy refs are accepted without a freshness check.
 page.eval accepts functions, arrow functions, and bare expression strings; no-arg IIFE strings are unwrapped automatically.
 
 examples:
@@ -350,6 +364,49 @@ Stop the bridge server and close the browser.
 
 examples:
   axis-browser stop`,
+
+  doctor: `usage: axis-browser doctor [--json]
+Preflight the machine, profile, and bridge state before a browser task.
+
+Read-only: it changes nothing. Reports the active mode, the profile in use and
+whether another process holds its lock, bridge state, and a "remedies" array of
+syntactically runnable commands. Runnable is not the same as safe to run
+unattended — confirm the destructive ones with a human first.
+
+flags:
+  --json  Emit the report as JSON instead of the rendered summary
+
+examples:
+  axis-browser doctor
+  axis-browser doctor --json`,
+
+  reap: `usage: axis-browser reap [--dry-run] [--min-age-hours <n>]
+Stop abandoned Axis bridges: ones no session claims, older than the threshold.
+
+Destructive — it terminates processes. Preview with --dry-run first, and prefer
+"axis-browser doctor" to name what is actually holding a port or a profile.
+
+flags:
+  --dry-run            Report what would be reaped without signaling anything
+  --min-age-hours <n>  Age threshold in hours (default: 4)
+
+examples:
+  axis-browser reap --dry-run
+  axis-browser reap --min-age-hours 1`,
+
+  login: `usage: axis-browser login <url>
+One-time interactive sign-in to the managed profile in a visible browser.
+
+Forces managed mode and headed Chrome for this invocation, waits for you to sign
+in, verifies that something actually landed, then stops the bridge so the profile
+lock is released. Needs a terminal: it refuses to run non-interactively rather
+than open a browser nobody can see or close.
+
+args:
+  <url>  URL to open for the sign-in (required)
+
+examples:
+  axis-browser login https://example.com`,
 
   // Page management
   pages: `usage: axis-browser pages
@@ -653,7 +710,64 @@ Or with Bun:
 };
 
 export function getCommandHelp(command: string): string | null {
-  return COMMAND_HELP[command] ?? null;
+  const written = COMMAND_HELP[command];
+  if (written) return written;
+  if (!Object.hasOwn(COMMAND_HANDLERS, command)) return null;
+  // `--help` must never execute a command. The SDK prints this function's result
+  // when it is non-null and otherwise falls through to the handler, so a
+  // registered command with no help entry ran for real on `--help` —
+  // `axis-browser reap --help` terminated bridges instead of describing them.
+  // Synthesize the synopsis from the same allow-list the flag validator uses, so
+  // help and validation cannot disagree. `test/command-flags.test.ts` requires a
+  // written entry for every command, which keeps this a net rather than a habit.
+  const valueFlags = COMMAND_VALUE_FLAGS[command] ?? [];
+  const synopsis = (COMMAND_FLAGS[command] ?? [])
+    .map((flag) => ` [${flag}${valueFlags.includes(flag) ? " <value>" : ""}]`)
+    .join("");
+  return renderOutput([
+    `usage: axis-browser ${command}${synopsis}`,
+    `No detailed help is written for \`${command}\` yet; the flags above are the ones it accepts.`,
+  ]);
+}
+
+/**
+ * Every command name this CLI dispatches. A function rather than an exported
+ * constant because `COMMAND_HANDLERS` is declared further down the module, and a
+ * top-level `Object.keys` here would read it before initialization.
+ */
+export function listCommands(): string[] {
+  return Object.keys(COMMAND_HANDLERS);
+}
+
+/**
+ * Reject flags a command does not document. Exported so the help text and the
+ * allow-list can be checked against each other without invoking a handler: a
+ * documented flag the validator rejects is a command that cannot be used, and
+ * that stays invisible until someone runs it.
+ */
+export function assertCommandFlagsAllowed(
+  command: string,
+  args: string[],
+): void {
+  validateCommandFlags(
+    command,
+    args,
+    COMMAND_FLAGS[command] ?? [],
+    COMMAND_VALUE_FLAGS[command] ?? [],
+    COMMAND_DASH_POSITIONAL_SLOTS[command] ?? [],
+    COMMAND_POSITIONAL_TEXT_START[command],
+  );
+}
+
+/**
+ * True when every argument to `command` is free text from position 0 — `type`,
+ * `wait`, `eval` — so a leading `--…` is the text itself rather than a flag
+ * (`type --literal`, `eval --counter`). Exported so the allow-list test proves
+ * that exception from the same table the validator reads, instead of restating a
+ * hardcoded command list that could drift from it.
+ */
+export function isAllPositionalText(command: string): boolean {
+  return COMMAND_POSITIONAL_TEXT_START[command] === 0;
 }
 
 export interface ScreenshotArgs {
@@ -690,18 +804,15 @@ export function formatScreenshotOutput(filePath: string): string {
   return encode({ screenshot: filePath });
 }
 
-/** Parse MCP list_pages markdown into structured data. */
-export function parsePagesList(
-  text: string,
-): { id: number; url: string; selected: boolean }[] {
-  const pages: { id: number; url: string; selected: boolean }[] = [];
-  for (const line of text.split("\n")) {
-    const m = line.match(/^(\d+):\s+(\S+)(\s+\[selected\])?/);
-    if (m) {
-      pages.push({ id: parseInt(m[1], 10), url: m[2], selected: !!m[3] });
-    }
+function parseScreenshotOutputPath(result: string): string {
+  const match = result.match(/(?:^|\n)Saved screenshot to ([\s\S]+)\.\s*$/);
+  if (!match) {
+    throw new CdpError(
+      "chrome-devtools-mcp did not report a saved screenshot path",
+      "BROWSER_ERROR",
+    );
   }
-  return pages;
+  return match[1];
 }
 
 /** Format raw MCP text result as AXI output: labeled block + truncation + suggestions. */
@@ -929,28 +1040,6 @@ function renderOutput(blocks: string[]): string {
   return blocks.filter(Boolean).join("\n");
 }
 
-function readPackageVersion(): string {
-  const here = dirname(fileURLToPath(import.meta.url));
-
-  for (const candidate of [
-    join(here, "..", "package.json"),
-    join(here, "..", "..", "package.json"),
-  ]) {
-    if (!existsSync(candidate)) {
-      continue;
-    }
-
-    const parsed = JSON.parse(readFileSync(candidate, "utf-8")) as {
-      version?: unknown;
-    };
-    if (typeof parsed.version === "string" && parsed.version.length > 0) {
-      return parsed.version;
-    }
-  }
-
-  throw new Error("Could not determine axis-browser package version");
-}
-
 function splitFullFlag(args: string[]): { args: string[]; full: boolean } {
   return {
     args: args.filter((arg) => arg !== "--full"),
@@ -1017,24 +1106,6 @@ function shouldRenderFullHome(argv: string[]): boolean {
   return argv.length === 1 && argv[0] === "--full";
 }
 
-/**
- * Parse snapshot from an includeSnapshot response.
- * The response contains a "## Latest page snapshot" section.
- */
-function parseSnapshotFromResponse(response: string): string | null {
-  const marker = "## Latest page snapshot";
-  const idx = response.indexOf(marker);
-  if (idx === -1) return null;
-  const after = response.slice(idx + marker.length);
-  // The snapshot follows after the header line, possibly with a blank line
-  const trimmed = after.replace(/^\s*\n/, "");
-  // Snapshot ends at the next ## heading or end of text
-  const nextHeading = trimmed.indexOf("\n## ");
-  return nextHeading === -1
-    ? trimmed.trimEnd()
-    : trimmed.slice(0, nextHeading).trimEnd();
-}
-
 /** Format page metadata (TOON) + raw snapshot + suggestions. */
 function formatPageOutput(
   snapshot: string,
@@ -1077,28 +1148,10 @@ function formatPageOutput(
 }
 
 /** Tag a freshly captured snapshot with a bumped generation marker. */
-async function stampFresh(snapshot: string): Promise<string> {
-  const generation = bumpGeneration();
-  await markPageSnapshotGeneration(generation);
-  return stampSnapshotGeneration(snapshot, generation);
-}
-
-async function markPageSnapshotGeneration(generation: number): Promise<void> {
-  const key = JSON.stringify(PAGE_GENERATION_KEY);
-  try {
-    await callTool("evaluate_script", {
-      function: `() => {
-  const key = ${key};
-  const previous = globalThis[key];
-  if (previous && previous.observer) previous.observer.disconnect();
-  globalThis[key] = { generation: ${generation} };
-  return ${generation};
-}`,
-    });
-  } catch {
-    // Best-effort: getPageRefGeneration falls back to the session-wide file
-    // counter, which costs per-page precision but never blocks the command.
-  }
+async function stampFresh(): Promise<string> {
+  return captureFreshSnapshot(callTool, async () =>
+    stripSnapshotHeader(await callTool("take_snapshot")),
+  );
 }
 
 /**
@@ -1109,20 +1162,16 @@ async function callWithSnapshot(
   name: string,
   args: Record<string, unknown>,
 ): Promise<string> {
-  const result = await callTool(name, { ...args, includeSnapshot: true });
-  const snapshot = parseSnapshotFromResponse(result);
-  if (snapshot && snapshot.length > 0) {
-    return await stampFresh(stripSnapshotHeader(snapshot));
-  }
-  // Fallback: take snapshot separately
-  return await stampFresh(stripSnapshotHeader(await callTool("take_snapshot")));
+  await callTool(name, args);
+  return stampFresh();
 }
 
+// evaluate_script invokes its payload, so each entry must be a callable.
 const SCROLL_FUNCTIONS: Record<string, string> = {
-  up: "window.scrollBy(0, -500)",
-  down: "window.scrollBy(0, 500)",
-  top: "window.scrollTo(0, 0)",
-  bottom: "window.scrollTo(0, document.body.scrollHeight)",
+  up: "() => window.scrollBy(0, -500)",
+  down: "() => window.scrollBy(0, 500)",
+  top: "() => window.scrollTo(0, 0)",
+  bottom: "() => window.scrollTo(0, document.body.scrollHeight)",
 };
 
 async function handleOpen(args: string[], full: boolean): Promise<string> {
@@ -1141,16 +1190,12 @@ async function handleOpen(args: string[], full: boolean): Promise<string> {
     }
     await callTool("new_page", { url });
   }
-  const snapshot = await stampFresh(
-    stripSnapshotHeader(await callTool("take_snapshot")),
-  );
+  const snapshot = await stampFresh();
   return formatPageOutput(snapshot, "open", url, full);
 }
 
 async function handleSnapshot(full: boolean): Promise<string> {
-  const snapshot = await stampFresh(
-    stripSnapshotHeader(await callTool("take_snapshot")),
-  );
+  const snapshot = await stampFresh();
   return formatPageOutput(snapshot, "snapshot", undefined, full);
 }
 
@@ -1168,8 +1213,8 @@ async function handleScreenshot(args: string[]): Promise<string> {
   if (parsed.fullPage) toolArgs.fullPage = true;
   if (parsed.format) toolArgs.format = parsed.format;
 
-  await callTool("take_screenshot", toolArgs);
-  return formatScreenshotOutput(filePath);
+  const result = await callTool("take_screenshot", toolArgs);
+  return formatScreenshotOutput(parseScreenshotOutputPath(result));
 }
 
 async function handleClick(args: string[], full: boolean): Promise<string> {
@@ -1188,15 +1233,20 @@ async function handleClick(args: string[], full: boolean): Promise<string> {
 
 async function handleFill(args: string[], full: boolean): Promise<string> {
   const uid = args[0];
+  // Presence, not truthiness: an explicitly empty argument is a real request to
+  // *clear* the field. Testing the joined string instead made `fill @g1:5 ""`
+  // unreachable, so a prefilled input could never be emptied from the CLI.
+  const hasValue = args.length > 1;
   const value = args.slice(1).join(" ");
   if (!uid) {
     throw new CdpError("Missing element ref", "VALIDATION_ERROR", [
       'Run `axis-browser fill @<uid> "text"` — get uid from snapshot',
     ]);
   }
-  if (!value) {
+  if (!hasValue) {
     throw new CdpError("Missing fill text", "VALIDATION_ERROR", [
       'Run `axis-browser fill @<uid> "text"` to fill the field',
+      'Pass an explicit empty string to clear it: axis-browser fill @<uid> ""',
     ]);
   }
 
@@ -1228,9 +1278,7 @@ async function handleType(args: string[], full: boolean): Promise<string> {
   }
 
   await callTool("type_text", { text });
-  const snapshot = await stampFresh(
-    stripSnapshotHeader(await callTool("take_snapshot")),
-  );
+  const snapshot = await stampFresh();
   return formatPageOutput(snapshot, "type", undefined, full);
 }
 
@@ -1244,17 +1292,13 @@ async function handleScroll(args: string[], full: boolean): Promise<string> {
   }
 
   await callTool("evaluate_script", { function: fn });
-  const snapshot = await stampFresh(
-    stripSnapshotHeader(await callTool("take_snapshot")),
-  );
+  const snapshot = await stampFresh();
   return formatPageOutput(snapshot, "scroll", undefined, full);
 }
 
 async function handleBack(full: boolean): Promise<string> {
   await callTool("navigate_page", { type: "back" });
-  const snapshot = await stampFresh(
-    stripSnapshotHeader(await callTool("take_snapshot")),
-  );
+  const snapshot = await stampFresh();
   return formatPageOutput(snapshot, "back", undefined, full);
 }
 
@@ -1274,7 +1318,7 @@ async function handleWait(args: string[]): Promise<string> {
   const isNumeric = /^\d+$/.test(target);
   if (isNumeric) {
     await callTool("evaluate_script", {
-      function: `new Promise(r => setTimeout(r, ${target}))`,
+      function: wrapJsExpression(`new Promise(r => setTimeout(r, ${target}))`),
     });
   } else {
     await callTool("wait_for", { text: [target] });
@@ -1492,7 +1536,7 @@ async function handleStop(): Promise<string> {
 
 async function handlePages(): Promise<string> {
   const result = await callTool("list_pages");
-  const pages = parsePagesList(result);
+  const pages = overlaySessionSelected(parsePagesList(result));
   if (pages.length === 0) {
     return "pages: 0 pages open";
   }
@@ -1520,9 +1564,7 @@ async function handleNewPage(args: string[], full: boolean): Promise<string> {
   const toolArgs: Record<string, unknown> = { url };
   if (background) toolArgs.background = true;
   await callTool("new_page", toolArgs);
-  const snapshot = await stampFresh(
-    stripSnapshotHeader(await callTool("take_snapshot")),
-  );
+  const snapshot = await stampFresh();
   return formatPageOutput(snapshot, "newpage", url, full);
 }
 
@@ -1543,9 +1585,7 @@ async function handleSelectPage(
     ]);
   }
   await callTool("select_page", { pageId });
-  const snapshot = await stampFresh(
-    stripSnapshotHeader(await callTool("take_snapshot")),
-  );
+  const snapshot = await stampFresh();
   return formatPageOutput(snapshot, "selectpage", undefined, full);
 }
 
@@ -1675,7 +1715,10 @@ async function handleUpload(args: string[], full: boolean): Promise<string> {
   }
   const snapshot = await callWithSnapshot("upload_file", {
     uid: await parseUidFresh(uid),
-    filePath,
+    // Resolved here, not in the bridge: the bridge is a detached process whose
+    // cwd is wherever the *first* command of the session happened to run, so a
+    // relative path sent verbatim would name a different file (or nothing).
+    filePath: resolveOutputPath(filePath),
   });
   return formatPageOutput(snapshot, "upload", undefined, full);
 }
@@ -1877,7 +1920,7 @@ async function handleHome(_full: boolean): Promise<string> {
       renderHelp(["Run `axis-browser open <url>` to start browsing"]),
     ]);
   }
-  const snapshot = await stampFresh(stripSnapshotHeader(result));
+  const snapshot = stripSnapshotHeader(result);
   const title = extractTitle(snapshot);
   const refs = countRefs(snapshot);
   const page: Record<string, unknown> = {};
@@ -1908,7 +1951,54 @@ function withoutFullFlag(
   return (args) => handler(splitFullFlag(args).args);
 }
 
-const COMMANDS: Record<string, CommandFn> = {
+function validateCommandFlags(
+  command: string,
+  args: string[],
+  allowedFlags: readonly string[],
+  valueFlags: readonly string[],
+  dashPositionalSlots: readonly number[],
+  positionalArgsBeforeText = args.length,
+): void {
+  let positionalArgs = 0;
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
+    if (positionalArgs === positionalArgsBeforeText) return;
+    if (arg === "--help" || allowedFlags.includes(arg)) {
+      if (valueFlags.includes(arg)) {
+        // A value flag as the last argument would otherwise skip past the end
+        // of args and be silently accepted — `screenshot ./a.png --format`
+        // validated fine and then rendered a PNG with the format ignored.
+        if (i + 1 >= args.length) {
+          throw new CdpError(
+            `Flag ${arg} for \`${command}\` needs a value`,
+            "VALIDATION_ERROR",
+            [
+              `Run \`${PRIMARY_COMMAND_NAME} ${command} --help\` to see valid flags`,
+            ],
+          );
+        }
+        i += 1;
+      }
+      continue;
+    }
+    if (
+      arg !== "-" &&
+      arg.startsWith("-") &&
+      (arg.startsWith("--") || !dashPositionalSlots.includes(positionalArgs))
+    ) {
+      throw new CdpError(
+        `Unknown flag ${arg} for \`${command}\``,
+        "VALIDATION_ERROR",
+        [
+          `Run \`${PRIMARY_COMMAND_NAME} ${command} --help\` to see valid flags`,
+        ],
+      );
+    }
+    positionalArgs += 1;
+  }
+}
+
+const COMMAND_HANDLERS: Record<string, CommandFn> = {
   open: withFullFlag(handleOpen),
   snapshot: async (args) => handleSnapshot(splitFullFlag(args).full),
   screenshot: withoutFullFlag(handleScreenshot),
@@ -1949,6 +2039,99 @@ const COMMANDS: Record<string, CommandFn> = {
   setup: withoutFullFlag(handleSetup),
   update: withoutFullFlag(handleUpdate),
 };
+
+const COMMAND_FLAGS: Record<string, readonly string[]> = {
+  open: ["--full"],
+  screenshot: ["--uid", "--full-page", "--format"],
+  snapshot: ["--full"],
+  click: ["--full"],
+  fill: ["--full"],
+  type: ["--full"],
+  press: ["--full"],
+  scroll: ["--full"],
+  back: ["--full"],
+  wait: [],
+  eval: ["--full"],
+  run: [],
+  hover: ["--full"],
+  drag: ["--full"],
+  fillform: ["--full"],
+  dialog: [],
+  upload: ["--full"],
+  pages: [],
+  newpage: ["--background", "--full"],
+  selectpage: ["--full"],
+  closepage: [],
+  resize: [],
+  emulate: [
+    "--viewport",
+    "--color-scheme",
+    "--network",
+    "--cpu",
+    "--geolocation",
+    "--user-agent",
+  ],
+  console: ["--type", "--limit", "--page"],
+  "console-get": [],
+  network: ["--type", "--limit", "--page"],
+  "network-get": ["--response-file", "--request-file"],
+  lighthouse: ["--device", "--mode", "--output-dir"],
+  "perf-start": ["--no-reload", "--no-auto-stop", "--file"],
+  "perf-stop": ["--file"],
+  "perf-insight": [],
+  heap: [],
+  start: [],
+  stop: [],
+  // Fork-owned commands. Upstream's strict flag table (0.1.34) predates them and
+  // a missing key means `?? []`, which silently rejected every flag these
+  // commands document — `update --check`, `doctor --json`, `reap --dry-run`,
+  // `setup --install`. Each list must stay in step with COMMAND_HELP and the
+  // handler that parses it.
+  doctor: ["--json"],
+  reap: ["--dry-run", "--min-age-hours"],
+  login: [],
+  setup: ["--install", "--json", "--yes", "-y", "--project"],
+  update: ["--check"],
+};
+
+const COMMAND_VALUE_FLAGS: Partial<Record<string, readonly string[]>> = {
+  screenshot: ["--uid", "--format"],
+  emulate: COMMAND_FLAGS.emulate,
+  console: COMMAND_FLAGS.console,
+  network: COMMAND_FLAGS.network,
+  "network-get": COMMAND_FLAGS["network-get"],
+  lighthouse: COMMAND_FLAGS.lighthouse,
+  "perf-start": ["--file"],
+  "perf-stop": COMMAND_FLAGS["perf-stop"],
+  reap: ["--min-age-hours"],
+  setup: ["--project"],
+};
+
+const COMMAND_POSITIONAL_TEXT_START: Partial<Record<string, number>> = {
+  fill: 1,
+  type: 0,
+  wait: 0,
+  eval: 0,
+  dialog: 1,
+};
+
+const COMMAND_DASH_POSITIONAL_SLOTS: Partial<
+  Record<string, readonly number[]>
+> = {
+  heap: [0],
+  upload: [1],
+  screenshot: [0],
+};
+
+const COMMANDS: Record<string, CommandFn> = Object.fromEntries(
+  Object.entries(COMMAND_HANDLERS).map(([command, handler]) => [
+    command,
+    (args: string[]) => {
+      assertCommandFlagsAllowed(command, args);
+      return handler(args);
+    },
+  ]),
+);
 
 export async function main(
   options: MainOptions | string[] = {},

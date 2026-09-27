@@ -275,12 +275,19 @@ persistent, can outlive your shell, and captured the environment it was started 
 
 ### Bridge startup is slow
 
-If the bridge takes more than 30 seconds to start (common on cold systems using npx):
+The bridge no longer downloads `chrome-devtools-mcp` at startup — it runs the
+exact version Axis pins as a dependency — so a cold `npx` fetch is not a cause
+any more. If it still takes more than 30 seconds, Chrome's own launch is the
+likely cost:
 
 ```bash
-npm install -g chrome-devtools-mcp                 # ~1-2s startup
-export CHROME_DEVTOOLS_AXI_BRIDGE_TIMEOUT_MS=60000 # or extend the deadline
+export CHROME_DEVTOOLS_AXI_BRIDGE_TIMEOUT_MS=60000 # extend the deadline
+axis-browser doctor                                # name what is actually stuck
 ```
+
+If the bridge reports that the pinned `chrome-devtools-mcp` is missing, reinstall
+Axis Browser (`npm install -g github:Nirmantix/axis-browser`) instead of pointing
+`CHROME_DEVTOOLS_AXI_MCP_PATH` at a global copy you did not review.
 
 ### Login state is missing
 

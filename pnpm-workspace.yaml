@@ -9,3 +9,13 @@ onlyBuiltDependencies:
   - esbuild
 allowBuilds:
   esbuild: true
+
+# axi-sdk-js declares `@toon-format/toon: ^2.1.0` but resolved to 2.3.0, which
+# carries a high-severity prototype-pollution advisory (GHSA, patched in 2.3.1).
+# Scoped to that one path and kept inside 2.x: axi-sdk-js imports `encode` only,
+# so the vulnerable decode path is not reachable from this CLI, but a patched
+# floor costs nothing and survives future lockfile regeneration. Our own direct
+# dependency stays on 4.x, and chrome-devtools-mcp's optional peer resolves there
+# too, so this changes no output format.
+overrides:
+  axi-sdk-js>@toon-format/toon: ^2.3.1

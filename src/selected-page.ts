@@ -1,0 +1,219 @@
+/**
+ * Session-selected page routing. chrome-devtools-mcp 1.8+ requires `pageId`
+ * on page-scoped tools; AXI injects the last page this session selected
+ * rather than parsing `[selected]` out of `list_pages` (titles and dialog
+ * text can forge that marker).
+ *
+ * Survives across short-lived CLI processes the same way the snapshot
+ * generation counter does: a file in the active session's state dir.
+ * `select_page` writes the caller-supplied id. `new_page` (open / newpage)
+ * records the created tab when exactly one complete row in that tool's own
+ * dump has a URL matching `args.url` — not a `list_pages` call, not
+ * `[selected]`, and not every `N:` line after `## Pages`. Title
+ * continuations, zero matches, and two matching URLs clear the session id
+ * so the next page-scoped call fails loud until an explicit `select_page`.
+ * Extra complete rows that do not match (for example `about:blank`) are
+ * ignored. `close_page` of the selected id also clears it, and so does the
+ * bridge when chrome-devtools-mcp reports a browser reconnect that reissues
+ * every page id (`didMcpPageIdentityChange` in `src/bridge.ts`).
+ */
+
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  unlinkSync,
+  writeFileSync,
+} from "node:fs";
+import { dirname, join } from "node:path";
+import { resolveSessionStateDir } from "./sessions.js";
+import {
+  isPageSchemeUrl,
+  matchTrailingUrl,
+  stripPageSuffixes,
+} from "./pages.js";
+import { PRIVATE_DIR_MODE } from "./state-dir.js";
+
+/** Path to the active session's selected-page-id file. */
+function selectedPageFile(): string {
+  return join(resolveSessionStateDir(), "selected-page-id");
+}
+
+export function getSelectedPageId(): number | null {
+  const file = selectedPageFile();
+  try {
+    if (!existsSync(file)) return null;
+    const parsed = Number.parseInt(readFileSync(file, "utf-8").trim(), 10);
+    return Number.isInteger(parsed) && parsed >= 0 ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+export function setSelectedPageId(pageId: number): void {
+  const file = selectedPageFile();
+  try {
+    // Created owner-only: this is the same directory the bridge's capability
+    // record lives in, and the CLI can get here long before any bridge exists.
+    // The full hardenStateDirs probe (symlink/ownership/ACL) runs once per bridge
+    // lifetime instead — this path is too hot to spawn platform tools on.
+    mkdirSync(dirname(file), { recursive: true, mode: PRIVATE_DIR_MODE });
+    writeFileSync(file, String(pageId));
+  } catch {
+    // Best-effort: a write failure still leaves this invocation with no
+    // persisted id. The next process re-reads disk and fails loud rather
+    // than guessing a page from `list_pages`.
+  }
+}
+
+/**
+ * Drop this session's routing. Returns whether a usable id was actually
+ * dropped, so a caller reacting to a browser reconnect can tell a session
+ * that lost its page from one that never had one. A missing or malformed
+ * file counts as no routing.
+ *
+ * The answer is the read-back post-condition, never the pre-delete state: an
+ * unlink that fails (a read-only state dir) leaves an id `getSelectedPageId`
+ * still returns, so the next page-scoped call injects it. Reporting a drop
+ * there would tell the bridge - and through `/health` the CLI - that routing
+ * is gone while it is still resolvable, and the reconnect marker that would
+ * have re-detected it is one-shot and already consumed. Reporting no drop
+ * instead keeps the surviving id and the reported state in agreement: the
+ * stale id fails loud on its next use (upstream issues page ids from a
+ * monotonic counter, so it resolves to nothing) rather than being explained
+ * away as a reconnect that dropped it.
+ */
+export function clearSelectedPageId(): boolean {
+  const hadSelection = getSelectedPageId() !== null;
+  const file = selectedPageFile();
+  try {
+    if (existsSync(file)) unlinkSync(file);
+  } catch {
+    // Fall through to the read-back: it, not this catch, decides the answer.
+  }
+  return hadSelection && getSelectedPageId() === null;
+}
+
+/**
+ * Overlay AXI's session selected id onto display rows. MCP `[selected]`
+ * text stays on the raw `list_pages` parse and must not imply routing.
+ */
+export function overlaySessionSelected<
+  T extends { id: number; selected: boolean },
+>(pages: T[], selectedId: number | null = getSelectedPageId()): T[] {
+  return pages.map((page) => ({
+    ...page,
+    selected: selectedId !== null && page.id === selectedId,
+  }));
+}
+
+/**
+ * Record routing after a successful browser-scoped tool. Never reads
+ * `[selected]` — that marker is display-only on `list_pages`.
+ *
+ * `new_page` records the unique complete row whose URL matches `args.url`.
+ * Otherwise the session id is cleared (do not keep a prior dump guess).
+ */
+export function rememberToolRouting(
+  name: string,
+  args: Record<string, unknown>,
+  result: string,
+): void {
+  if (name === "select_page" && typeof args.pageId === "number") {
+    setSelectedPageId(args.pageId);
+    return;
+  }
+  if (name === "new_page") {
+    const requested = typeof args.url === "string" ? args.url : "";
+    const created = createdPageIdFromNewPageDump(result, requested);
+    if (created !== null) setSelectedPageId(created);
+    else clearSelectedPageId();
+    return;
+  }
+  if (name === "close_page" && typeof args.pageId === "number") {
+    if (getSelectedPageId() === args.pageId) clearSelectedPageId();
+  }
+}
+
+const MCP_PAGES_HEADER = /^## Pages$/;
+const MCP_OTHER_SECTION =
+  /^##\s+(Extension Pages|Extension Service Workers|Third-party developer tools|WebMCP tools)$/;
+const PAGE_ID_LINE = /^(\d+):\s*(.*)$/;
+
+/**
+ * True when `rest` is a complete MCP page label without joining title
+ * newlines: untitled scheme URL, or a trailing ` (scheme-url)` wrapper.
+ * Delegates to the one parser `src/pages.ts` uses for `list_pages`, so the
+ * two cannot drift: `matchTrailingUrl` walks the ` (` candidates backward
+ * (a URL like `file:///My Folder (work)/x` still unwraps) and
+ * `stripTrailingIsolatedContext` removes only MCP's trailing suffix (a
+ * title that merely mentions `isolatedContext=` survives). A stricter local
+ * copy once read both of those rows as incomplete, and one unrelated tab
+ * with such a title cleared routing after every `open`.
+ */
+function isCompletePageLabel(rest: string): boolean {
+  const body = stripPageSuffixes(rest);
+  if (isPageSchemeUrl(body)) return true;
+  return matchTrailingUrl(body) !== null;
+}
+
+function pageUrlFromLabel(rest: string): string {
+  const body = stripPageSuffixes(rest);
+  if (isPageSchemeUrl(body)) return body;
+  return matchTrailingUrl(body)?.url ?? body;
+}
+
+function urlsMatch(pageUrl: string, requested: string): boolean {
+  if (!requested) return false;
+  if (pageUrl === requested) return true;
+  const trimSlash = (url: string) =>
+    url.length > 1 && url.endsWith("/") ? url.slice(0, -1) : url;
+  return trimSlash(pageUrl) === trimSlash(requested);
+}
+
+/**
+ * Created page id from a `new_page` dump, or null when the dump is
+ * ambiguous. The created id is the unique complete row in the last
+ * `## Pages` block whose URL matches `requestedUrl`. Title continuations
+ * such as `404: Not Found` are not page ids and fail the dump. Extra
+ * complete rows that do not match (`about:blank`, another tab) are
+ * ignored. Two matching URLs, or none, leave the id unset. Extension
+ * pages are never routing targets. Does not read `[selected]` or walk
+ * `collapsePageRows`.
+ */
+export function createdPageIdFromNewPageDump(
+  text: string,
+  requestedUrl: string,
+): number | null {
+  let inPages = false;
+  let matchedIds: number[] = [];
+  let incomplete = false;
+  for (const raw of text.split(/\r?\n/)) {
+    const line = raw.trim();
+    if (MCP_PAGES_HEADER.test(line)) {
+      inPages = true;
+      matchedIds = [];
+      incomplete = false;
+      continue;
+    }
+    if (MCP_OTHER_SECTION.test(line)) {
+      inPages = false;
+      continue;
+    }
+    if (!inPages) continue;
+    const m = line.match(PAGE_ID_LINE);
+    if (!m) continue;
+    const id = Number.parseInt(m[1], 10);
+    const rest = m[2];
+    if (!isCompletePageLabel(rest)) {
+      incomplete = true;
+      continue;
+    }
+    const pageUrl = pageUrlFromLabel(rest);
+    if (pageUrl.startsWith("chrome-extension:")) continue;
+    if (urlsMatch(pageUrl, requestedUrl)) matchedIds.push(id);
+  }
+  if (incomplete) return null;
+  if (matchedIds.length !== 1) return null;
+  return matchedIds[0];
+}
