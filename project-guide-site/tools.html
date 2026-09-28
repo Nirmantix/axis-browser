@@ -58,11 +58,12 @@
           </article>
           <article class="tool-card">
             <strong>Browser Harness</strong>
-            <p>Primary high-capability interactive browser tool in browser-bay. <code>v0.1.13 via uv — deliberately pinned</code></p>
+            <p>Optional high-capability interactive browser tool in browser-bay. <code>installed checkout version via uv — inspect browser-harness --version</code></p>
             <a href="https://github.com/browser-use/browser-harness" target="_blank" rel="noopener">GitHub</a>
             <ul>
+              <li>Conditional — install it only for an explicit isolated CDP target (<code>BU_CDP_URL</code>/<code>BU_CDP_WS</code> on a purpose-launched, non-default-profile Chrome), never as a default route.</li>
               <li>Use for visual control, iframes, odd widgets, and flexible browser operation.</li>
-              <li>In this workflow, install the durable editable checkout at <code>$AXIS_BROWSER_HOME/browser-harness</code> (or <code>$HOME/Developer/browser-harness</code> when <code>AXIS_BROWSER_HOME</code> is unset), or set <code>BROWSER_HARNESS_DIR</code> to override.</li>
+              <li>Durable editable checkout; run <code>check-prerequisites.sh --print-install-commands</code> for the resolved clone path and install commands.</li>
             </ul>
           </article>
           <article class="tool-card">

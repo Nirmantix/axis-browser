@@ -8,9 +8,10 @@ Associated skill:
 Run this from the target project where browser work will happen:
 
 1. Resolve BROWSER_BAY_DIR:
-   - Prefer the existing environment variable.
-   - Otherwise use ./skills/browser-bay when running from the axis-browser repository root.
+   - Prefer the existing environment variable (or legacy BROWSER_SKILL_DIR).
    - Otherwise use $AXIS_BROWSER_HOME/skills/browser-bay when AXIS_BROWSER_HOME is set.
+   - Otherwise use $AXIS_PORTABLE_SKILLS_DIR/browser-bay when AXIS_PORTABLE_SKILLS_DIR is set.
+   - Otherwise use ./skills/browser-bay when running from the axis-browser repository root.
    - Otherwise search standard agent skill locations and report if missing.
 
 2. Load SKILL.md from the resolved skill path.

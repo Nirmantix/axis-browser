@@ -1002,6 +1002,22 @@ A refusal is logged as the method, a fixed host/origin category and a derived ho
 never a raw header value, URL, query string, port or token, so an attacker-controlled
 request cannot write attacker-controlled bytes into your bridge log.
 
+### `/call` payloads are bounded
+
+After the two gates above — `403` on a forged `Host`/`Origin`, then `401` on a
+missing or wrong token — `POST /call` enforces a **1 MiB request-body cap**
+(`1048576` bytes). A declared `Content-Length` over the cap is refused up front
+with `413 {"error":"Bridge request too large (max 1048576 bytes)"}`; a chunked or
+understated body is cut off mid-stream, the remainder discarded, the connection
+closed, and no tool is ever invoked. One call is a JSON-RPC payload — eval sources,
+fill text, snapshot flags — so megabyte-scale bodies are abuse or a bug, never a
+call shape the bridge must serve.
+
+The cap is per `/call` payload, **not** per `axis-browser run` script: `run`
+streams stdin to a temp file unchanged, so a script well over 1 MiB still works —
+just split oversized inline data into files or chunked reads rather than one giant
+`page.eval`/`page.fill` call.
+
 ### State directories are private, and verified before use
 
 `~/.axis-browser` and each session directory hold the capability token, so they are created

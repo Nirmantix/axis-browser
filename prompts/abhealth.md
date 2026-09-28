@@ -39,7 +39,9 @@ Phase 1: tool update audit
 - Load browser-bay/SKILL.md.
 - Run:
   bash "$BB/scripts/check-prerequisites.sh" --update
-- Treat this as report-first and permission-gated.
+- Treat this as report-first and permission-gated: it must not recommend
+  re-installing Browser Harness as a required tool, nor attaching the ambient
+  chrome://inspect default.
 - Never update project-local dependencies from this repo-level audit.
 
 Phase 2: content consistency audit

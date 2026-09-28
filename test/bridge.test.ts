@@ -26,6 +26,7 @@ import {
   handleBridgeServerError,
   isBridgeClientConnected,
   isBridgeTargetReachable,
+  MAX_BRIDGE_CALL_BODY_BYTES,
   PAGE_IDENTITY_CHANGED_ERROR,
   parseBridgeCallPayload,
   resolveBridgeScript,
@@ -1720,6 +1721,141 @@ describe("handleBridgeRequest anti-rebinding gate", () => {
   });
 });
 
+describe("handleBridgeRequest /call body limit", () => {
+  useArmedBridgeToken();
+
+  /** Exactly MAX bytes of valid JSON: {"name":"take_snapshot","args":{"a":"…"}}. */
+  function atLimitPayload(): string {
+    const prefix = JSON.stringify({ name: "take_snapshot", args: { a: "" } });
+    const pad = MAX_BRIDGE_CALL_BODY_BYTES - prefix.length; // template = prefix minus `"}}` + pad + `"}}`
+    return `{"name":"take_snapshot","args":{"a":"${"x".repeat(pad)}"}}`;
+  }
+
+  it("declared Content-Length over the cap → 413 without touching the body or a tool", async () => {
+    const client: BridgeClient = {
+      listTools: async () => ({ tools: [] }),
+      callTool: async () => {
+        throw new Error("callTool must not run");
+      },
+      close: async () => {},
+    };
+    const req = makeRequest("POST", "/call", {
+      host: "127.0.0.1:9224",
+      "content-length": String(MAX_BRIDGE_CALL_BODY_BYTES + 1),
+    });
+    const { res, captured } = makeResponse();
+
+    // Resolves without a single body byte pushed: the declared length alone
+    // decides, so a client that never sends data still gets answered.
+    await handleBridgeRequest(client, req, res);
+
+    expect(captured.statusCode).toBe(413);
+    expect(JSON.parse(captured.body)).toEqual({
+      error: "Bridge request too large (max 1048576 bytes)",
+    });
+    expect(captured.headers.connection).toBe("close");
+  });
+
+  it("understated Content-Length → streams until the cap trips, then 413", async () => {
+    const client: BridgeClient = {
+      listTools: async () => ({ tools: [] }),
+      callTool: async () => {
+        throw new Error("callTool must not run");
+      },
+      close: async () => {},
+    };
+    const req = makeRequest("POST", "/call", {
+      host: "127.0.0.1:9224",
+      // Lying by ~64 KiB: the streaming counter, not the header, enforces it.
+      "content-length": String(MAX_BRIDGE_CALL_BODY_BYTES - 65536),
+    });
+    req.push(Buffer.alloc(MAX_BRIDGE_CALL_BODY_BYTES + 1, 0x78));
+    req.push(null);
+    const { res, captured } = makeResponse();
+
+    await handleBridgeRequest(client, req, res);
+
+    expect(captured.statusCode).toBe(413);
+    expect(JSON.parse(captured.body)).toEqual({
+      error: "Bridge request too large (max 1048576 bytes)",
+    });
+    expect(captured.headers.connection).toBe("close");
+  });
+
+  it("a body of exactly the cap parses and dispatches to the tool", async () => {
+    let calls = 0;
+    const client: BridgeClient = {
+      listTools: async () => ({ tools: [] }),
+      callTool: async () => {
+        calls++;
+        return { content: [{ type: "text", text: "ok" }] };
+      },
+      close: async () => {},
+    };
+    const body = atLimitPayload();
+    expect(Buffer.byteLength(body)).toBe(MAX_BRIDGE_CALL_BODY_BYTES);
+    const { res, captured } = makeResponse();
+
+    await handleBridgeRequest(
+      client,
+      makeRequest(
+        "POST",
+        "/call",
+        {
+          host: "127.0.0.1:9224",
+          "content-length": String(Buffer.byteLength(body)),
+        },
+        body,
+      ),
+      res,
+    );
+
+    expect(captured.statusCode).toBe(200);
+    expect(JSON.parse(captured.body)).toEqual({ result: "ok" });
+    expect(calls).toBe(1);
+  });
+
+  it("403 (spoofed Host) and 401 (missing token) return before any body byte is read", async () => {
+    const client: BridgeClient = {
+      listTools: async () => ({ tools: [] }),
+      callTool: async () => {
+        throw new Error("callTool must not run");
+      },
+      close: async () => {},
+    };
+    // A giant declared body on both: if either gate ran after body ingestion
+    // (or after the size check) these would stall or 413 instead.
+    const spoofedHost = makeRequest("POST", "/call", {
+      host: "evil.attacker.com",
+      "content-length": String(MAX_BRIDGE_CALL_BODY_BYTES + 4096),
+    });
+    const missingToken = makeRequest(
+      "POST",
+      "/call",
+      {
+        host: "127.0.0.1:9224",
+        "content-length": String(MAX_BRIDGE_CALL_BODY_BYTES + 4096),
+      },
+      undefined,
+      null,
+    );
+
+    const spoofedRes = makeResponse();
+    await handleBridgeRequest(client, spoofedHost, spoofedRes.res);
+    expect(spoofedRes.captured.statusCode).toBe(403);
+    expect(JSON.parse(spoofedRes.captured.body)).toEqual({
+      error: "Forbidden host",
+    });
+
+    const tokenRes = makeResponse();
+    await handleBridgeRequest(client, missingToken, tokenRes.res);
+    expect(tokenRes.captured.statusCode).toBe(401);
+    expect(JSON.parse(tokenRes.captured.body)).toEqual({
+      error: "Missing or invalid bridge capability token",
+    });
+  });
+});
+
 describe("handleBridgeRequest /call error + roots", () => {
   useArmedBridgeToken();
 
@@ -2340,6 +2476,142 @@ describe("createBridgeServer", () => {
         delete process.env.CHROME_DEVTOOLS_AXI_SESSION;
       else process.env.CHROME_DEVTOOLS_AXI_SESSION = savedSession;
       rmSync(home, { recursive: true, force: true });
+    }
+  });
+
+  it("chunked /call body over the cap → 413, no tool dispatch, Connection: close", async () => {
+    let calls = 0;
+    const client: BridgeClient = {
+      listTools: async () => ({ tools: [] }),
+      callTool: async () => {
+        calls++;
+        return { content: [{ type: "text", text: "ok" }] };
+      },
+      close: async () => {},
+    };
+    const server = createBridgeServer(client, "body-limit");
+    try {
+      await new Promise<void>((ready) => {
+        server.listen(0, "127.0.0.1", ready);
+      });
+      const { port } = server.address() as AddressInfo;
+
+      // No Content-Length: Node sends `Transfer-Encoding: chunked`, so only the
+      // streaming byte counter can stop this upload.
+      const response = await new Promise<{
+        statusCode: number;
+        connection: string | undefined;
+        body: string;
+      }>((resolvePost, rejectPost) => {
+        const req = request(
+          {
+            host: "127.0.0.1",
+            port,
+            path: "/call",
+            method: "POST",
+            headers: {
+              [BRIDGE_TOKEN_HEADER]: currentBridgeToken() ?? "",
+            },
+          },
+          (res) => {
+            let received = "";
+            res.on("data", (chunk) => {
+              received += chunk;
+            });
+            res.on("end", () =>
+              resolvePost({
+                statusCode: res.statusCode ?? 0,
+                connection: res.headers.connection,
+                body: received,
+              }),
+            );
+          },
+        );
+        req.on("error", rejectPost);
+        req.end(Buffer.alloc(MAX_BRIDGE_CALL_BODY_BYTES + 4096, 0x78));
+      });
+
+      expect(response.statusCode).toBe(413);
+      expect(JSON.parse(response.body)).toEqual({
+        error: "Bridge request too large (max 1048576 bytes)",
+      });
+      expect(response.connection).toBe("close");
+      expect(calls).toBe(0);
+    } finally {
+      await new Promise<void>((closed) => {
+        server.close(() => closed());
+      });
+    }
+  });
+
+  it("answers 413 promptly when a chunked client keeps sending past the cap", async () => {
+    // The sibling test above ends its upload, so it cannot catch a handler that
+    // waits for `end` before answering. This one leaves the chunked body open
+    // forever: without an immediate 413 the request would sit until Node's
+    // five-minute request timeout, which replies 408 instead of 413.
+    const client: BridgeClient = {
+      listTools: async () => ({ tools: [] }),
+      callTool: async () => {
+        throw new Error("callTool must not run");
+      },
+      close: async () => {},
+    };
+    const server = createBridgeServer(client, "body-limit-unending");
+    try {
+      await new Promise<void>((ready) => {
+        server.listen(0, "127.0.0.1", ready);
+      });
+      const { port } = server.address() as AddressInfo;
+
+      // Await the response event itself; no sleeps or polling. The socket
+      // timeout is a hang guard only, never a synchronization mechanism.
+      const seen = await new Promise<{ status: number; body: string }>(
+        (resolveProbe, rejectProbe) => {
+          const sock = new Socket();
+          let raw = "";
+          let settled = false;
+          sock.setTimeout(10_000, () => {
+            if (!settled)
+              rejectProbe(
+                new Error("no response within 10s: 413 was not sent early"),
+              );
+          });
+          sock.on("error", (e) => {
+            if (!settled) rejectProbe(e);
+          });
+          sock.on("data", (d) => {
+            raw += d.toString("utf8");
+            const m = /^HTTP\/1\.[01] (\d{3})/.exec(raw);
+            if (m && !settled) {
+              settled = true;
+              sock.destroy();
+              resolveProbe({ status: Number(m[1]), body: raw });
+            }
+          });
+          sock.connect(port, "127.0.0.1", () => {
+            sock.write(
+              "POST /call HTTP/1.1\r\n" +
+                `Host: 127.0.0.1:${port}\r\n` +
+                `${BRIDGE_TOKEN_HEADER}: ${currentBridgeToken() ?? ""}\r\n` +
+                "Transfer-Encoding: chunked\r\n\r\n",
+            );
+            // One chunk past the cap, and deliberately NO terminating 0-chunk:
+            // the request stream never ends, so a handler that waits for `end`
+            // before answering can never produce this 413.
+            const oversize = "x".repeat(MAX_BRIDGE_CALL_BODY_BYTES + 64 * 1024);
+            sock.write(`${oversize.length.toString(16)}\r\n${oversize}\r\n`);
+          });
+        },
+      );
+
+      expect(seen.status).toBe(413);
+      expect(seen.body).toContain(
+        "Bridge request too large (max 1048576 bytes)",
+      );
+    } finally {
+      await new Promise<void>((closed) => {
+        server.close(() => closed());
+      });
     }
   });
 });
