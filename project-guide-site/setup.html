@@ -26,6 +26,7 @@
         <nav class="site-nav">
           <a class="nav-link" href="./index.html">Home</a>
           <a class="nav-link" href="./workflow.html">Workflow</a>
+          <a class="nav-link" href="./use-cases.html">Use cases</a>
           <a class="nav-link active" href="./setup.html">Setup</a>
           <a class="nav-link" href="./tools.html">Tools</a>
           <a class="nav-link" href="./reference.html">Commands</a>
@@ -187,7 +188,7 @@ axis-browser setup --install --project /path/to/target-project</pre>
             <tr>
               <td>Interactive browser work</td>
               <td><code>uv --version</code><br><code>export BROWSER_HARNESS_DIR="${BROWSER_HARNESS_DIR:-${AXIS_BROWSER_HOME:-$HOME/Developer}/browser-harness}"</code><br><code>git clone https://github.com/browser-use/browser-harness "$BROWSER_HARNESS_DIR"</code><br><code>(cd "$BROWSER_HARNESS_DIR" &amp;&amp; uv tool install -e .)</code></td>
-              <td>Browser Harness is the default high-capability browser control path in the skill router.</td>
+              <td>Browser Harness is a conditional isolated-CDP specialist, not a default control path — install it only for an explicit isolated target (purpose-launched Chrome, non-default profile, port other than <code>9222</code>, explicit <code>BU_CDP_URL</code>/<code>BU_CDP_WS</code>).</td>
             </tr>
             <tr>
               <td>Fast diagnostics</td>

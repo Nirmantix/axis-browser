@@ -662,8 +662,8 @@ are command-specific; the CLI rejects a flag that is not listed by
 | `--response-file <path>`    | Save response body (network-get)                                                                                                                           |
 | `--request-file <path>`     | Save request body (network-get)                                                                                                                            |
 
-`--full` is accepted only by the commands listed above; other commands strip it
-and ignore it silently. Note that `console` and `network` always truncate at
+`--full` is accepted only by the commands listed above; other commands reject it
+with an `Unknown flag --full` validation error. Note that `console` and `network` always truncate at
 2000 characters and have no full-output option — use `--limit` and `--page` to
 page through more, or `--response-file`/`--request-file` on `network-get` to
 capture a body in full.

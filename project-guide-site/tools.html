@@ -26,6 +26,7 @@
         <nav class="site-nav">
           <a class="nav-link" href="./index.html">Home</a>
           <a class="nav-link" href="./workflow.html">Workflow</a>
+          <a class="nav-link" href="./use-cases.html">Use cases</a>
           <a class="nav-link" href="./setup.html">Setup</a>
           <a class="nav-link active" href="./tools.html">Tools</a>
           <a class="nav-link" href="./reference.html">Commands</a>
@@ -40,7 +41,7 @@
 
       <section class="intro" aria-labelledby="page-title">
         <h1 id="page-title">Pick tools by job, not by novelty.</h1>
-        <p>The Axis Browser workflow is tool-routed. Axis Browser is the compact diagnostic path, Browser Harness handles interactive browser work, and Playwright is added project-local for deterministic automation.</p>
+        <p>The Axis Browser workflow is tool-routed. Axis Browser is the compact diagnostic path, Browser Harness handles interactive browser work on an explicitly configured isolated CDP target, and Playwright is added project-local for deterministic automation.</p>
       </section>
 
       <section class="section" aria-labelledby="core-tools">
@@ -99,16 +100,27 @@
             <ul>
               <li>Use when a browser is overkill for public content.</li>
               <li>Keep API keys in user-local env or MCP config.</li>
+              <li>Optional and keyless-capable: unauthenticated calls run with credit and rate quotas plus a reduced endpoint set; paid/API-backed usage needs a key.</li>
+            </ul>
+          </article>
+          <article class="tool-card">
+            <strong>Obscura</strong>
+            <p>Optional high-volume text/markdown/structured-extraction engine. <code>pinned build obscura-trial:79b16710 · Docker · explicit trigger only</code></p>
+            <ul>
+              <li>Extraction-only: a URL to markdown or structured fields. No interaction, auth, screenshots, or Lighthouse.</li>
+              <li>Runs only when the operator names Obscura in the request — never a default and never a fallback; without the trigger word, extraction follows the Firecrawl → Playwright/Axis route.</li>
+              <li>Pinned-source build at SHA <code>79b16710</code>, verified by image ID before use; the prerequisite audit only reports whether the pinned tag is present.</li>
             </ul>
           </article>
           <article class="tool-card">
             <strong>BrowserAct</strong>
-            <p>Authorized protected-site workflows, screenshots, bulk extraction, and Skill Forge.</p>
+            <p>Optional authorized protected-site workflows, screenshots, bulk extraction, and Skill Forge.</p>
             <a href="https://github.com/browser-act/skills" target="_blank" rel="noopener">Skills GitHub</a>
             <a href="https://www.browseract.com/skill-forge" target="_blank" rel="noopener">Skill Forge</a>
             <ul>
               <li>Use only on systems owned, administered, or explicitly authorized for testing.</li>
-              <li>A prebuilt site skill is not authorization.</li>
+              <li>Local <code>stealth</code> mode only — no <code>chrome</code>/<code>chrome-direct</code> ambient modes and no inherited ambient logins; a prebuilt site skill is not authorization.</li>
+              <li>Skill Forge turns recurring authorized extraction into a reusable skill after the first run.</li>
             </ul>
           </article>
           <article class="tool-card">
@@ -151,13 +163,23 @@
             </ul>
           </article>
           <article class="tool-card">
+            <strong>BrowserSkill (Tencent)</strong>
+            <p>Agent-to-Chrome/Edge pairing over a browser extension plus daemon. Pattern reference only here.</p>
+            <a href="https://github.com/Tencent/BrowserSkill" target="_blank" rel="noopener">GitHub</a>
+            <ul>
+              <li>Not installed in this workflow — no extension, daemon, or <code>bsk</code> CLI is routed or installed.</li>
+              <li>Studied for its bounded diagnostics evidence model and untrusted-content handling; those patterns are reused for bounded diagnostics and untrusted content, but the tooling itself is not routed.</li>
+            </ul>
+          </article>
+          <article class="tool-card">
             <strong>ego lite</strong>
-            <p>Authenticated interactive work reusing the operator's live logins. <code>ego-browser skill · macOS only · no headless/CI</code></p>
+            <p>Authenticated interactive work on operator-approved accounts signed in inside ego lite. <code>ego-browser skill · macOS only · no headless/CI</code></p>
             <a href="https://github.com/citrolabs/ego-lite" target="_blank" rel="noopener">GitHub</a>
             <a href="https://lite.ego.app/document/" target="_blank" rel="noopener">Docs</a>
             <ul>
               <li>A browser, not a library: no CDP port, so no other tool can drive it.</li>
               <li>Route to its skill — <code>npx skills@1.5.18 add citrolabs/ego-lite</code> — and never edit it; it is a symlink into the app bundle.</li>
+              <li>Separate profile store: it does not inherit daily-browser logins — log in inside ego lite to operator-approved accounts only.</li>
             </ul>
           </article>
           <article class="tool-card">
@@ -270,6 +292,11 @@
               <td>Extract public documentation</td>
               <td>Firecrawl</td>
               <td>Clean content without browser overhead.</td>
+            </tr>
+            <tr>
+              <td>High-volume extraction when the operator names Obscura</td>
+              <td>Obscura</td>
+              <td>Explicit trigger only — extraction-only pinned build, never a default or fallback.</td>
             </tr>
             <tr>
               <td>Work on protected targets</td>

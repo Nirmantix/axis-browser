@@ -26,6 +26,7 @@
         <nav class="site-nav">
           <a class="nav-link" href="./index.html">Home</a>
           <a class="nav-link" href="./workflow.html">Workflow</a>
+          <a class="nav-link" href="./use-cases.html">Use cases</a>
           <a class="nav-link" href="./setup.html">Setup</a>
           <a class="nav-link" href="./tools.html">Tools</a>
           <a class="nav-link" href="./reference.html">Commands</a>
@@ -75,6 +76,10 @@
             <div>
               <strong>Anti-rebinding gate on the bridge</strong>
               <p>The bridge serves <code>/health</code>, <code>/tools</code>, and <code>/call</code> on loopback, and <code>/call</code> maps straight to a tool invocation. A gate now runs first on every route and rejects any request whose <code>Host</code> or <code>Origin</code> is not loopback, returning <code>403 {"error":"Forbidden host"}</code>. Without it, any page you visited could rebind its own domain to <code>127.0.0.1</code> and drive CDP from your browser (GHSA-x439-jhfh-v9x2).</p>
+            </div>
+            <div>
+              <strong>Bounded /call payloads on the bridge</strong>
+              <p>After the host/origin gate and the token check, <code>POST /call</code> enforces a <strong>1 MiB request-body cap</strong> (<code>1048576</code> bytes): an oversized declared <code>Content-Length</code> is refused up front with <code>413</code>, and a chunked or understated body is cut off mid-stream without invoking any tool. The cap is per call, not per <code>axis-browser run</code> script — <code>run</code> streams stdin whole, so split oversized inline data into files or chunked reads.</p>
             </div>
             <div>
               <strong>Keychain isolation for browsers Axis launches</strong>

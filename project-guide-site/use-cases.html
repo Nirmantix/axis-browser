@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Use cases — Axis Browser</title>
+    <meta name="description" content="BrowserBay use cases: the goal, copy-pasteable operator prompts, and the tool each task routes to.">
+    <meta property="og:title" content="Use cases — Axis Browser">
+    <meta property="og:description" content="BrowserBay use cases: the goal, copy-pasteable operator prompts, and the tool each task routes to.">
+    <meta property="og:image" content="./og-image.png">
+    <meta property="og:type" content="website">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="Use cases — Axis Browser">
+    <meta name="twitter:description" content="BrowserBay use cases: the goal, copy-pasteable operator prompts, and the tool each task routes to.">
+    <meta name="twitter:image" content="./og-image.png">
+    <link rel="icon" type="image/svg+xml" href="./favicon.svg">
+    <link rel="icon" sizes="any" href="./favicon.ico">
+    <link rel="apple-touch-icon" href="./apple-touch-icon.png">
+    <script>!function(){var r=document.documentElement,t,i=0,s=[0,2,4,0,-2,-4];try{t=localStorage.getItem("theme");i=parseInt(localStorage.getItem("font-step-idx"),10)}catch(e){}if(!Number.isInteger(i)||i<0||i>=s.length)i=0;if(t)r.setAttribute("data-theme",t);r.style.setProperty("--font-step",s[i]+"px")}();</script>
+    <link rel="stylesheet" href="./styles.css">
+  </head>
+  <body>
+    <main class="site-shell">
+      <header class="top-bar" aria-label="Site navigation">
+        <a class="brand-link" href="./index.html">Axis Browser</a>
+        <nav class="site-nav">
+          <a class="nav-link" href="./index.html">Home</a>
+          <a class="nav-link" href="./workflow.html">Workflow</a>
+          <a class="nav-link active" href="./use-cases.html">Use cases</a>
+          <a class="nav-link" href="./setup.html">Setup</a>
+          <a class="nav-link" href="./tools.html">Tools</a>
+          <a class="nav-link" href="./reference.html">Commands</a>
+          <a class="nav-link" href="./safety.html">Safety</a>
+          <a class="nav-link" href="./maintenance.html">Maintenance</a>
+          <a class="nav-link" href="./sources.html">Sources</a>
+          <button class="theme-toggle" id="theme-toggle" aria-label="Toggle dark mode"><svg class="icon-moon" viewBox="0 0 24 24"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg><svg class="icon-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg></button>
+          <button class="font-toggle" id="font-toggle" aria-label="Adjust font size"><span class="font-label">A</span></button>
+          <script>document.getElementById("theme-toggle").addEventListener("click",function(){var d=document.documentElement,t=d.getAttribute("data-theme")==="dark"?"light":"dark";d.setAttribute("data-theme",t);try{localStorage.setItem("theme",t)}catch(e){ } });!function(){var s=[0,2,4,0,-2,-4],l=["A","A+","A++","A","A-","A--"],b=document.getElementById("font-toggle"),n=b.querySelector(".font-label"),i=0;try{i=parseInt(localStorage.getItem("font-step-idx"),10)}catch(e){}if(!Number.isInteger(i)||i<0||i>=s.length)i=0;function u(){document.documentElement.style.setProperty("--font-step",s[i]+"px");n.textContent=l[i];b.title="Font size: "+(s[i]===0?"Default":(s[i]>0?"+":"")+s[i]+"px")}u();b.addEventListener("click",function(){i=(i+1)%s.length;u();try{localStorage.setItem("font-step-idx",i)}catch(e){ } })}();</script>
+        </nav>
+      </header>
+
+      <section class="intro" aria-labelledby="page-title">
+        <h1 id="page-title">Say what you need; BrowserBay picks the tool.</h1>
+        <p>Each row is a use case the browser-bay router handles: the goal, a copy-pasteable operator prompt, and the tools the task routes to. Axis Browser commands carry an explicit <code>CHROME_DEVTOOLS_AXI_MODE</code> — <code>managed</code> for login state, <code>ephemeral</code> for fresh work — never an inherited ambient target.</p>
+      </section>
+
+      <section class="trigger-table" aria-label="Use-case reference">
+        <article class="trigger-category category-blue">
+          <div class="category-heading">
+            <h2>Local app and page checks</h2>
+            <p>Fast diagnostics and deterministic evidence on your own dev server or a public page you control.</p>
+          </div>
+          <div class="trigger-row">
+            <div><strong>Local UI check / screenshot</strong><p>Confirm a local page renders and capture a screenshot artifact.</p></div>
+            <div><strong>Say</strong><p><code>"Use browser-bay to check my app: run CHROME_DEVTOOLS_AXI_MODE=ephemeral axis-browser open http://localhost:3000, snapshot it, and save a screenshot to .tmp/screenshots/home.png."</code></p></div>
+            <div><strong>Routes to</strong><p>Axis Browser → project-local Playwright → Browser Harness (isolated CDP target only) → agent-browser. Reference: <code>references/screenshots.md</code>.</p></div>
+          </div>
+          <div class="trigger-row">
+            <div><strong>Responsive screenshots</strong><p>Capture the same page at phone, tablet, and desktop widths.</p></div>
+            <div><strong>Say</strong><p><code>"Use browser-bay to capture responsive screenshots of the landing page at 375, 768, and 1440 px into .tmp/screenshots/responsive/."</code></p></div>
+            <div><strong>Routes to</strong><p>Axis Browser or Playwright → Browser Harness (isolated target only) → agent-browser. Reference: <code>references/screenshots.md</code>.</p></div>
+          </div>
+          <div class="trigger-row">
+            <div><strong>Console / network root cause</strong><p>Find the failing request or exception before editing code.</p></div>
+            <div><strong>Say</strong><p><code>"Use browser-bay to find why checkout fails: CHROME_DEVTOOLS_AXI_MODE=ephemeral axis-browser open http://localhost:3000/checkout, then console --type error --limit 25 --page 0 and network --type fetch --limit 25 --page 0 before touching code."</code></p></div>
+            <div><strong>Routes to</strong><p>Axis Browser (fastest bounded path) → Playwright listeners → Browser Harness (isolated target only). Bounded-diagnostic patterns reused from Tencent BrowserSkill (reference only — its extension/daemon is never installed). References: <code>references/runtime-debugging.md</code>, <code>references/feature-debugging.md</code>.</p></div>
+          </div>
+          <div class="trigger-row">
+            <div><strong>Accessibility review</strong><p>Audit a page against WCAG rules with evidence.</p></div>
+            <div><strong>Say</strong><p><code>"Use browser-bay for an accessibility review of http://localhost:3000 — CHROME_DEVTOOLS_AXI_MODE=ephemeral axis-browser snapshot plus a lighthouse audit, report under .tmp/reports/."</code></p></div>
+            <div><strong>Routes to</strong><p>Axis Browser (snapshot + Lighthouse) → Playwright + axe-core → Browser Harness (isolated target only); Pa11y for CI-able sweeps. Reference: <code>references/accessibility.md</code>.</p></div>
+          </div>
+          <div class="trigger-row">
+            <div><strong>Performance / Lighthouse</strong><p>Measure Core Web Vitals, traces, and heap on a real page.</p></div>
+            <div><strong>Say</strong><p><code>"Use browser-bay to measure the landing page: CHROME_DEVTOOLS_AXI_MODE=ephemeral axis-browser open http://localhost:3000, then lighthouse --output-dir .tmp/reports (lighthouse audits the open page — it takes no URL)."</code></p></div>
+            <div><strong>Routes to</strong><p>Axis Browser (<code>lighthouse</code>, <code>perf-*</code>, <code>heap</code>) → Playwright + Lighthouse CLI → Browser Harness (isolated target only). Reference: <code>references/performance.md</code>.</p></div>
+          </div>
+          <div class="trigger-row">
+            <div><strong>Reproducible E2E / CI</strong><p>Turn a proven flow into a deterministic, rerunnable test.</p></div>
+            <div><strong>Say</strong><p><code>"Use browser-bay to turn the signup flow into a project-local playwright@1.63.0 test that runs in CI, with a trace on failure."</code></p></div>
+            <div><strong>Routes to</strong><p>Project-local Playwright → Axis Browser → Browser Harness (isolated target only). Reference: <code>references/feature-testing.md</code>.</p></div>
+          </div>
+          <div class="trigger-row">
+            <div><strong>Visual regression</strong><p>Diff before/after renders of the same page.</p></div>
+            <div><strong>Say</strong><p><code>"Use browser-bay to visual-regression the settings page against the previous baseline, storing diffs under .tmp/."</code></p></div>
+            <div><strong>Routes to</strong><p>Playwright <code>toHaveScreenshot</code> → Axis + ImageMagick <code>compare</code> → Browser Harness (isolated target only) + <code>compare</code>. Reference: <code>references/visual-regression.md</code>.</p></div>
+          </div>
+        </article>
+
+        <article class="trigger-category category-green">
+          <div class="category-heading">
+            <h2>Sessions, auth, and authorized targets</h2>
+            <p>Login state and protected sites — the rows where the dedicated-target gate and authorization checks bite hardest.</p>
+          </div>
+          <div class="trigger-row">
+            <div><strong>Human handoff / live testing</strong><p>A person may need to solve a captcha, MFA, or manual confirm mid-task.</p></div>
+            <div><strong>Say</strong><p><code>"Use browser-bay to drive the staging dashboard in ego lite and hand off to me if a captcha or MFA prompt appears."</code></p></div>
+            <div><strong>Routes to</strong><p>ego lite (the only human-handoff path; operator-approved accounts only) → else escalate with <code>! axis-browser login &lt;url&gt;</code>. Reference: <code>references/ego-browser.md</code>.</p></div>
+          </div>
+          <div class="trigger-row">
+            <div><strong>Unattended auth flow test</strong><p>Reproduce a login-dependent flow without a human in the loop.</p></div>
+            <div><strong>Say</strong><p><code>"Use browser-bay to test the signin flow unattended: hand me ! axis-browser login https://app.example.com once, then re-run CHROME_DEVTOOLS_AXI_MODE=managed axis-browser open and snapshot against the managed profile."</code></p></div>
+            <div><strong>Routes to</strong><p>Axis <code>managed</code> after one operator-run login → Playwright <code>storageState</code> → Browser Harness (isolated target only). Reference: <code>references/auth-flow-testing.md</code>.</p></div>
+          </div>
+          <div class="trigger-row">
+            <div><strong>Authorized protected-site work</strong><p>Systems you own, administer, or hold written authorization to test.</p></div>
+            <div><strong>Say</strong><p><code>"Use browser-bay for authorized protected-site extraction on our admin portal (we administer it): run browser-act navigate https://portal.internal.example in stealth mode and export the report under .tmp/scrapes/."</code></p></div>
+            <div><strong>Routes to</strong><p>BrowserAct (local <code>stealth</code> only — no <code>chrome</code>/<code>chrome-direct</code> ambient modes) → Firecrawl → Browser Harness (isolated target only); CloakBrowser when a Playwright-compatible stealth runtime is required. Reference: <code>references/protected-sites-scraping.md</code>.</p></div>
+          </div>
+        </article>
+
+        <article class="trigger-category category-violet">
+          <div class="category-heading">
+            <h2>Extraction and recurring jobs</h2>
+            <p>Public-page markdown, JS-heavy extraction, named-extractor runs, and jobs that repeat.</p>
+          </div>
+          <div class="trigger-row">
+            <div><strong>Static public-page markdown</strong><p>Clean article/docs text without browser overhead.</p></div>
+            <div><strong>Say</strong><p><code>"Use browser-bay to extract https://docs.example.com/guide as clean markdown into .tmp/scrapes/guide.md with Firecrawl."</code></p></div>
+            <div><strong>Routes to</strong><p>Firecrawl MCP/CLI (keyless-capable, quota-limited) → Playwright → Axis <code>eval</code> → BrowserAct (authorized targets only). Reference: <code>references/content-scraping.md</code>.</p></div>
+          </div>
+          <div class="trigger-row">
+            <div><strong>JS-heavy public extraction</strong><p>Render a SPA before scraping its content.</p></div>
+            <div><strong>Say</strong><p><code>"Use browser-bay to scrape the JS-rendered docs SPA at https://app.example.com/docs — render with project-local Playwright, convert main content to markdown, save under .tmp/scrapes/."</code></p></div>
+            <div><strong>Routes to</strong><p>Project-local Playwright → Axis <code>eval</code> → Firecrawl interact. Reference: <code>references/content-scraping.md</code>.</p></div>
+          </div>
+          <div class="trigger-row">
+            <div><strong>High-volume extraction (named Obscura)</strong><p>Bulk text/markdown/structured pulls where footprint or local speed matters.</p></div>
+            <div><strong>Say</strong><p><code>"Use browser-bay to run Obscura over these 200 docs URLs for title and body extraction into .tmp/scrapes/obscura/."</code></p></div>
+            <div><strong>Routes to</strong><p>Obscura — explicit trigger only (the operator must name it; never a default or fallback), pinned <code>obscura-trial:79b16710</code> build, extraction-shaped steps only. Without the word: Firecrawl → Playwright/Axis. Reference: <code>references/obscura.md</code>.</p></div>
+          </div>
+          <div class="trigger-row">
+            <div><strong>Recurring extraction jobs</strong><p>A pull that repeats — make it a reusable skill, script, or cloud function.</p></div>
+            <div><strong>Say</strong><p><code>"Use browser-bay to make this weekly authorized report pull repeatable — forge a BrowserAct Skill Forge skill if the site qualifies, else a reusable workflow script I can rerun."</code></p></div>
+            <div><strong>Routes to</strong><p>Authenticated recurring pulls → ego-browser learnings packs; authorized recurring extraction → BrowserAct Skill Forge → Notte Functions; rerunnable local runs → reusable-workflow <code>script.mjs</code>. References: <code>references/ego-browser.md</code>, <code>references/protected-sites-scraping.md</code>, <code>references/notte-workflows.md</code>, <code>references/reusable-workflow.md</code>.</p></div>
+          </div>
+        </article>
+      </section>
+
+      <footer class="site-footer">
+        <span>Axis Browser Workflow Guide</span>
+        <a href="./tools.html">Tools &rarr;</a>
+      </footer>
+    </main>
+  </body>
+</html>
