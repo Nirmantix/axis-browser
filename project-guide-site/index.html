@@ -26,6 +26,7 @@
         <nav class="site-nav">
           <a class="nav-link active" href="./index.html">Home</a>
           <a class="nav-link" href="./workflow.html">Workflow</a>
+          <a class="nav-link" href="./use-cases.html">Use cases</a>
           <a class="nav-link" href="./setup.html">Setup</a>
           <a class="nav-link" href="./tools.html">Tools</a>
           <a class="nav-link" href="./reference.html">Commands</a>
@@ -207,8 +208,8 @@
             <p><code>axis-browser</code>, <code>axib</code>, and upstream-compatible <code>chrome-devtools-axi</code>.</p>
           </div>
           <div class="stat-item">
-            <!-- Counts skills/browser-bay/references/*.md (27 files at the 2026-09 refresh). Update on any add/remove. -->
-            <span class="stat-number">27</span>
+            <!-- Counts skills/browser-bay/references/*.md (28 files at the 2026-09 refresh). Update on any add/remove. -->
+            <span class="stat-number">28</span>
             <span class="stat-label">Skill references</span>
             <p>Task routes for screenshots, debugging, traces, accessibility, performance, scraping, and verification.</p>
           </div>
@@ -216,6 +217,11 @@
             <span class="stat-number">4</span>
             <span class="stat-label">Prompt shortcodes</span>
             <p><code>absetup</code>, <code>abcheck</code>, <code>abuse</code>, and <code>abhealth</code> map operators to the skill workflow.</p>
+          </div>
+          <div class="stat-item">
+            <span class="stat-number">1&nbsp;MiB</span>
+            <span class="stat-label">Bridge /call cap</span>
+            <p>Each <code>POST /call</code> payload is capped at <code>1048576</code> bytes; oversized bodies get <code>413</code>. It bounds a single call, not an <code>axis-browser run</code> script — stdin streams whole.</p>
           </div>
         </div>
       </section>
