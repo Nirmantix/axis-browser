@@ -72,7 +72,7 @@
           </div>
           <div class="trigger-row">
             <div><strong>Performance / Lighthouse</strong><p>Measure Core Web Vitals, traces, and heap on a real page.</p></div>
-            <div><strong>Say</strong><p><code>"Use browser-bay to measure the landing page: CHROME_DEVTOOLS_AXI_MODE=ephemeral axis-browser lighthouse http://localhost:3000 --output .tmp/reports/lighthouse.json."</code></p></div>
+            <div><strong>Say</strong><p><code>"Use browser-bay to measure the landing page: CHROME_DEVTOOLS_AXI_MODE=ephemeral axis-browser open http://localhost:3000, then lighthouse --output-dir .tmp/reports (lighthouse audits the open page — it takes no URL)."</code></p></div>
             <div><strong>Routes to</strong><p>Axis Browser (<code>lighthouse</code>, <code>perf-*</code>, <code>heap</code>) → Playwright + Lighthouse CLI → Browser Harness (isolated target only). Reference: <code>references/performance.md</code>.</p></div>
           </div>
           <div class="trigger-row">
