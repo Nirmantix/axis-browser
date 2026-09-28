@@ -28,3 +28,20 @@ orthogonal to `STALE_REF`, which is why feasibility is not the blocker.
 2. Run representative Harness-replay and Obscura fixtures with that logging on.
 3. Implement delta observations only if repeated same-generation snapshots
    dominate measured request/response bytes on those runs.
+
+## Parked (no action until trigger)
+
+- **Lightpanda** — parked until a genuine fleet-scale need. Text-only
+  rendering keeps it out of the BrowserBay route table; revisit only when
+  headless-fleet throughput (not capability) becomes the bottleneck.
+- **Obscura public-web promotion** — stays rejected. Revisit only after (a) a
+  comparator-stability re-run (the trial's Playwright container crashed 37
+  times, poisoning the public-leg comparison) and (b) a clean public-leg
+  pass with documented permission/robots proof. Local extraction behind the
+  explicit-word trigger is unaffected.
+- **Eval-harness silent-write report (external tooling, operator to file).**
+  During doc work, a `default.eval` cell printed success
+  (`prefixed=15`) without persisting the file write; the audit caught it
+  before commit, so no artifact impact. Symptom to report to the harness
+  owner: tool prints success while the write never lands — a live landmine
+  for future rounds. No repo-side fix possible.
