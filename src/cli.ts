@@ -335,6 +335,14 @@ script API (available as global \`page\`):
 click and fill accept either @uid refs (from snapshot) or CSS selectors. A tagged @uid ref goes stale only when the page's snapshot generation has moved past it — a later snapshot or a navigation — so unrelated DOM mutations do not invalidate it; untagged legacy refs are accepted without a freshness check.
 page.eval accepts functions, arrow functions, and bare expression strings; no-arg IIFE strings are unwrapped automatically.
 
+limits:
+  Each /call tool payload the script issues (page.eval sources, fill text,
+  snapshot args, ...) is capped at 1 MiB; an oversized call fails with
+  "Bridge request too large (max 1048576 bytes)". The run script itself is
+  NOT size-limited by this cap — stdin streams to a temp file unchanged —
+  so split oversized inline data into files or chunked reads rather than
+  one giant call.
+
 examples:
   axis-browser run <<'EOF'
   await page.open("https://example.com");

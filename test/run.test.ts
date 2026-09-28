@@ -759,6 +759,19 @@ console.log(result);
 
     expect(result.stdout).toBe("");
   });
+
+  it("still executes a script larger than the per-call 1 MiB bridge cap", async () => {
+    // The bridge bounds each /call tool payload, never the script itself:
+    // runScript writes stdin to a temp .mjs and imports it, so inline bulk
+    // belongs in the file, not in one giant page.eval/fill argument.
+    const padding = `// ${"x".repeat(1_200_000)}\n`;
+    const result = await runScript(
+      `${padding}console.log("big-script-ok");`,
+      callTool,
+    );
+
+    expect(result.stdout).toBe("big-script-ok\n");
+  });
 });
 
 // --- 6. Validation errors ---

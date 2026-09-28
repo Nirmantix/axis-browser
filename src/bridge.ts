@@ -467,9 +467,71 @@ function parseRootsField(roots: unknown): string[] | undefined {
   return roots as string[];
 }
 
+/**
+ * Maximum accepted size of one `POST /call` request body, in bytes. A single
+ * tool call is a JSON-RPC payload - `eval` sources, screenshot args, snapshot
+ * flags - so megabyte-scale bodies are abuse or a bug, never a call shape the
+ * bridge must serve. Counted against raw body bytes (what the socket delivers),
+ * not the decoded string length, so multi-byte UTF-8 cannot smuggle past the
+ * cap. Does not bound `axis-browser run` scripts: those stream stdin to a temp
+ * file in src/run.ts and never pass through this reader.
+ */
+export const MAX_BRIDGE_CALL_BODY_BYTES = 1_048_576;
+
+/**
+ * Raised by {@link readRequestBody} when a `/call` body exceeds
+ * {@link MAX_BRIDGE_CALL_BODY_BYTES}. A dedicated class so handleBridgeRequest
+ * can map it to 413 with `Connection: close` while every other failure stays a
+ * generic 500.
+ */
+export class BridgeBodyTooLargeError extends Error {
+  constructor() {
+    super(`Bridge request too large (max ${MAX_BRIDGE_CALL_BODY_BYTES} bytes)`);
+    this.name = "BridgeBodyTooLargeError";
+  }
+}
+
 async function readRequestBody(req: IncomingMessage): Promise<string> {
+  // Fast path: a declared Content-Length already over the cap is refused
+  // without consuming one body byte. Nothing drains the stream here - the 413
+  // path sets `Connection: close`, so the unread upload dies with the socket
+  // and can never bleed into a follow-up request on this connection.
+  const declared = req.headers["content-length"];
+  if (declared !== undefined) {
+    const declaredBytes = Number(declared);
+    if (
+      Number.isFinite(declaredBytes) &&
+      declaredBytes > MAX_BRIDGE_CALL_BODY_BYTES
+    ) {
+      throw new BridgeBodyTooLargeError();
+    }
+  }
+
+  // Slow path: chunked, absent, or understated length. Count raw Buffer bytes
+  // as they arrive; the moment the cap trips, stop consuming and throw.
+  //
+  // Answering immediately rather than draining to `end` matters: a client that
+  // keeps sending would otherwise hold this handler until Node's five-minute
+  // request timeout, which answers 408 instead of the 413 the client needs.
+  // The 413 path sets `Connection: close`, so the unread remainder dies with
+  // the socket and can never bleed into a follow-up request.
+  //
+  // The response is written before the socket is torn down; responding first is
+  // what keeps a still-writing client from seeing ECONNRESET in place of the
+  // 413 (verified in test/bridge.test.ts, which streams a chunked oversize body
+  // through a real loopback request and asserts 413 + Connection: close).
   let body = "";
+  let received = 0;
   for await (const chunk of req) {
+    // Buffer.byteLength also accepts the Buffer chunks a request stream emits,
+    // so both chunk shapes are counted in the same unit: raw bytes on the wire.
+    received += Buffer.byteLength(chunk, "utf-8");
+    if (received > MAX_BRIDGE_CALL_BODY_BYTES) {
+      // Stop reading. `resume()` on an already-flowing stream is a no-op; the
+      // unread bytes are discarded when the 413 closes the connection.
+      req.pause();
+      throw new BridgeBodyTooLargeError();
+    }
     body += typeof chunk === "string" ? chunk : chunk.toString("utf-8");
   }
   return body;
@@ -714,6 +776,15 @@ export async function handleBridgeRequest(
       return;
     }
   } catch (error) {
+    if (error instanceof BridgeBodyTooLargeError) {
+      // The stream is already stopped/discarded; `close` so the oversized
+      // upload cannot ride a keep-alive socket into the next request, and so
+      // the declared-over-limit path - whose body was never consumed - cannot
+      // poison the connection either.
+      res.setHeader("Connection", "close");
+      writeJson(res, 413, { error: error.message });
+      return;
+    }
     writeJson(res, 500, { error: getErrorMessage(error) });
     return;
   }
