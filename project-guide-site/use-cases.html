@@ -104,7 +104,7 @@
           </div>
           <div class="trigger-row">
             <div><strong>Authorized protected-site work</strong><p>Systems you own, administer, or hold written authorization to test.</p></div>
-            <div><strong>Say</strong><p><code>"Use browser-bay for authorized protected-site extraction on our admin portal (we administer it): run browser-act navigate https://portal.internal.example in stealth mode and export the report under .tmp/scrapes/."</code></p></div>
+            <div><strong>Say</strong><p><code>"Use browser-bay for authorized protected-site extraction on our admin portal (we administer it): run browser-act --session portal navigate https://portal.internal.example (stealth Chromium is its baseline; --session is required for interaction commands) and export the report under .tmp/scrapes/."</code></p></div>
             <div><strong>Routes to</strong><p>BrowserAct (local <code>stealth</code> only — no <code>chrome</code>/<code>chrome-direct</code> ambient modes) → Firecrawl → Browser Harness (isolated target only); CloakBrowser when a Playwright-compatible stealth runtime is required. Reference: <code>references/protected-sites-scraping.md</code>.</p></div>
           </div>
         </article>
